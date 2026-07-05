@@ -176,6 +176,15 @@
     transform: translateZ(0);
     -webkit-transform: translateZ(0);
   }
+  /* 自定义聊天背景层:--custom-wall 是图片(设置页上传,本机存储),
+     --custom-wall-opacity 控透明度,叠在默认壁纸之上、scrim 之下 */
+  .wall::before{
+    content:""; position:absolute; inset:0;
+    background-image: var(--custom-wall, none);
+    background-size: cover; background-position: center;
+    opacity: var(--custom-wall-opacity, 1);
+    pointer-events:none;
+  }
   .wall::after{
     content:""; position:absolute; inset:0; background: var(--scrim); pointer-events:none;
   }
@@ -187,7 +196,6 @@
     display: flex; align-items: center; justify-content: center;
     height: calc(var(--header-h) + env(safe-area-inset-top));
     padding: calc(env(safe-area-inset-top) + 8px) var(--side-pad) 10px;
-    border-bottom: 1px solid var(--hairline);
     pointer-events: none;
   }
   .topbar > *{ pointer-events: auto; }
@@ -199,7 +207,8 @@
     padding: 0 76px;
   }
   .peerpill .name{
-    font-family: "Songti SC", "Noto Serif SC", "STSong", "SimSun", serif;
+    /* 顶栏名字用自己的选择器(--topbar-font),和聊天气泡分开;没设时用原来的宋体 */
+    font-family: var(--topbar-font, "Songti SC", "Noto Serif SC", "STSong", "SimSun", serif);
     font-size: clamp(18px, 3vw, 28px);
     font-weight: 500;
     color: var(--text);
@@ -234,6 +243,12 @@
   }
   .backbtn:active{ transform: scale(.9); }
   .backbtn svg{ width:22px; height:22px; display:block; margin-left:-2px; }
+  /* sessions(API 窗口)按钮放左侧返回键旁——右侧四个按钮在窄屏会伸到居中的名字底下 */
+  .topbar > .topbtn.sessions{
+    position:absolute;
+    left: calc(var(--side-pad) + 4px + 44px);
+    top: calc(env(safe-area-inset-top) + clamp(14px, 2.5vw, 36px));
+  }
   .header-actions{
     position:absolute;
     right: calc(var(--side-pad) - 2px);
@@ -261,9 +276,16 @@
   .topbtn svg{ width:24px; height:24px; display:block; }
   .topbtn.more svg{ width:22px; height:22px; }
   .topbtn.terminal.active{ color:var(--accent); }
+  .topbtn.search svg{ width:21px; height:21px; }
+  /* 放大镜放左侧,紧挨 sessions(开新窗口)按钮——右边那组太挤会压到居中的名字 */
+  .topbar > .topbtn.search{
+    position:absolute;
+    left: calc(var(--side-pad) + 4px + 44px + 44px);
+    top: calc(env(safe-area-inset-top) + clamp(14px, 2.5vw, 36px));
+  }
   .session-pop{
     position:absolute;
-    right: calc(var(--side-pad) + 34px);
+    left: calc(var(--side-pad) + 8px);
     top: calc(env(safe-area-inset-top) + clamp(58px, 8vw, 82px));
     z-index:30;
     width:min(82vw, 320px);
@@ -301,6 +323,59 @@
   }
   .session-rename:hover{ color:var(--accent); background:var(--seg-track); }
   .session-rename svg{ width:15px; height:15px; display:block; }
+  /* ── 聊天记录搜索 ── */
+  .search-panel{
+    position:fixed;
+    inset:0;
+    z-index:240;
+    display:flex;
+    flex-direction:column;
+    background:var(--panel-bg);
+    -webkit-backdrop-filter:blur(22px);
+    backdrop-filter:blur(22px);
+    padding:calc(env(safe-area-inset-top) + 12px) var(--side-pad) 0;
+  }
+  .search-panel[hidden]{ display:none !important; }
+  .search-bar{
+    display:flex; align-items:center; gap:8px;
+    padding:8px 12px;
+    border-radius:16px;
+    background:var(--seg-track);
+    border:0;
+  }
+  .search-bar input{ -webkit-appearance:none; appearance:none; }
+  .search-bar input:focus{ outline:none; box-shadow:none; }
+  .search-ico{ width:19px; height:19px; color:var(--text-faint); flex:0 0 auto; }
+  .search-bar input{
+    flex:1 1 auto; min-width:0; border:0; background:transparent; outline:0;
+    font:inherit; font-size:16px; color:var(--text);
+  }
+  .search-bar input::placeholder{ color:var(--text-faint); }
+  .search-close{
+    border:0; background:transparent; color:var(--text-faint); width:30px; height:30px;
+    border-radius:50%; display:grid; place-items:center; cursor:pointer; padding:0; flex:0 0 auto;
+  }
+  .search-close svg{ width:18px; height:18px; display:block; }
+  .search-results{ flex:1 1 auto; overflow:auto; padding:8px 0 24px; }
+  .search-hint{ padding:26px 10px; text-align:center; color:var(--text-faint); font-size:13.5px; }
+  .search-item{
+    display:block; width:100%; text-align:left; border:0; cursor:pointer; font:inherit;
+    background:transparent; color:var(--text);
+    padding:11px 10px; border-radius:13px;
+  }
+  .search-item:active{ background:var(--seg-track); transform:scale(.995); }
+  .search-item + .search-item{ border-top:1px solid var(--card-line); border-radius:0; }
+  .search-item-top{
+    display:flex; align-items:center; gap:8px; margin-bottom:4px;
+    font-size:11.5px; color:var(--text-faint); font-family:var(--font-en), var(--font-cn);
+  }
+  .search-who{ font-weight:600; color:var(--text-soft); }
+  .search-who.ai{ color:var(--accent); }
+  .search-sess{ margin-left:auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:44%; }
+  .search-snip{ font-size:14px; line-height:1.5; color:var(--text); display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+  .search-snip mark{ background:var(--accent); color:#fff; border-radius:3px; padding:0 1px; }
+  @keyframes jumpFlash{ 0%,100%{ box-shadow:0 0 0 0 rgba(0,0,0,0); } 22%{ box-shadow:0 0 0 3px var(--accent); } }
+  .row.jump-flash .bubble, .row.jump-flash .think-block{ animation:jumpFlash 1.4s ease; border-radius:16px; }
   .terminal-panel{
     position:fixed;
     inset:0;
@@ -506,8 +581,10 @@
     padding: clamp(8px, 1.05vw, 12px) clamp(13px, 1.65vw, 18px) clamp(8px, 1.1vw, 13px);
     border-radius: var(--bubble-radius);
     position: relative;
-    font-family: var(--font-cn);
-    font-size: clamp(14px, 1.55vw, 16px); line-height: 1.58;
+    /* --chat-font:聊天字体偏好(设置页选择器,本机存储),默认回退到 --font-cn(宋体) */
+    font-family: var(--chat-font, var(--font-cn));
+    /* --font-scale:字体大小偏好(设置页滑块,本机存储),默认 1 */
+    font-size: calc(clamp(14px, 1.55vw, 16px) * var(--font-scale, 1)); line-height: 1.58;
     word-wrap: break-word;
     overflow-wrap: break-word;
     animation: pop .24s cubic-bezier(.2,.8,.2,1) both;
@@ -520,18 +597,40 @@
   .row[data-vkey].enter-ai .bubble{ transform-origin: bottom left; animation: enterAi .44s cubic-bezier(.34,1.46,.5,1) both; }
   @keyframes enterHuman{ from{ transform: translate(6px, 9px) scale(.95); opacity:0; } 55%{ opacity:1; } to{ transform:none; opacity:1; } }
   @keyframes enterAi{ from{ transform: translate(-6px, 9px) scale(.95); opacity:0; } 55%{ opacity:1; } to{ transform:none; opacity:1; } }
+  /* --bubble-opacity:气泡底色透明度(设置页滑块,本机存储,默认 1)。
+     旧内核不认 color-mix 时退回上一行的实底色,不会变透明。 */
   .row.ai .bubble{
     background: var(--bubble-ai-bg);
+    background: color-mix(in srgb, var(--bubble-ai-bg) calc(var(--bubble-opacity, 1) * 100%), transparent);
     color: var(--bubble-ai-fg);
     border: 0;
     box-shadow: 0 10px 28px rgba(78, 94, 108, 0.08);
   }
   .row.human .bubble{
     background: var(--bubble-human-bg);
+    background: color-mix(in srgb, var(--bubble-human-bg) calc(var(--bubble-opacity, 1) * 100%), transparent);
     color: var(--bubble-human-fg);
     border: 0;
     box-shadow: 0 10px 28px rgba(78, 94, 108, 0.08);
   }
+  /* Claude 气泡框「去掉」:AI 回复无底框/无阴影,纯文字铺在背景上(设置页开关) */
+  .app.ai-flat .row.ai .bubble{
+    background: transparent !important;
+    box-shadow: none !important;
+    padding-left: 2px; padding-right: 2px;
+    max-width: 100%;                 /* 去气泡后不早换行,占满整行再折下一行 */
+  }
+  .app.ai-flat.hide-ai-avatar .row.ai .bubble{ max-width: 100%; }   /* 盖过 hide-avatar 的 560px 限制 */
+  /* 去气泡时每条 AI 消息顶部显示名字(同顶栏,--ai-name 由 JS 跟 applyRemark 同步) */
+  .app.ai-flat .row.ai .bubble::before{
+    content: var(--ai-name, "");
+    display: block;
+    font-family: var(--topbar-font, var(--font-en), var(--font-cn));
+    font-size: 12.5px; font-weight: 600;
+    color: var(--text-faint);
+    margin: 0 0 3px 2px; letter-spacing: .02em;
+  }
+  .app.ai-flat .row.ai .bubble.att-only::before{ content: none; }   /* 纯图片消息不加名字 */
   /* 每段最后一条:外下角收一个小尖 */
   .row.ai.tail .bubble{ border-bottom-left-radius: 2px; }
   .row.human.tail .bubble{ border-bottom-right-radius: 2px; }
@@ -673,7 +772,7 @@
     margin: 0 auto clamp(16px, 2.6vw, 24px);
     color: var(--think-body);
     font-family: var(--font-cn);
-    font-size: clamp(12px, 1.25vw, 13.5px);
+    font-size: calc(clamp(12px, 1.25vw, 13.5px) * var(--font-scale, 1));
     line-height: 1.72;
     text-align: center;
     white-space: normal;
@@ -1084,6 +1183,52 @@
     font-family: var(--font-en), var(--font-cn); font-size:11.5px;
   }
 
+  /* quota card(Claude 订阅额度)*/
+  .quota-list{ display:flex; flex-direction:column; gap:11px; }
+  .quota-row{ display:flex; flex-direction:column; gap:5px; }
+  .quota-top{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-size:12.5px; color:var(--text-soft);
+    font-family: var(--font-en), var(--font-cn);
+  }
+  .quota-top b{ color:var(--text); font-weight:500; font-size:13px; }
+  .quota-bar{ height:6px; border-radius:999px; background:var(--slider-track); overflow:hidden; }
+  .quota-fill{ height:100%; border-radius:999px; background:var(--slider-thumb); transition:width .4s ease; }
+  .quota-fill.warn{ background:#c9873f; }
+  .quota-fill.crit{ background:#c25b4a; }
+
+  /* API 用量卡 */
+  .apistats-grid{ display:grid; grid-template-columns:repeat(2, 1fr); gap:8px 14px; }
+  .apistats-item{ display:flex; flex-direction:column; gap:2px; }
+  .apistats-item span{ font-size:11px; color:var(--text-dim); }
+  .apistats-item b{ font-size:14px; font-weight:500; color:var(--text); font-variant-numeric:tabular-nums; }
+  .apistats-foot{ margin-top:9px; font-size:11px; color:var(--text-dim); line-height:1.5; }
+
+  /* API 接口预设卡 */
+  .preset-list{ display:flex; flex-direction:column; gap:8px; }
+  .preset-row{
+    display:flex; align-items:center; gap:10px; padding:9px 11px; border-radius:12px;
+    background:var(--slider-track); cursor:pointer; border:1px solid transparent;
+  }
+  .preset-row.active{ border-color:var(--slider-thumb); }
+  .preset-info{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .preset-info b{ font-size:13px; font-weight:500; color:var(--text); }
+  .preset-info span{ font-size:11px; color:var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .preset-del{ border:none; background:none; color:var(--text-dim); font-size:15px; padding:4px 6px; cursor:pointer; }
+  .preset-form{ display:flex; flex-direction:column; gap:8px; margin-top:9px; }
+  .preset-form input{
+    padding:9px 11px; border-radius:10px; border:1px solid var(--slider-track);
+    background:var(--bg); color:var(--text); font-size:13px;
+  }
+  .preset-form-btns{ display:flex; gap:8px; }
+
+  /* 隐藏 AI 头像:AI 气泡横向加宽,吃回头像占的那块(本机偏好,类挂在 #app 上) */
+  .app.hide-ai-avatar .row.ai{ padding-left: 0; }
+  .app.hide-ai-avatar .row.ai::before{ display: none; }
+  .app.hide-ai-avatar .row.think:not(.think-open){ padding-left: 0; }
+  .app.hide-ai-avatar .row.ai .bubble{ max-width: min(72vw, 560px); }
+  .app.hide-ai-avatar .think-block:not(.open){ width: min(72vw, 560px); max-width: min(72vw, 560px); }
+
   /* action rows */
   .action-row{
     display:flex; align-items:center; gap:13px;
@@ -1141,7 +1286,9 @@
     .peerpill .status{ font-size: 12px; margin-top: 3px; }
     .backbtn{ left: 16px; top: calc(env(safe-area-inset-top) + 16px); width: 32px; height: 32px; }
     .backbtn svg{ width: 20px; height: 20px; }
-    .header-actions{ right: 16px; top: calc(env(safe-area-inset-top) + 16px); gap: 26px; height:32px; }
+    .topbar > .topbtn.sessions{ left: 58px; top: calc(env(safe-area-inset-top) + 16px); }
+    .topbar > .topbtn.search{ left: 100px; top: calc(env(safe-area-inset-top) + 16px); }
+    .header-actions{ right: 16px; top: calc(env(safe-area-inset-top) + 16px); gap: 14px; height:32px; }
     .topbtn{ width:32px; height:32px; }
     .topbtn svg{ width:22px; height:22px; }
     .topbtn.more svg{ width:20px; height:20px; }
@@ -1149,7 +1296,7 @@
     .row{ margin-top: 18px; }
     .row.grouped{ margin-top: 8px; }
     .row.ai{ padding-left: 42px; }
-    .bubble{ max-width: min(63vw, 520px); font-size: 13.5px; line-height: 1.56; padding: 8px 13px 8px; }
+    .bubble{ max-width: min(63vw, 520px); font-size: calc(13.5px * var(--font-scale, 1)); line-height: 1.56; padding: 8px 13px 8px; }
     .meta{ font-size: 11px; margin-left: 8px; }
     .day{ font-size: 12px; }
     .new-divider{ font-size: 12px; margin: 14px 0 10px; }
@@ -1167,7 +1314,7 @@
     .think-caption{ font-size: 12.5px; letter-spacing: .07em; }
     .think-caption-star, .think-state{ font-size: 1.2em; }
     .think-body{ margin-top: 12px; }
-    .think-text{ width: min(86%, 360px); font-size: 12px; line-height: 1.66; }
+    .think-text{ width: min(86%, 360px); font-size: calc(12px * var(--font-scale, 1)); line-height: 1.66; }
     .think-star svg{ width: 22px; height: 22px; }
     .profile-identity{ gap:15px; padding-bottom:14px; }
     .profile-avatar{ width:72px; height:72px; }
@@ -1851,10 +1998,13 @@
       <span class="name" id="peerName">Claude</span>
       <span class="status" id="status">connecting…</span>
     </div>
+    <button class="topbtn sessions" id="sessionBtn" type="button" aria-label="API 窗口" title="API 窗口">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="14" height="14" rx="3"/><path d="M8 3h9a4 4 0 0 1 4 4v9"/></svg>
+    </button>
+    <button class="topbtn search" id="searchBtn" type="button" aria-label="搜索聊天记录" title="搜索聊天记录">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+    </button>
     <div class="header-actions" aria-label="通话和更多操作">
-      <button class="topbtn sessions" id="sessionBtn" type="button" aria-label="API 窗口" title="API 窗口">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="14" height="14" rx="3"/><path d="M8 3h9a4 4 0 0 1 4 4v9"/></svg>
-      </button>
       <button class="topbtn terminal" id="terminalBtn" type="button" aria-label="终端视图" title="终端视图">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="m6 8 4 4-4 4"/><path d="M12 16h6"/></svg>
       </button>
@@ -1873,6 +2023,16 @@
       <button class="session-new" id="sessionNewBtn" type="button">新对话</button>
     </div>
     <div class="session-list" id="sessionList"></div>
+  </div>
+  <div class="search-panel" id="searchPanel" hidden>
+    <div class="search-bar">
+      <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg>
+      <input type="search" id="searchInput" placeholder="搜索所有聊天记录…" autocomplete="off" enterkeyhint="search">
+      <button class="search-close" id="searchClose" type="button" aria-label="关闭搜索">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="search-results" id="searchResults"></div>
   </div>
   <main class="scroll" id="scroll">
     <div class="empty" id="empty">
@@ -1980,15 +2140,16 @@
         <div class="push-hint" id="brainHint"></div>
       </section>
 
-      <!-- 模型选择（占位 · 假按键，以后接真切换）-->
+      <!-- 模型选择（真切换 · 只对 API 身体生效，改 api_loop 主链模型）-->
       <section class="settings-card">
-        <div class="settings-label">模型选择</div>
+        <div class="settings-label">模型选择 <i class="info-i" title="只对 API 身体生效。Desktop 是终端里的 Claude Code 会话，不受这里控制。">i</i></div>
         <div class="segmented" id="modelSeg" role="group" aria-label="模型选择">
           <button type="button" data-val="Opus 4.6">Opus 4.6</button>
-          <button type="button" data-val="Opus 4.7" class="active">Opus 4.7</button>
+          <button type="button" data-val="Opus 4.7">Opus 4.7</button>
           <button type="button" data-val="Opus 4.8">Opus 4.8</button>
           <button type="button" data-val="Fable 5">Fable 5</button>
         </div>
+        <div class="push-hint" id="modelHint"></div>
       </section>
 
       <!-- effort（占位 · 假按键）-->
@@ -2003,16 +2164,120 @@
         </div>
       </section>
 
-      <!-- 上下文阈值（占位 · 假按键）-->
+      <!-- 上下文阈值（真 · 满线自动 swap 桌面会话）-->
       <section class="settings-card">
-        <div class="settings-label">上下文阈值 <i class="info-i" title="上下文阈值：保留多少 / 满多少触发">i</i></div>
+        <div class="settings-label">上下文阈值 <i class="info-i" title="Desktop 会话的上下文满到触发线时自动 swap（交接重开）。自动开关默认关，手动 swap 不受影响。">i</i></div>
         <div class="context-slider-wrap">
-          <input class="context-slider" id="contextSlider" type="range" min="0" max="100" value="40" aria-label="上下文阈值">
-          <div class="context-scale"><span>保留60k</span><span>满200k触发</span></div>
+          <input class="context-slider" id="contextSlider" type="range" min="80" max="500" step="20" value="200" aria-label="上下文触发线">
+          <div class="context-scale"><button type="button" class="session-new" id="ctxAutoBtn">自动 swap:关</button><span id="ctxTriggerLabel">满200k触发</span></div>
         </div>
       </section>
 
-      <!-- reset（占位 · 假按键）-->
+      <!-- Claude 额度（真 · 读 Claude Code 的账号用量接口）-->
+      <section class="settings-card">
+        <div class="settings-label">Claude 额度 <i class="info-i" title="订阅侧限额：5 小时窗口 + 周窗口。数据来自 Claude Code 登录账号的用量接口，约一分钟缓存。">i</i></div>
+        <div class="quota-list" id="quotaList"><div class="push-hint">加载中…</div></div>
+      </section>
+
+      <!-- API 用量监控（真 · api_loop 统计 relay 里的回复 usage）-->
+      <section class="settings-card">
+        <div class="settings-label">API 用量 <i class="info-i" title="API 身体的 token 用量与估价。估价按 Anthropic 官方美元价折算，中转实际计费可能有倍率，看趋势用。">i</i></div>
+        <div class="apistats-list" id="apiStatsList"><div class="push-hint">加载中…</div></div>
+      </section>
+
+      <!-- API 接口预设（真 · 存在电脑的 api_loop.config.json，天然同步）-->
+      <section class="settings-card">
+        <div class="settings-label">API 接口 <i class="info-i" title="API 身体用哪家接口。预设存在电脑上，手机只是遥控器。切换后立即生效，只影响 API 模式。">i</i></div>
+        <div class="preset-list" id="presetList"><div class="push-hint">加载中…</div></div>
+        <form class="preset-form" id="presetForm" hidden>
+          <input type="text" id="presetName" placeholder="名字（如 dzzi / OpenRouter）" autocomplete="off">
+          <input type="url" id="presetUrl" placeholder="地址（https://…/v1）" autocomplete="off">
+          <input type="password" id="presetKey" placeholder="API Key" autocomplete="off">
+          <input type="text" id="presetModel" placeholder="模型 id" autocomplete="off">
+          <div class="preset-form-btns">
+            <button type="submit" class="session-new">保存</button>
+            <button type="button" class="session-new" id="presetCancelBtn">取消</button>
+          </div>
+        </form>
+        <button type="button" class="session-new" id="presetAddBtn" style="margin-top:9px;">＋ 添加接口</button>
+      </section>
+
+      <!-- 头像显示（本机偏好，不走后端）-->
+      <section class="settings-card">
+        <div class="settings-label">头像显示 <i class="info-i" title="隐藏后，气泡横向加宽，吃回头像原本占的位置。只存在这台设备上。">i</i></div>
+        <div class="segmented" id="avatarSeg" role="group" aria-label="头像显示">
+          <button type="button" data-val="show" class="active">显示</button>
+          <button type="button" data-val="hide">隐藏</button>
+        </div>
+      </section>
+
+      <!-- 聊天字体（本机偏好，系统自带中文字体，不下载）-->
+      <section class="settings-card">
+        <div class="settings-label">聊天字体 <i class="info-i" title="换聊天气泡的字体，用的都是系统自带字体，不额外下载。只存在这台设备上。">i</i></div>
+        <div class="segmented" id="chatFontSeg" role="group" aria-label="聊天字体">
+          <button type="button" data-val="song" class="active">宋体</button>
+          <button type="button" data-val="hei">黑体</button>
+          <button type="button" data-val="yuan">圆体</button>
+          <button type="button" data-val="kai">楷体</button>
+        </div>
+      </section>
+
+      <!-- 顶栏字体（本机偏好，单独控制顶栏名字，含好看的花体英文）-->
+      <section class="settings-card">
+        <div class="settings-label">顶栏字体 <i class="info-i" title="只换顶栏名字的字体，和聊天气泡分开。花体是专为英文设计的衬线体，Claude 这种英文名会更好看。只存在这台设备上。">i</i></div>
+        <div class="segmented" id="topbarFontSeg" role="group" aria-label="顶栏字体">
+          <button type="button" data-val="song" class="active">宋体</button>
+          <button type="button" data-val="serif">花体</button>
+          <button type="button" data-val="script">手写</button>
+          <button type="button" data-val="hei">黑体</button>
+          <button type="button" data-val="yuan">圆体</button>
+        </div>
+      </section>
+
+      <!-- 字体大小（本机偏好，气泡+思考块按倍率缩放）-->
+      <section class="settings-card">
+        <div class="settings-label">字体大小 <i class="info-i" title="聊天气泡和思考块的文字按倍率缩放。只存在这台设备上。">i</i></div>
+        <div class="context-slider-wrap">
+          <input class="context-slider" id="fontSlider" type="range" min="85" max="135" step="5" value="100" aria-label="字体大小">
+          <div class="context-scale"><button type="button" class="session-new" id="fontResetBtn">恢复默认</button><span id="fontSizeLabel">100%</span></div>
+        </div>
+      </section>
+
+      <!-- 聊天背景（本机偏好，自定义图片 + 透明度）-->
+      <section class="settings-card">
+        <div class="settings-label">聊天背景 <i class="info-i" title="给聊天换张自定义背景图，透明度控制它盖过默认壁纸的程度。图片只存在这台设备上。">i</i></div>
+        <div class="context-slider-wrap">
+          <input class="context-slider" id="bgOpacitySlider" type="range" min="0" max="100" step="5" value="100" aria-label="背景透明度">
+          <div class="context-scale">
+            <span style="display:flex; gap:8px;">
+              <button type="button" class="session-new" id="bgPickBtn">选择图片</button>
+              <button type="button" class="session-new" id="bgResetBtn">恢复默认</button>
+            </span>
+            <span id="bgOpacityLabel">不透明</span>
+          </div>
+        </div>
+        <input type="file" id="bgInput" accept="image/*" class="hidden" aria-hidden="true">
+      </section>
+
+      <!-- 气泡透明度（本机偏好，底色兑透明）-->
+      <section class="settings-card">
+        <div class="settings-label">气泡透明度 <i class="info-i" title="聊天气泡的底色透明度，越低越能透出背景。只存在这台设备上。">i</i></div>
+        <div class="context-slider-wrap">
+          <input class="context-slider" id="bubbleOpacitySlider" type="range" min="0" max="100" step="5" value="100" aria-label="气泡透明度">
+          <div class="context-scale"><button type="button" class="session-new" id="bubbleOpacityReset">恢复默认</button><span id="bubbleOpacityLabel">100%</span></div>
+        </div>
+      </section>
+
+      <!-- Claude 气泡框显示/去掉（本机偏好）-->
+      <section class="settings-card">
+        <div class="settings-label">Claude 气泡框 <i class="info-i" title="去掉后，Claude 的回复不套气泡框，像纯文字直接铺在背景上。只存在这台设备上。">i</i></div>
+        <div class="segmented" id="aiBubbleSeg" role="group" aria-label="Claude 气泡框">
+          <button type="button" data-val="on" class="active">显示</button>
+          <button type="button" data-val="off">去掉</button>
+        </div>
+      </section>
+
+      <!-- reset（真 · 重启桌面会话开新窗口）-->
       <button class="action-row" id="resetRow" type="button">
         <span class="action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></svg></span>
         <span class="action-name">reset</span>
@@ -2020,11 +2285,11 @@
         <span class="action-chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
       </button>
 
-      <!-- swap（占位 · 假按键）-->
+      <!-- swap（真 · 交接重开:带最近对话原文开新窗口）-->
       <button class="action-row" id="swapRow" type="button">
         <span class="action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4"/><path d="M3 8h13a4 4 0 0 1 4 4"/><path d="m17 20 4-4-4-4"/><path d="M21 16H8a4 4 0 0 1-4-4"/></svg></span>
         <span class="action-name">swap</span>
-        <span class="action-value">切换至上一个 resume</span>
+        <span class="action-value">交接重开,带走最近对话</span>
         <span class="action-chevron"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></span>
       </button>
 
@@ -2229,9 +2494,9 @@
 /* ── identity / branding — the ONE place to set names + app title ── */
 const CONFIG = {
   APP_NAME:   "Tidal Echo",  // app + menu title (and manifest, set there too)
-  AI_NAME:    "Claude",       // your AI companion's display name (header / call / push / narration)
-  HUMAN_NAME: "你",           // how you're referred to in narration (rarely shown)
-  SINCE:      "2026/01/01",   // "together since" date YYYY/MM/DD for the menu counter ("" hides it)
+  AI_NAME:    "小克",         // your AI companion's display name (header / call / push / narration)
+  HUMAN_NAME: "小雪",         // how you're referred to in narration (rarely shown)
+  SINCE:      "2026/05/27",   // "together since" date YYYY/MM/DD for the menu counter ("" hides it)
 };
 const AI_NAME = CONFIG.AI_NAME, HUMAN_NAME = CONFIG.HUMAN_NAME, APP_NAME = CONFIG.APP_NAME;
 
@@ -2351,6 +2616,8 @@ function applyRemark(value){
   const name = (value || "").trim() || AI_NAME;
   if (peerNameEl) peerNameEl.textContent = name;
   if (profileNameEl) profileNameEl.textContent = name;
+  // 去气泡时每条 AI 消息顶部的名字标签用它(CSS content: var(--ai-name))
+  if (appEl) appEl.style.setProperty("--ai-name", JSON.stringify(name));
 }
 /* Push CONFIG names/branding onto every static UI surface — names live in one place. */
 function applyIdentity(){
@@ -2379,6 +2646,10 @@ function openProfile(){
   // double rAF so the slide-in runs from the off-screen state
   requestAnimationFrame(() => requestAnimationFrame(() => profilePanel.classList.add("open")));
   refreshContextStatus();
+  refreshModelRow();    // 每次打开设置都同步一次当前身体的模型
+  loadQuota();          // 额度卡(relay 侧有 ~60s 缓存,放心刷)
+  loadApiStats();       // API 用量卡
+  loadPresets();        // API 接口预设卡
 }
 function closeProfile(){
   if (!profilePanel) return;
@@ -3151,17 +3422,529 @@ function wireSegmented(seg, storeKey){
     try{ localStorage.setItem(storeKey, b.dataset.val); }catch(_){}
   });
 }
-wireSegmented(modelSeg, "companion_pick_model");
 wireSegmented(effortSeg, "companion_pick_effort");
 
-if (contextSlider){
-  const savedContext = localStorage.getItem("companion_pick_context");
-  if (savedContext !== null && savedContext !== "") contextSlider.value = savedContext;
-  contextSlider.addEventListener("input", () => { try{ localStorage.setItem("companion_pick_context", contextSlider.value); }catch(_){} });
+/* ── 模型选择(真切换)──
+   按当前「联系 Claude」目标分流:
+   - API 身体:改 api_loop 主链第 0 路,经 relay /app/loop_config 透传,即时生效
+   - Desktop:存 relay /app/desktop_model,swap 重启 CC 会话带 --model 生效(会断档几十秒) */
+const MODEL_IDS = {
+  "Opus 4.6": "[按量]claude-opus-4-6-thinking",
+  "Opus 4.7": "[按量]claude-opus-4-7-thinking",
+  "Opus 4.8": "[按量]claude-opus-4-8-thinking",
+  "Fable 5":  "[按量]claude-fable-5-thinking",
+};
+/* OpenRouter 的模型命名不同——四按钮按当前接口自动换方言(2026-07-04 实测 id) */
+const OR_MODEL_IDS = {
+  "Opus 4.6": "anthropic/claude-opus-4.6",
+  "Opus 4.7": "anthropic/claude-opus-4.7",
+  "Opus 4.8": "anthropic/claude-opus-4.8",
+  "Fable 5":  "anthropic/claude-fable-5",
+};
+let loopChainUrl = "";
+function modelMap(){ return loopChainUrl.includes("openrouter.ai") ? OR_MODEL_IDS : MODEL_IDS; }
+const DESKTOP_MODEL_IDS = {
+  "Opus 4.6": "claude-opus-4-6",
+  "Opus 4.7": "claude-opus-4-7",
+  "Opus 4.8": "claude-opus-4-8",
+  "Fable 5":  "claude-fable-5[1m]",
+};
+let brainNow = "desktop";   // setBrainUi 维护;决定模型按钮控制哪个身体
+const modelHint = $("#modelHint");
+let loopChainLen = 1;      // 主链路数:POST 时按 index 带上所有路,只改第 0 路,别把 fallback 丢了
+function applyModelConfig(d, fallbackId){
+  const chain = Array.isArray(d && d.main_chain) ? d.main_chain : [];
+  loopChainLen = Math.max(1, chain.length);
+  loopChainUrl = (chain[0] && chain[0].url) || loopChainUrl;
+  const modelId = (chain[0] && chain[0].model) || fallbackId || "";
+  const map = modelMap();
+  const val = Object.keys(map).find(k => map[k] === modelId) || "";
+  if (modelSeg) modelSeg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.val === val));
+  if (modelHint) modelHint.textContent = modelId ? (val ? `API 身体当前:${modelId}` : `API 身体当前:${modelId}(不在预设里)`) : "";
+  return modelId;
 }
+async function loadModel(){
+  if (USE_MOCK || !secret || !modelSeg) return;
+  try{
+    const r = await fetch(`${API_BASE}/app/loop_config`, { headers: authHeaders() });
+    if (!r.ok) throw new Error("loop_config " + r.status);
+    applyModelConfig(await r.json());
+  }catch(_){
+    if (modelHint) modelHint.textContent = "读不到 API 身体配置(api_loop 没在跑?)";
+  }
+}
+async function saveModel(val){
+  const modelId = modelMap()[val];
+  if (!modelId) return;
+  try{
+    const rows = [];
+    for (let i = 0; i < loopChainLen; i++) rows.push(i === 0 ? { index: 0, model: modelId } : { index: i });
+    const r = await fetch(`${API_BASE}/app/loop_config`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ main_chain: rows })
+    });
+    if (!r.ok) throw new Error("loop_config " + r.status);
+    applyModelConfig(await r.json(), modelId);
+    showToast("API 模型已切到 " + val);
+  }catch(_){ showToast("模型切换失败"); }
+}
+/* Desktop 侧:读/存 relay 的 desktop_model,存的时候默认触发 swap 重启 */
+async function loadDesktopModel(){
+  if (USE_MOCK || !secret || !modelSeg) return;
+  try{
+    const r = await fetch(`${API_BASE}/app/desktop_model`, { headers: authHeaders() });
+    if (!r.ok) throw new Error("desktop_model " + r.status);
+    const d = await r.json();
+    const modelId = d.model || "";
+    const val = Object.keys(DESKTOP_MODEL_IDS).find(k => DESKTOP_MODEL_IDS[k] === modelId) || "";
+    modelSeg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.val === val));
+    if (modelHint) modelHint.textContent = modelId
+      ? `Desktop 当前:${modelId}(切换会 swap 重启会话)`
+      : "Desktop 当前:默认模型(切换会 swap 重启会话)";
+  }catch(_){
+    if (modelHint) modelHint.textContent = "读不到 Desktop 模型配置";
+  }
+}
+async function saveDesktopModel(val, clearing){
+  const modelId = clearing ? "" : DESKTOP_MODEL_IDS[val];
+  if (!clearing && !modelId) return;
+  const label = clearing ? "默认模型" : val;
+  if (!window.confirm(`Desktop 切到 ${label}?\n会 swap 重启会话,断档几十秒,最近对话会交接过去。`)) return;
+  try{
+    const r = await fetch(`${API_BASE}/app/desktop_model`, {
+      method: "POST",
+      headers: { ...authHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ model: modelId })
+    });
+    if (!r.ok) throw new Error("desktop_model " + r.status);
+    const d = await r.json();
+    loadDesktopModel();
+    showToast(d.applied ? `Desktop 正在换成 ${label},稍等它回来` : (d.note || "已记住,下次重启生效"));
+  }catch(_){ showToast("Desktop 模型切换失败"); }
+}
+/* 按当前身体分流;刷新入口统一走 refreshModelRow */
+function refreshModelRow(){
+  if (brainNow === "desktop") loadDesktopModel();
+  else loadModel();
+}
+if (modelSeg){
+  modelSeg.addEventListener("click", e => {
+    const b = e.target.closest("button[data-val]");
+    if (!b) return;
+    if (brainNow === "desktop"){
+      const active = b.classList.contains("active");
+      saveDesktopModel(b.dataset.val, active);   // 点已选中的=恢复默认
+    } else {
+      saveModel(b.dataset.val);
+    }
+  });
+}
+
+/* ── 上下文阈值(真)── 触发线 + 自动 swap 开关,存在 relay 侧 */
+const ctxAutoBtn = $("#ctxAutoBtn"), ctxTriggerLabel = $("#ctxTriggerLabel");
+let ctxAuto = false;
+function applyThresholdUi(trigger_k, auto){
+  ctxAuto = !!auto;
+  if (contextSlider && document.activeElement !== contextSlider) contextSlider.value = trigger_k;
+  if (ctxTriggerLabel) ctxTriggerLabel.textContent = `满${trigger_k}k触发`;
+  if (ctxAutoBtn) ctxAutoBtn.textContent = "自动 swap:" + (ctxAuto ? "开" : "关");
+}
+async function saveThreshold(patch){
+  try{
+    const r = await fetch(`${API_BASE}/app/context_threshold`, {
+      method:"POST",
+      headers:{ ...authHeaders(), "Content-Type":"application/json" },
+      body:JSON.stringify(patch)
+    });
+    if (!r.ok) throw new Error("threshold " + r.status);
+    const d = await r.json();
+    applyThresholdUi(d.trigger_k, d.auto);
+    if ("auto" in patch) showToast(d.auto ? "自动 swap 已开" : "自动 swap 已关");
+  }catch(_){ showToast("阈值保存失败"); }
+}
+if (contextSlider){
+  contextSlider.addEventListener("input", () => {
+    if (ctxTriggerLabel) ctxTriggerLabel.textContent = `满${contextSlider.value}k触发`;
+  });
+  contextSlider.addEventListener("change", () => saveThreshold({ trigger_k: Number(contextSlider.value) }));
+}
+if (ctxAutoBtn) ctxAutoBtn.addEventListener("click", () => {
+  if (!ctxAuto && !window.confirm("开启后,Desktop 会话的上下文满到触发线会自动 swap(交接重开)。确认?")) return;
+  saveThreshold({ auto: !ctxAuto });
+});
+
+/* ── Claude 额度(真)── relay 代理 CC 账号的 oauth 用量接口 */
+const quotaList = $("#quotaList");
+const QUOTA_LABELS = {
+  five_hour: "5 小时窗口",
+  seven_day: "本周(全模型)",
+  seven_day_opus: "本周 Opus",
+  seven_day_sonnet: "本周 Sonnet",
+  seven_day_oauth_apps: "本周 OAuth 应用",
+};
+function quotaLabel(key){
+  if (QUOTA_LABELS[key]) return QUOTA_LABELS[key];
+  if (/fable/i.test(key)) return "本周 Fable";
+  if (/opus/i.test(key)) return "本周 Opus";
+  return key.replace(/_/g, " ");
+}
+function quotaResetText(iso){
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const mins = Math.max(0, Math.round((t - Date.now()) / 60000));
+  if (mins < 60) return `${mins}分后重置`;
+  const h = Math.floor(mins / 60);
+  if (h < 48) return `${h}小时后重置`;
+  return `${Math.round(h / 24)}天后重置`;
+}
+function renderQuota(raw){
+  if (!quotaList) return;
+  const rows = [];
+  (function walk(obj, depth){
+    if (!obj || typeof obj !== "object" || depth > 3) return;
+    for (const [k, v] of Object.entries(obj)){
+      if (!v || typeof v !== "object") continue;
+      if ("utilization" in v){
+        let pct = Number(v.utilization);
+        if (!Number.isFinite(pct)) continue;
+        if (pct > 0 && pct <= 1) pct *= 100;          // 兼容 0-1 小数与 0-100 整数两种口径
+        rows.push({ key: k, pct: Math.min(100, Math.round(pct)), resets: v.resets_at || v.resetsAt || "" });
+      } else walk(v, depth + 1);
+    }
+  })(raw, 0);
+  if (!rows.length){
+    quotaList.innerHTML = '<div class="push-hint">拿到了响应但没解析出额度窗口</div>';
+    return;
+  }
+  quotaList.innerHTML = rows.map(r => {
+    const cls = r.pct >= 90 ? " crit" : (r.pct >= 70 ? " warn" : "");
+    const reset = quotaResetText(r.resets);
+    return `<div class="quota-row">
+      <div class="quota-top"><b>${quotaLabel(r.key)}</b><span>${r.pct}%${reset ? " · " + reset : ""}</span></div>
+      <div class="quota-bar"><div class="quota-fill${cls}" style="width:${r.pct}%"></div></div>
+    </div>`;
+  }).join("");
+}
+async function loadQuota(){
+  if (USE_MOCK || !secret || !quotaList) return;
+  try{
+    const r = await fetch(`${API_BASE}/app/quota`, { headers: authHeaders() });
+    if (!r.ok) throw new Error("quota " + r.status);
+    const d = await r.json();
+    renderQuota(d.raw || d);
+  }catch(_){
+    quotaList.innerHTML = '<div class="push-hint">额度读取失败(token 过期或接口没通)</div>';
+  }
+}
+
+/* ── API 用量卡 ── api_loop /loop/stats 经 relay 透传 */
+const apiStatsList = $("#apiStatsList");
+function fmtTok(n){
+  n = Number(n) || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+  return String(n);
+}
+async function loadApiStats(){
+  if (USE_MOCK || !secret || !apiStatsList) return;
+  try{
+    const r = await fetch(`${API_BASE}/app/loop_stats`, { headers: authHeaders() });
+    if (!r.ok) throw new Error("stats " + r.status);
+    const d = await r.json();
+    const t = d.total || {}, a = d.avg_per_message || {};
+    const hitPct = Math.round((d.cache_hit_rate || 0) * 100);
+    const ka = d.keepalive || {};
+    apiStatsList.innerHTML = `
+      <div class="apistats-grid">
+        <div class="apistats-item"><span>消息数</span><b>${d.messages || 0}</b></div>
+        <div class="apistats-item"><span>缓存命中率</span><b>${hitPct}%</b></div>
+        <div class="apistats-item"><span>输入(全价)</span><b>${fmtTok(t.input)}</b></div>
+        <div class="apistats-item"><span>输出</span><b>${fmtTok(t.output)}</b></div>
+        <div class="apistats-item"><span>缓存命中</span><b>${fmtTok(t.cache_read)}</b></div>
+        <div class="apistats-item"><span>缓存写入</span><b>${fmtTok(t.cache_write)}</b></div>
+        <div class="apistats-item"><span>累计估价</span><b>$${(d.total_cost_usd || 0).toFixed(2)}</b></div>
+        <div class="apistats-item"><span>每条均价</span><b>$${(a.cost_usd || 0).toFixed(4)}</b></div>
+      </div>
+      <div class="apistats-foot">心跳 ${ka.beats || 0} 针 ≈ $${(ka.cost_usd || 0).toFixed(3)}${ka.bad_count ? ` · <span style="color:#c25b4a">连续坏针 ${ka.bad_count}</span>` : ""} · 缓存 ${d.cache_ttl || "?"} · 官方价估算仅看趋势</div>`;
+  }catch(_){
+    apiStatsList.innerHTML = '<div class="push-hint">用量读取失败(api_loop 没起或接口没通)</div>';
+  }
+}
+
+/* ── API 接口预设 ── 存电脑 api_loop.config.json,手机遥控切换 */
+const presetList = $("#presetList"), presetForm = $("#presetForm"), presetAddBtn = $("#presetAddBtn");
+let presetCache = [];
+function renderPresets(rows){
+  presetCache = rows || [];
+  if (!presetList) return;
+  if (!presetCache.length){
+    presetList.innerHTML = '<div class="push-hint">还没有预设,点下面添加</div>';
+    return;
+  }
+  presetList.innerHTML = presetCache.map(p => `
+    <div class="preset-row${p.active ? " active" : ""}" data-idx="${p.index}">
+      <div class="preset-info">
+        <b>${p.name}${p.active ? " · 使用中" : ""}</b>
+        <span>${p.url}</span>
+        <span>${p.model} · ${p.key_masked}</span>
+      </div>
+      ${presetCache.length > 1 ? `<button type="button" class="preset-del" data-del="${p.index}" aria-label="删除">✕</button>` : ""}
+    </div>`).join("");
+}
+async function loadPresets(){
+  if (USE_MOCK || !secret || !presetList) return;
+  try{
+    const r = await fetch(`${API_BASE}/app/loop_config`, { headers: authHeaders() });
+    if (!r.ok) throw new Error("cfg " + r.status);
+    renderPresets((await r.json()).api_presets || []);
+  }catch(_){
+    presetList.innerHTML = '<div class="push-hint">接口列表读取失败(api_loop 没起?)</div>';
+  }
+}
+async function postPresets(body){
+  const r = await fetch(`${API_BASE}/app/loop_config`, {
+    method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+  const d = await r.json();
+  renderPresets(d.api_presets || []);
+  applyModelConfig(d);   // 换接口后模型按钮跟着换方言
+}
+if (presetList) presetList.addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del){
+    const idx = Number(del.dataset.del);
+    const p = presetCache.find(x => x.index === idx);
+    if (!p || !confirm(`删除接口「${p.name}」?`)) return;
+    const rows = presetCache.filter(x => x.index !== idx).map(x => ({ name: x.name, url: x.url, key: "", model: x.model }));
+    try{ await postPresets({ api_presets: rows }); }catch(err){ alert("删除失败: " + err.message); }
+    return;
+  }
+  const row = e.target.closest(".preset-row");
+  if (!row) return;
+  const idx = Number(row.dataset.idx);
+  const p = presetCache.find(x => x.index === idx);
+  if (!p || p.active) return;
+  if (!confirm(`切换到「${p.name}」?\n${p.url}\n${p.model}`)) return;
+  try{ await postPresets({ activate_preset: idx }); }catch(err){ alert("切换失败: " + err.message); }
+});
+if (presetAddBtn) presetAddBtn.addEventListener("click", () => {
+  presetForm.hidden = false;
+  presetAddBtn.hidden = true;
+});
+if ($("#presetCancelBtn")) $("#presetCancelBtn").addEventListener("click", () => {
+  presetForm.hidden = true;
+  presetAddBtn.hidden = false;
+  presetForm.reset();
+});
+if (presetForm) presetForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const row = {
+    name: $("#presetName").value.trim(),
+    url: $("#presetUrl").value.trim(),
+    key: $("#presetKey").value.trim(),
+    model: $("#presetModel").value.trim(),
+  };
+  if (!row.name || !row.url || !row.key || !row.model){ alert("四项都要填"); return; }
+  // 现有预设 key 传空 = 后端沿用旧值,不用在手机上回显明文
+  const rows = presetCache.map(x => ({ name: x.name, url: x.url, key: "", model: x.model })).concat([row]);
+  try{
+    await postPresets({ api_presets: rows });
+    presetForm.hidden = true; presetAddBtn.hidden = false; presetForm.reset();
+  }catch(err){ alert("保存失败: " + err.message); }
+});
+
+/* ── 头像显示/隐藏(本机偏好)── 隐藏时 AI 气泡加宽,吃回头像位 */
+const avatarSeg = $("#avatarSeg");
+const AVATAR_PREF_KEY = "companion_hide_ai_avatar";
+function applyAvatarPref(hide){
+  if (appEl) appEl.classList.toggle("hide-ai-avatar", !!hide);
+  if (avatarSeg) avatarSeg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.val === (hide ? "hide" : "show")));
+}
+applyAvatarPref(localStorage.getItem(AVATAR_PREF_KEY) === "1");
+if (avatarSeg) avatarSeg.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-val]");
+  if (!b) return;
+  const hide = b.dataset.val === "hide";
+  try{ localStorage.setItem(AVATAR_PREF_KEY, hide ? "1" : "0"); }catch(_){}
+  applyAvatarPref(hide);
+});
+
+/* ── 聊天字体(本机偏好)── 写进 --chat-font,只影响气泡;都是系统自带中文字体,不下载 */
+const CHAT_FONT_KEY = "companion_chat_font";
+const chatFontSeg = $("#chatFontSeg");
+const CHAT_FONTS = {
+  song: "",   // 默认:清掉 var,回退到 --font-cn(宋体)
+  hei:  '"PingFang SC","HarmonyOS Sans SC","Miui","Noto Sans SC","Microsoft YaHei",sans-serif',
+  yuan: '"Yuanti SC","Hiragino Sans GB","PingFang SC","Noto Sans SC",sans-serif',
+  kai:  '"Kaiti SC","STKaiti","KaiTi","Noto Serif SC",serif',
+};
+function applyChatFont(val){
+  if (!(val in CHAT_FONTS)) val = "song";
+  if (appEl){
+    if (val === "song") appEl.style.removeProperty("--chat-font");
+    else appEl.style.setProperty("--chat-font", CHAT_FONTS[val]);
+  }
+  if (chatFontSeg) chatFontSeg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.val === val));
+}
+applyChatFont(localStorage.getItem(CHAT_FONT_KEY) || "song");
+if (chatFontSeg) chatFontSeg.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-val]"); if (!b) return;
+  try{ localStorage.setItem(CHAT_FONT_KEY, b.dataset.val); }catch(_){}
+  applyChatFont(b.dataset.val);
+});
+
+/* ── 顶栏字体(本机偏好)── 单独控制顶栏名字,写进 --topbar-font;花体=Cormorant 衬线,英文好看 */
+const TOPBAR_FONT_KEY = "companion_topbar_font";
+const topbarFontSeg = $("#topbarFontSeg");
+const TOPBAR_FONTS = {
+  song:   "",   // 默认:清掉 var,回退到原来的宋体
+  serif:  '"Cormorant Garamond", "Songti SC", Georgia, serif',
+  script: '"Pinyon Script", "Cormorant Garamond", cursive',   // 花体手写,英文名像签名
+  hei:    '"PingFang SC","HarmonyOS Sans SC","Noto Sans SC","Microsoft YaHei",sans-serif',
+  yuan:   '"Yuanti SC","Hiragino Sans GB","PingFang SC","Noto Sans SC",sans-serif',
+};
+function applyTopbarFont(val){
+  if (!(val in TOPBAR_FONTS)) val = "song";
+  if (appEl){
+    if (val === "song") appEl.style.removeProperty("--topbar-font");
+    else appEl.style.setProperty("--topbar-font", TOPBAR_FONTS[val]);
+  }
+  if (topbarFontSeg) topbarFontSeg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.val === val));
+}
+applyTopbarFont(localStorage.getItem(TOPBAR_FONT_KEY) || "song");
+if (topbarFontSeg) topbarFontSeg.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-val]"); if (!b) return;
+  try{ localStorage.setItem(TOPBAR_FONT_KEY, b.dataset.val); }catch(_){}
+  applyTopbarFont(b.dataset.val);
+});
+
+/* ── 字体大小(本机偏好)── 倍率写进 --font-scale,气泡/思考块一起缩放 */
+const fontSlider = $("#fontSlider"), fontSizeLabel = $("#fontSizeLabel"), fontResetBtn = $("#fontResetBtn");
+const FONT_PREF_KEY = "companion_font_scale";
+function applyFontPref(pct){
+  pct = Number(pct) || 100;
+  if (appEl){
+    if (pct === 100) appEl.style.removeProperty("--font-scale");
+    else appEl.style.setProperty("--font-scale", String(pct / 100));
+  }
+  if (fontSizeLabel) fontSizeLabel.textContent = pct === 100 ? "100%(默认)" : pct + "%";
+  if (fontSlider && document.activeElement !== fontSlider) fontSlider.value = pct;
+}
+applyFontPref(localStorage.getItem(FONT_PREF_KEY) || 100);
+if (fontSlider){
+  fontSlider.addEventListener("input", () => applyFontPref(fontSlider.value));   // 拖动即预览
+  fontSlider.addEventListener("change", () => {
+    try{ localStorage.setItem(FONT_PREF_KEY, String(fontSlider.value)); }catch(_){}
+  });
+}
+if (fontResetBtn) fontResetBtn.addEventListener("click", () => {
+  try{ localStorage.removeItem(FONT_PREF_KEY); }catch(_){}
+  applyFontPref(100);
+});
+
+/* 上传前把图片缩到 maxDim 以内并转 JPEG,免得大图 base64 撑爆 localStorage(~5MB) */
+function downscaleImage(file, maxDim, quality){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.naturalWidth, h = img.naturalHeight;
+      const scale = Math.min(1, maxDim / Math.max(w, h || 1));
+      w = Math.max(1, Math.round(w * scale)); h = Math.max(1, Math.round(h * scale));
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(img, 0, 0, w, h);
+      try{ resolve(c.toDataURL("image/jpeg", quality)); }catch(e){ reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("img")); };
+    img.src = url;
+  });
+}
+
+/* ── 聊天背景(本机偏好)── 自定义图片写进 #wall 的 --custom-wall,滑块控 --custom-wall-opacity */
+const BG_IMG_KEY = "companion_custom_bg", BG_OPACITY_KEY = "companion_bg_opacity";
+// wallEl 已在上方声明(#wall),这里直接复用
+const bgInput = $("#bgInput"), bgPickBtn = $("#bgPickBtn"), bgResetBtn = $("#bgResetBtn"),
+      bgOpacitySlider = $("#bgOpacitySlider"), bgOpacityLabel = $("#bgOpacityLabel");
+function applyCustomBg(dataUrl){
+  if (!wallEl) return;
+  if (dataUrl) wallEl.style.setProperty("--custom-wall", `url("${dataUrl}")`);
+  else wallEl.style.removeProperty("--custom-wall");
+}
+function applyBgOpacity(pct){
+  pct = Number(pct); if (!Number.isFinite(pct)) pct = 100;
+  if (wallEl) wallEl.style.setProperty("--custom-wall-opacity", String(pct / 100));
+  if (bgOpacityLabel) bgOpacityLabel.textContent = pct >= 100 ? "不透明" : pct + "%";
+  if (bgOpacitySlider && document.activeElement !== bgOpacitySlider) bgOpacitySlider.value = pct;
+}
+try{ applyCustomBg(localStorage.getItem(BG_IMG_KEY) || ""); }catch(_){}
+applyBgOpacity(localStorage.getItem(BG_OPACITY_KEY) || 100);
+if (bgPickBtn && bgInput) bgPickBtn.addEventListener("click", () => bgInput.click());
+if (bgInput) bgInput.addEventListener("change", () => {
+  const f = bgInput.files && bgInput.files[0];
+  bgInput.value = "";
+  if (!f) return;
+  downscaleImage(f, 1600, 0.82).then((dataUrl) => {
+    try{ localStorage.setItem(BG_IMG_KEY, dataUrl); applyCustomBg(dataUrl); showToast("背景已更新"); }
+    catch(_){ showToast("图片太大存不下,换张小点的"); }
+  }).catch(() => showToast("这张图读不了"));
+});
+if (bgResetBtn) bgResetBtn.addEventListener("click", () => {
+  try{ localStorage.removeItem(BG_IMG_KEY); }catch(_){}
+  applyCustomBg("");
+  showToast("背景已恢复默认");
+});
+if (bgOpacitySlider){
+  bgOpacitySlider.addEventListener("input", () => applyBgOpacity(bgOpacitySlider.value));
+  bgOpacitySlider.addEventListener("change", () => { try{ localStorage.setItem(BG_OPACITY_KEY, String(bgOpacitySlider.value)); }catch(_){} });
+}
+
+/* ── 气泡透明度(本机偏好)── 倍率写进 --bubble-opacity,气泡底色 color-mix 兑透明 */
+const BUBBLE_OPACITY_KEY = "companion_bubble_opacity";
+const bubbleOpacitySlider = $("#bubbleOpacitySlider"), bubbleOpacityLabel = $("#bubbleOpacityLabel"), bubbleOpacityReset = $("#bubbleOpacityReset");
+function applyBubbleOpacity(pct){
+  pct = Number(pct); if (!Number.isFinite(pct)) pct = 100;
+  if (appEl){
+    if (pct >= 100) appEl.style.removeProperty("--bubble-opacity");
+    else appEl.style.setProperty("--bubble-opacity", String(pct / 100));
+  }
+  if (bubbleOpacityLabel) bubbleOpacityLabel.textContent = pct >= 100 ? "100%(默认)" : pct + "%";
+  if (bubbleOpacitySlider && document.activeElement !== bubbleOpacitySlider) bubbleOpacitySlider.value = pct;
+}
+applyBubbleOpacity(localStorage.getItem(BUBBLE_OPACITY_KEY) || 100);
+if (bubbleOpacitySlider){
+  bubbleOpacitySlider.addEventListener("input", () => applyBubbleOpacity(bubbleOpacitySlider.value));
+  bubbleOpacitySlider.addEventListener("change", () => { try{ localStorage.setItem(BUBBLE_OPACITY_KEY, String(bubbleOpacitySlider.value)); }catch(_){} });
+}
+if (bubbleOpacityReset) bubbleOpacityReset.addEventListener("click", () => {
+  try{ localStorage.removeItem(BUBBLE_OPACITY_KEY); }catch(_){}
+  applyBubbleOpacity(100);
+});
+
+/* ── Claude 气泡框显示/去掉(本机偏好)── 去掉时 AI 回复无底框 */
+const AI_FLAT_KEY = "companion_ai_flat";
+const aiBubbleSeg = $("#aiBubbleSeg");
+function applyAiFlat(flat){
+  if (appEl) appEl.classList.toggle("ai-flat", !!flat);
+  if (aiBubbleSeg) aiBubbleSeg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.val === (flat ? "off" : "on")));
+}
+applyAiFlat(localStorage.getItem(AI_FLAT_KEY) === "1");
+if (aiBubbleSeg) aiBubbleSeg.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-val]"); if (!b) return;
+  const flat = b.dataset.val === "off";
+  try{ localStorage.setItem(AI_FLAT_KEY, flat ? "1" : "0"); }catch(_){}
+  applyAiFlat(flat);
+});
 
 function setBrainUi(target){
   const t = target === "loop" ? "loop" : "desktop";
+  const changed = t !== brainNow;
+  brainNow = t;
+  if (changed || !modelHint || !modelHint.textContent) refreshModelRow();  // 模型按钮跟着换控制对象
   if (brainSeg) brainSeg.querySelectorAll("button").forEach(b => b.classList.toggle("active", b.dataset.val === t));
   if (brainHint) brainHint.textContent = t === "loop"
     ? "现在由服务器 API loop 接消息"
@@ -3232,44 +4015,59 @@ function applyContextStatus(s){
     statusSidEl.textContent = "sid: " + shortSid(sid);
     statusSidEl.dataset.sid = sid;
   }
+  if (s.trigger_k) applyThresholdUi(s.trigger_k, s.auto);
 }
 async function apiContextStatus(){
-  // Placeholder: the open relay has no context-control feature — return static demo numbers.
-  return { ok:true, usage_tokens:96000, threshold_k:"200k", active_sid:"demo-session" };
+  // Real: relay reads the desktop CC transcript (usage + sid) and its own
+  // context_ctl.json (threshold / pending sid).
+  if (USE_MOCK || !secret) return { ok:false };
+  const r = await fetch(`${API_BASE}/app/context_status`, { headers: authHeaders() });
+  if (!r.ok) throw new Error("context_status " + r.status);
+  return r.json();
 }
 async function refreshContextStatus(){
-  try{ applyContextStatus(await apiContextStatus()); }catch(_){}
+  try{ applyContextStatus(await apiContextStatus()); }catch(_){ applyContextStatus(null); }
 }
 async function apiContextAction(action, payload = {}){
-  // Placeholder: no context-control backend in the open relay — these settings are demo-only.
-  return { ok:true, command:{ action, payload } };
+  // Real: relay kills/relaunches the desktop CC session (swap = with forge handoff).
+  const r = await fetch(`${API_BASE}/app/context_action`, {
+    method:"POST",
+    headers:{ ...authHeaders(), "Content-Type":"application/json" },
+    body:JSON.stringify({ action, ...payload })
+  });
+  if (!r.ok){
+    let detail = "";
+    try{ detail = (await r.json()).detail || ""; }catch(_){}
+    throw new Error(detail || ("context_action " + r.status));
+  }
+  return r.json();
 }
 
 if (resetRow) resetRow.addEventListener("click", async () => {
-  if (!window.confirm("确认 reset？这会开启一个全新窗口。")) return;
+  if (!window.confirm("确认 reset？会重启 Desktop 会话,开一个全新窗口(不带交接)。")) return;
   try{
-    await apiContextAction("reset");
-    showToast("reset 已记录");
-    setTimeout(refreshContextStatus, 1200);
-  }catch(_){ showToast("reset 发送失败"); }
+    const d = await apiContextAction("reset");
+    showToast("已重开新窗口");
+    setTimeout(refreshContextStatus, 8000);
+  }catch(err){ showToast(String(err.message || "reset 失败")); }
 });
 if (swapRow)  swapRow.addEventListener("click", async () => {
-  if (!window.confirm("确认 swap？会保留尾部上下文并重启当前窗口。")) return;
+  if (!window.confirm("确认 swap？会重启 Desktop 会话,新窗口带上最近对话原文交接。")) return;
   try{
-    await apiContextAction("swap");
-    showToast("swap 已记录");
-    setTimeout(refreshContextStatus, 1200);
-  }catch(_){ showToast("swap 发送失败"); }
+    const d = await apiContextAction("swap");
+    showToast("swap 已触发,交接中…");
+    setTimeout(refreshContextStatus, 8000);
+  }catch(err){ showToast(String(err.message || "swap 失败")); }
 });
 if (resumeRow) resumeRow.addEventListener("click", async () => {
   const sid = pendingContextSid || (statusSidEl && statusSidEl.dataset.sid) || "";
-  if (!sid){ showToast("没有 pending task"); return; }
-  if (!window.confirm("确认 resume pending task？这会重启当前窗口。")) return;
+  if (!sid){ showToast("没有 pending 会话"); return; }
+  if (!window.confirm(`确认 resume？会重启 Desktop 会话并接回 ${shortSid(sid)}。`)) return;
   try{
-    await apiContextAction("resume", { sid });
-    showToast("resume 已记录");
-    setTimeout(refreshContextStatus, 1200);
-  }catch(_){ showToast("resume 发送失败"); }
+    const d = await apiContextAction("resume", { sid });
+    showToast("resume 已触发");
+    setTimeout(refreshContextStatus, 8000);
+  }catch(err){ showToast(String(err.message || "resume 失败")); }
 });
 
 if (statusCopy) statusCopy.addEventListener("click", async () => {
@@ -3513,6 +4311,124 @@ document.addEventListener("click", (e) => {
   if (sessionPop.contains(e.target) || (sessionBtn && sessionBtn.contains(e.target))) return;
   setSessionPopover(false);
 });
+
+/* ════════════ 聊天记录搜索(全部会话) ════════════ */
+const searchBtn = $("#searchBtn"), searchPanel = $("#searchPanel"),
+      searchInput = $("#searchInput"), searchResults = $("#searchResults"),
+      searchClose = $("#searchClose");
+let searchSeq = 0, searchTimer = null;
+
+function sessionTitleFor(sid){
+  if (!sid) return "旧主线 / Desktop 记录";
+  const s = (apiSessions || []).find((x) => x.id === sid);
+  return (s && s.title) || "API 窗口";
+}
+// 取命中词周围一小段,并把段内所有命中处高亮(前后加省略号表示被截断)
+function searchSnippet(text, q){
+  const raw = String(text || ""), low = raw.toLowerCase(), ql = q.toLowerCase();
+  const hit = low.indexOf(ql);
+  if (hit < 0) return escapeHtml(raw.slice(0, 140)) + (raw.length > 140 ? "…" : "");
+  const start = Math.max(0, hit - 40), end = Math.min(raw.length, hit + ql.length + 100);
+  const seg = raw.slice(start, end), segLow = seg.toLowerCase();
+  let out = "", cur = 0, p;
+  while ((p = segLow.indexOf(ql, cur)) >= 0){
+    out += escapeHtml(seg.slice(cur, p)) + "<mark>" + escapeHtml(seg.slice(p, p + ql.length)) + "</mark>";
+    cur = p + ql.length;
+  }
+  out += escapeHtml(seg.slice(cur));
+  return (start > 0 ? "…" : "") + out + (end < raw.length ? "…" : "");
+}
+function renderSearchResults(list, q){
+  if (!q){ searchResults.innerHTML = '<div class="search-hint">输入关键词,搜索你和 Claude 的所有聊天记录。</div>'; return; }
+  if (!list || !list.length){ searchResults.innerHTML = '<div class="search-hint">没有找到「' + escapeHtml(q) + '」。</div>'; return; }
+  searchResults.innerHTML = list.map((m) => {
+    const sid = (m.meta && m.meta.api_session) || "";
+    const who = m.from === "ai" ? "Claude" : "小雪";
+    return `<button class="search-item" type="button" data-id="${escapeHtml(String(m.id))}" data-sess="${escapeHtml(sid)}">
+      <div class="search-item-top">
+        <span class="search-who ${m.from === "ai" ? "ai" : ""}">${who}</span>
+        <span>${escapeHtml(fmtDay(m.ts))}</span>
+        <span class="search-sess">${escapeHtml(sessionTitleFor(sid))}</span>
+      </div>
+      <div class="search-snip">${searchSnippet(m.text, q)}</div>
+    </button>`;
+  }).join("");
+}
+async function runSearch(q){
+  const mySeq = ++searchSeq;
+  if (!q){ renderSearchResults([], ""); return; }
+  try{
+    const r = await fetch(`${API_BASE}/app/search?q=${encodeURIComponent(q)}`, { headers: authHeaders() });
+    if (r.status === 401){ handle401(); return; }
+    if (!r.ok) throw new Error("search " + r.status);
+    const d = await r.json();
+    if (mySeq !== searchSeq) return;                 // 慢响应回来时已有更新的查询 → 丢弃
+    renderSearchResults(d.results || [], q);
+  }catch(_){
+    if (mySeq === searchSeq) searchResults.innerHTML = '<div class="search-hint">搜索出错了,稍后再试。</div>';
+  }
+}
+function openSearch(){
+  if (!secret) return;
+  searchPanel.hidden = false;
+  renderSearchResults([], searchInput.value.trim());
+  setTimeout(() => { searchInput.focus(); searchInput.select(); }, 30);
+}
+function closeSearch(){ if (searchPanel) searchPanel.hidden = true; }
+if (searchBtn) searchBtn.addEventListener("click", openSearch);
+if (searchClose) searchClose.addEventListener("click", closeSearch);
+if (searchInput){
+  searchInput.addEventListener("input", () => {
+    const q = searchInput.value.trim();
+    if (searchTimer) clearTimeout(searchTimer);
+    if (!q){ ++searchSeq; renderSearchResults([], ""); return; }
+    searchTimer = setTimeout(() => runSearch(q), 220);   // 防抖,别每敲一下就打后端
+  });
+  searchInput.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSearch(); });
+}
+if (searchResults) searchResults.addEventListener("click", (e) => {
+  const item = e.target.closest(".search-item");
+  if (item) jumpToSearchResult(item.dataset.id, item.dataset.sess || "");
+});
+// 点搜索结果 → 切到它所在会话、把整段会话载全、滚到该条并高亮闪一下
+async function jumpToSearchResult(id, sessionId){
+  const target = sessionId || LEGACY_SESSION_ID;
+  closeSearch();
+  const key = msgKey(id);
+  if (target !== activeApiSession){
+    activeApiSession = target;
+    try{ localStorage.setItem(SESSION_PICK_KEY, activeApiSession); }catch(_){}
+    resetServerHistoryCache();
+    renderSessionList();
+    const sid = effectiveApiSession();
+    if (sid){
+      try{ await fetch(`${API_BASE}/app/sessions/${encodeURIComponent(sid)}`, {
+        method:"PATCH", headers:{ ...authHeaders(), "Content-Type":"application/json" },
+        body:JSON.stringify({ active:true }) }); }catch(_){}
+    }
+  }
+  let msgs = [];
+  try{ msgs = sessionFiltered(await loadCompleteServerHistory()); }   // 整段会话,不切最近50条,保证目标行在
+  catch(_){ showToast("加载记录失败"); return; }
+  startChat(msgs);
+  requestAnimationFrame(() => requestAnimationFrame(() => jumpToMessageKey(key)));  // 等虚拟列表建好再跳
+}
+function jumpToMessageKey(key){
+  const rowKey = "m:" + key;
+  if (rowsDirty || !virtualRows.length) renderVirtualList();
+  const idx = rowIndexByKey.has(rowKey) ? rowIndexByKey.get(rowKey) : -1;
+  if (idx < 0){ showToast("这条记录不在当前窗口里"); return; }
+  if (prefixSumsDirty) rebuildPrefixSums();
+  scrollEl.scrollTop = Math.max(0, prefixSums[idx] - scrollEl.clientHeight / 2);  // 估高定位到中间
+  renderVirtualList({ recenter:true });                                          // 物化该位置附近的行
+  requestAnimationFrame(() => {
+    const el = scrollEl.querySelector(`[data-vkey="${cssEscape(rowKey)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block:"center", behavior:"smooth" });
+    el.classList.add("jump-flash");
+    setTimeout(() => el.classList.remove("jump-flash"), 1500);
+  });
+}
 
 const HISTORY_FETCH_LIMIT = 500;
 let serverHistoryCache = [];
@@ -5557,6 +6473,7 @@ $("#loginForm").addEventListener("submit", async (e) => {
     // 用 history 验证密钥(401 会抛错)
     await loadSessions();
     loadBrain();
+    refreshModelRow();
     const msgs = await apiLatestHistory();
     localStorage.setItem(LS_KEY, secret);
     startChat(msgs);
@@ -5619,6 +6536,7 @@ async function init(){
   if (!secret){ showLogin(); return; }
   await loadSessions();
   loadBrain();
+  refreshModelRow();
   let showedCache = false;
   const cached = await readCachedMessages();
   if (cached.length){

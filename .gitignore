@@ -30,3 +30,9 @@ Thumbs.db
 *.bak-*
 .idea/
 .vscode/
+
+# local runtime state / private config (backed up via backup.ps1, not git)
+examples/api_loop.config.json
+backend/brain_target
+backend/context_ctl.json
+examples/persona.md

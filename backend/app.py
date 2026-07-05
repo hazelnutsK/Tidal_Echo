@@ -26,6 +26,7 @@ import re
 import secrets
 import subprocess
 import sqlite3
+import sys
 import urllib.error
 import urllib.request
 import urllib.parse
@@ -174,9 +175,12 @@ def set_reaction(message_id, who, emoji):
 
 
 def history(since: int, limit: int) -> list:
+    # hidden = relay-internal frames (forge handoff etc.) — the AI sees them via
+    # /channel/in, the phone must not render them.
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM messages WHERE id > ? ORDER BY id ASC LIMIT ?",
+            "SELECT * FROM messages WHERE id > ? AND json_extract(meta, '$.hidden') IS NULL "
+            "ORDER BY id ASC LIMIT ?",
             (since, limit),
         ).fetchall()
     return rows_to_messages(rows)
@@ -191,6 +195,7 @@ def history_for_session(session_id: str, since: int, limit: int) -> list:
             rows = conn.execute(
                 "SELECT * FROM messages "
                 "WHERE id > ? AND (json_extract(meta, '$.api_session') IS NULL OR json_extract(meta, '$.api_session') = '') "
+                "AND json_extract(meta, '$.hidden') IS NULL "
                 "ORDER BY id ASC LIMIT ?",
                 (since, limit),
             ).fetchall()
@@ -205,9 +210,13 @@ def history_for_session(session_id: str, since: int, limit: int) -> list:
 
 
 def inbound_history(since: int, limit: int) -> list:
+    # meta.routed='loop' = already answered by the API body while the plugin was
+    # not listening; excluded here so a reconnecting CC doesn't re-answer them.
     with db() as conn:
         rows = conn.execute(
-            "SELECT * FROM messages WHERE id > ? AND direction = 'in' ORDER BY id ASC LIMIT ?",
+            "SELECT * FROM messages WHERE id > ? AND direction = 'in' "
+            "AND (json_extract(meta, '$.routed') IS NULL OR json_extract(meta, '$.routed') != 'loop') "
+            "ORDER BY id ASC LIMIT ?",
             (since, limit),
         ).fetchall()
     return rows_to_messages(rows)
@@ -375,11 +384,39 @@ def _forward_to_loop_sync(msg: dict) -> None:
     urllib.request.urlopen(req, timeout=10).read()
 
 
+def _clear_loop_mark(msg_id) -> None:
+    """转发 api_loop 失败时摘掉 routed 标——让 CC 重连回填时兜底接住这条。"""
+    with db() as conn:
+        row = conn.execute("SELECT meta FROM messages WHERE id = ?", (msg_id,)).fetchone()
+        if not row:
+            return
+        try:
+            meta = json.loads(row["meta"] or "{}")
+        except json.JSONDecodeError:
+            meta = {}
+        meta.pop("routed", None)
+        conn.execute("UPDATE messages SET meta = ? WHERE id = ?",
+                     (json.dumps(meta, ensure_ascii=False), msg_id))
+        conn.commit()
+
+
 async def forward_to_loop(msg: dict) -> None:
     try:
         await asyncio.to_thread(_forward_to_loop_sync, msg)
     except Exception as exc:
         print(f"[loop] forward failed: {type(exc).__name__}: {exc}")
+        try:
+            await asyncio.to_thread(_clear_loop_mark, msg.get("id"))
+        except Exception:
+            pass
+
+
+async def route_inbound(msg: dict) -> None:
+    """Send one inbound message to exactly one AI body (the brain target)."""
+    if brain_target() == "loop":
+        asyncio.create_task(forward_to_loop(msg))
+    else:
+        await broadcast(plugin_subs, plugin_payload(msg))
 
 
 def prune_stream_drafts() -> None:
@@ -629,7 +666,12 @@ def check_auth(request: Request) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # auto-forge watcher (defined near the context-control endpoints below).
+    # NOTE: this lifespan runs on the OUTER root app — mounted sub-apps don't
+    # execute their own lifespans.
+    watcher = asyncio.create_task(_context_watcher())
     yield
+    watcher.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -711,13 +753,11 @@ async def app_send(request: Request):
     meta = {"user": "human", "attachments": attachments}
     if api_session:
         meta["api_session"] = api_session
-    msg = save_message("in", "user", text, meta)
-    # Route to exactly one AI body. "desktop" keeps the Claude Code channel;
-    # "loop" calls the optional server-side API loop.
+    # loop 路由的消息打标：CC 插件回填时跳过（API 已回过，别让 CC 再回一遍）
     if brain_target() == "loop":
-        asyncio.create_task(forward_to_loop(msg))
-    else:
-        await broadcast(plugin_subs, plugin_payload(msg))
+        meta["routed"] = "loop"
+    msg = save_message("in", "user", text, meta)
+    await route_inbound(msg)
     # echo to the PWA so the sender's bubble + other tabs stay in sync
     await broadcast(app_subs, app_payload(msg))
     # the AI starts processing — push a typing state to the PWA
@@ -759,8 +799,10 @@ async def app_voice(request: Request):
         if not transcript.startswith("🎤"):
             transcript = "🎤 " + transcript
         meta = {"user": "human", "voice": True, "source": body.get("source") or "browser_speech"}
+        if brain_target() == "loop":
+            meta["routed"] = "loop"
         msg = save_message("in", "voice", transcript, meta)
-        await broadcast(plugin_subs, plugin_payload(msg))
+        await route_inbound(msg)
         await broadcast(app_subs, app_payload(msg))
         await broadcast(app_subs, {"type": "typing", "active": True})
         return {"id": msg["id"], "text": transcript}
@@ -784,8 +826,10 @@ async def app_voice(request: Request):
         "attachments": [upload],
         "transcribed": bool(transcript),
     }
+    if brain_target() == "loop":
+        meta["routed"] = "loop"
     msg = save_message("in", "voice", text, meta)
-    await broadcast(plugin_subs, plugin_payload(msg))
+    await route_inbound(msg)
     await broadcast(app_subs, app_payload(msg))
     await broadcast(app_subs, {"type": "typing", "active": True})
     return {"id": msg["id"], "text": transcript, "attachment": upload}
@@ -902,6 +946,30 @@ async def app_history(request: Request, since: int = 0, limit: int = 200, sessio
     return {"messages": [app_payload(m) for m in rows]}
 
 
+@app.get("/app/search")
+async def app_search(request: Request, q: str = "", limit: int = 80):
+    """Full-text-ish search across ALL sessions. LIKE on messages.text, hidden and
+    thinking/act frames excluded. Newest first. Each hit carries meta.api_session so
+    the phone can jump straight into the right window."""
+    check_auth(request)
+    query = (q or "").strip()
+    if not query:
+        return {"query": "", "results": []}
+    # escape LIKE wildcards so a literal % / _ / \ in the query stays literal
+    needle = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    like = f"%{needle}%"
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages "
+            "WHERE text LIKE ? ESCAPE '\\' "
+            "AND json_extract(meta, '$.hidden') IS NULL "
+            "AND kind != 'thinking' AND kind != 'act' "
+            "ORDER BY id DESC LIMIT ?",
+            (like, max(1, min(limit, 200))),
+        ).fetchall()
+    return {"query": query, "results": [app_payload(m) for m in rows_to_messages(rows)]}
+
+
 @app.get("/app/stream")
 async def app_stream(request: Request):
     """SSE stream the PWA holds open while foregrounded. The AI's messages arrive here."""
@@ -983,6 +1051,12 @@ async def get_loop_config(request: Request):
     return loop_json("/loop/config")
 
 
+@app.get("/app/loop_stats")
+async def get_loop_stats(request: Request):
+    check_auth(request)
+    return loop_json("/loop/stats")
+
+
 @app.post("/app/loop_config")
 async def set_loop_config(request: Request):
     check_auth(request)
@@ -1015,7 +1089,354 @@ async def app_sessions_patch(session_id: str, request: Request):
     return loop_json(f"/loop/sessions/{urllib.parse.quote(session_id)}", method="PATCH", body=await request.json())
 
 
+# ---- desktop context control (the settings-card backend) --------------------
+# The phone gets real control over the desktop body's context window:
+#   status  — live usage read from the local Claude Code transcript (.jsonl)
+#   reset   — kill CC, start a fresh session
+#   swap    — kill CC, start fresh + inject a forge handoff (recent chat tail,
+#             stored hidden so the PWA never renders it; the new CC picks it up
+#             from the plugin's persisted since-cursor as its first frame)
+#   resume  — kill CC, restart with --resume <sid>
+# Windows-only process handling (this deployment runs on the owner's PC).
+
+def _cc_project_dir_default() -> str:
+    home = Path.home()
+    return str(home / ".claude" / "projects" / str(home).replace(":", "-").replace("\\", "-").replace("/", "-"))
+
+
+CC_PROJECT_DIR = Path(os.environ.get("RELAY_CC_PROJECT_DIR", _cc_project_dir_default()))
+CTX_FILE = Path(os.environ.get("RELAY_CTX_FILE", str(Path(__file__).parent / "context_ctl.json")))
+CC_LAUNCHER = os.environ.get(
+    "RELAY_CC_LAUNCHER",
+    str(Path(__file__).resolve().parent.parent / "examples" / "confirm_dev_channel_win.py"),
+)
+CC_CMD = [c for c in os.environ.get(
+    "RELAY_CC_CMD", "claude --dangerously-load-development-channels server:companion"
+).split(" ") if c]
+CC_KILL_MARK = "dangerously-load-development-channels"   # how we find the running CC
+FORGE_CARRY_CHARS = int(os.environ.get("RELAY_FORGE_CARRY_CHARS", "24000"))
+
+
+def ctx_state() -> dict:
+    try:
+        data = json.loads(CTX_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_ctx_state(**kw) -> dict:
+    st = ctx_state()
+    st.update(kw)
+    CTX_FILE.write_text(json.dumps(st, ensure_ascii=False, indent=2), encoding="utf-8")
+    return st
+
+
+def newest_transcript():
+    """The active CC session's transcript = most recently appended .jsonl."""
+    try:
+        files = [p for p in CC_PROJECT_DIR.glob("*.jsonl") if p.is_file()]
+        return max(files, key=lambda p: p.stat().st_mtime) if files else None
+    except Exception:
+        return None
+
+
+def transcript_usage(path) -> int:
+    """Context size ≈ input + cache_read + cache_creation of the last assistant
+    turn. Only the tail is read — single tool-result lines can be huge, so the
+    window is generous (1 MiB); a truncated first line just fails json.loads."""
+    try:
+        size = path.stat().st_size
+        with open(path, "rb") as f:
+            f.seek(max(0, size - 1048576))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        return 0
+    for line in reversed(tail.splitlines()):
+        if '"usage"' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        u = ((d.get("message") or {}).get("usage")) or {}
+        if "input_tokens" in u:
+            return (
+                int(u.get("input_tokens") or 0)
+                + int(u.get("cache_read_input_tokens") or 0)
+                + int(u.get("cache_creation_input_tokens") or 0)
+            )
+    return 0
+
+
+def _find_cc_pids() -> list:
+    """PIDs whose command line carries the dev-channel flag = the CC tree
+    (cmd shim / node / the confirm launcher). The PowerShell query would match
+    itself, so shells are skipped by image name."""
+    query = (
+        "Get-CimInstance Win32_Process | "
+        f"Where-Object {{ $_.CommandLine -match '{CC_KILL_MARK}' }} | "
+        "Select-Object ProcessId, Name | ConvertTo-Json -Compress"
+    )
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", query],
+            capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        if not out:
+            return []
+        rows = json.loads(out)
+        if isinstance(rows, dict):
+            rows = [rows]
+    except Exception:
+        return []
+    skip = {"powershell.exe", "pwsh.exe", "wmiprvse.exe"}
+    pids = []
+    for r in rows:
+        name = str(r.get("Name") or "").lower()
+        pid = int(r.get("ProcessId") or 0)
+        if pid and pid != os.getpid() and name not in skip:
+            pids.append(pid)
+    return pids
+
+
+def _kill_cc() -> list:
+    pids = _find_cc_pids()
+    for pid in pids:
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+    return pids
+
+
+def _spawn_cc(resume_sid: str = "") -> None:
+    # "claude" on PATH is npm's .cmd shim — CreateProcess can't exec those
+    # directly, so resolve it and wrap batch files with cmd /c.
+    import shutil
+    exe = shutil.which(CC_CMD[0]) or CC_CMD[0]
+    head = ["cmd", "/c", exe] if exe.lower().endswith((".cmd", ".bat")) else [exe]
+    cmd = [sys.executable, CC_LAUNCHER, "--"] + head + list(CC_CMD[1:])
+    if resume_sid:
+        cmd += ["--resume", resume_sid]
+    # Desktop model override (set from the phone via /app/desktop_model).
+    # Empty = no flag = whatever the CC default is.
+    model = str(ctx_state().get("desktop_model") or "").strip()
+    if model and "--model" not in CC_CMD:
+        cmd += ["--model", model]
+    subprocess.Popen(
+        cmd, cwd=str(Path.home()),
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+    )
+
+
+def _desktop_tail_text(budget: int) -> str:
+    """Recent desktop-channel conversation (newest-last), capped at ~budget chars."""
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT direction, text, meta FROM messages "
+            "WHERE kind IN ('user','reply','voice') "
+            "AND (json_extract(meta, '$.api_session') IS NULL OR json_extract(meta, '$.api_session') = '') "
+            "AND json_extract(meta, '$.hidden') IS NULL "
+            "ORDER BY id DESC LIMIT 400"
+        ).fetchall()
+    lines, used = [], 0
+    for r in rows:
+        text = (r["text"] or "").strip()
+        if not text:
+            continue
+        line = f"{HUMAN_NAME if r['direction'] == 'in' else AI_NAME}: {text}"
+        used += len(line) + 1
+        if used > budget and lines:
+            break
+        lines.append(line)
+    return "\n".join(reversed(lines))
+
+
+def _handoff_text() -> str:
+    return (
+        "<forge-handoff>\n"
+        f"(系统交接消息,{HUMAN_NAME}在手机上看不到这条,不要回复它)\n"
+        f"上一个窗口的上下文满了,你是 swap 出来的新窗口——还是同一个{AI_NAME},"
+        "CLAUDE.md 和记忆文档照常生效。以下是交接过来的手机 channel 最近对话原文,"
+        "读完自然接上即可;不要向对方复述这段内容或主动提及这次交接,除非对方问起。\n\n"
+        f"{_desktop_tail_text(FORGE_CARRY_CHARS)}\n"
+        "</forge-handoff>"
+    )
+
+
+async def _do_context_action(action: str, sid: str = "") -> dict:
+    st = ctx_state()
+    path = newest_transcript()
+    old_sid = path.stem if path else ""
+    if action == "resume":
+        sid = (sid or st.get("pending_sid") or "").strip()
+        if not sid:
+            raise HTTPException(status_code=400, detail="no sid to resume")
+    if action == "swap":
+        # Save WITHOUT broadcasting: the live plugin must not see it (it's about
+        # to die); the new plugin's ?since=<persisted cursor> backfill delivers it.
+        save_message("in", "user", _handoff_text(), {"user": "system", "hidden": True})
+    killed = await asyncio.to_thread(_kill_cc)
+    if action == "resume":
+        save_ctx_state(pending_sid="")
+    elif old_sid:
+        save_ctx_state(pending_sid=old_sid)
+    await asyncio.to_thread(_spawn_cc, sid if action == "resume" else "")
+    print(f"[ctx] {action}: killed={killed} old_sid={old_sid[:8]}")
+    return {"ok": True, "action": action, "killed": killed, "old_sid": old_sid}
+
+
+@app.get("/app/context_status")
+async def app_context_status(request: Request):
+    check_auth(request)
+    st = ctx_state()
+    path = newest_transcript()
+    trigger_k = int(st.get("trigger_k") or 200)
+    pending = str(st.get("pending_sid") or "")
+    return {
+        "ok": True,
+        "usage_tokens": transcript_usage(path) if path else 0,
+        "threshold_k": f"{trigger_k}k",
+        "trigger_k": trigger_k,
+        "auto": bool(st.get("auto")),
+        "active_sid": path.stem if path else "",
+        **({"pending": {"new_sid": pending}} if pending else {}),
+    }
+
+
+@app.post("/app/context_threshold")
+async def app_context_threshold(request: Request):
+    check_auth(request)
+    body = await request.json()
+    updates = {}
+    if "trigger_k" in body:
+        updates["trigger_k"] = max(60, min(int(body.get("trigger_k") or 200), 1000))
+    if "auto" in body:
+        updates["auto"] = bool(body.get("auto"))
+    st = save_ctx_state(**updates)
+    return {"ok": True, "trigger_k": int(st.get("trigger_k") or 200), "auto": bool(st.get("auto"))}
+
+
+@app.post("/app/context_action")
+async def app_context_action(request: Request):
+    check_auth(request)
+    body = await request.json()
+    action = str(body.get("action") or "").strip()
+    if action not in ("reset", "swap", "resume"):
+        raise HTTPException(status_code=400, detail="action must be reset|swap|resume")
+    if brain_target() != "desktop":
+        raise HTTPException(status_code=409, detail="先切回 Desktop 再操作(现在是 API 身体在接消息)")
+    sid = str(body.get("sid") or (body.get("payload") or {}).get("sid") or "")
+    return await _do_context_action(action, sid)
+
+
+# ---- desktop model switch ---------------------------------------------------
+# CC has no runtime model-change API, so "switching the desktop model" =
+# remember the choice in ctx_state and do a swap-style restart with --model.
+
+@app.get("/app/desktop_model")
+async def app_desktop_model(request: Request):
+    check_auth(request)
+    return {"ok": True, "model": str(ctx_state().get("desktop_model") or "")}
+
+
+@app.post("/app/desktop_model")
+async def app_desktop_model_set(request: Request):
+    check_auth(request)
+    body = await request.json()
+    model = str(body.get("model") or "").strip()   # "" = back to default (no --model)
+    save_ctx_state(desktop_model=model)
+    if not bool(body.get("apply", True)):
+        return {"ok": True, "model": model, "applied": False}
+    if brain_target() != "desktop":
+        return {"ok": True, "model": model, "applied": False,
+                "note": "brain=loop,已记住;回 Desktop 后下次重启生效"}
+    result = await _do_context_action("swap")
+    return {"ok": True, "model": model, "applied": True,
+            "killed": result.get("killed"), "old_sid": result.get("old_sid")}
+
+
+# ---- subscription quota (5h / weekly windows) -------------------------------
+# Proxies the Claude Code account's oauth usage endpoint so the phone can see
+# how much of the 5-hour / weekly quota is burned. Reads the SAME token CC
+# uses (re-read every call — CC refreshes the file itself). Never refresh the
+# token here: racing CC's refresh chain would log the terminal session out.
+
+CC_CRED_FILE = Path(os.environ.get("RELAY_CC_CRED_FILE", str(Path.home() / ".claude" / ".credentials.json")))
+QUOTA_URL = os.environ.get("RELAY_QUOTA_URL", "https://api.anthropic.com/api/oauth/usage")
+_quota_cache: dict = {"ts": 0.0, "data": None}
+
+
+def _fetch_quota() -> dict:
+    token = json.loads(CC_CRED_FILE.read_text(encoding="utf-8"))["claudeAiOauth"]["accessToken"]
+    req = urllib.request.Request(QUOTA_URL, headers={
+        "Authorization": f"Bearer {token}",
+        "anthropic-beta": "oauth-2025-04-20",
+    })
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+@app.get("/app/quota")
+async def app_quota(request: Request):
+    check_auth(request)
+    import time as _time
+    if _quota_cache["data"] is not None and _time.time() - _quota_cache["ts"] < 60:
+        return _quota_cache["data"]
+    try:
+        raw = await asyncio.to_thread(_fetch_quota)
+    except urllib.error.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"usage api HTTP {exc.code}")
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"usage api error: {type(exc).__name__}: {exc}")
+    out = {"ok": True, "raw": raw}
+    _quota_cache.update(ts=_time.time(), data=out)
+    return out
+
+
+async def _context_watcher():
+    """Auto-forge: when enabled, swap the desktop session once its context
+    crosses the trigger line. Skips the just-swapped session (pending_sid) so a
+    stale transcript mtime can't double-fire."""
+    while True:
+        await asyncio.sleep(60)
+        try:
+            st = ctx_state()
+            if not st.get("auto") or brain_target() != "desktop":
+                continue
+            path = newest_transcript()
+            if not path or path.stem == str(st.get("pending_sid") or ""):
+                continue
+            usage = transcript_usage(path)
+            trigger = int(st.get("trigger_k") or 200) * 1000
+            if usage >= trigger:
+                print(f"[ctx] auto-swap: usage {usage} >= trigger {trigger}")
+                await _do_context_action("swap")
+        except Exception as exc:
+            print(f"[ctx] watcher error: {type(exc).__name__}: {exc}")
+
+
+# --- single-process serving (replaces nginx; Cloudflare Tunnel fronts this) --
+# Mirror the nginx layout so frontend/plugin defaults keep working:
+#   /relay/*  -> the API app above (prefix stripped, same as proxy_pass with "/")
+#   /chat/*   -> the PWA static files (web/ next to this repo checkout)
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")  # Windows lacks this mapping
+
+WEB_DIR = Path(os.environ.get("RELAY_WEB_DIR", str(Path(__file__).resolve().parent.parent / "web")))
+
+root = FastAPI(lifespan=lifespan)
+root.mount(PUBLIC_PREFIX or "/relay", app)
+if WEB_DIR.is_dir():
+    root.mount("/chat", StaticFiles(directory=str(WEB_DIR), html=True), name="pwa")
+
+    @root.get("/")
+    async def _root_redirect():
+        return RedirectResponse(url=APP_PATH or "/chat/")
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=PORT)
+    uvicorn.run(root, host="127.0.0.1", port=PORT)

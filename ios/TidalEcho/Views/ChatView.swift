@@ -40,7 +40,7 @@ struct ChatView: View {
                 NativeIncomingCallOverlay(
                     model: model,
                     invite: invite,
-                    onAccept: { nativeCalls.acceptRingingCall() },
+                    onAccept: { presentVoiceCallDirectly() },
                     onDecline: { nativeCalls.declineRingingCall() }
                 )
                 .transition(.opacity)
@@ -168,10 +168,7 @@ struct ChatView: View {
                                 Task { await model.speakMessage(message) }
                             },
                             onAnswerCall: {
-                                NativeCallCoordinator.shared.reportIncoming(
-                                    messageID: message.id,
-                                    text: message.text
-                                )
+                                presentVoiceCallDirectly()
                             },
                             attachmentRequest: model.attachmentRequest
                         )
@@ -260,8 +257,17 @@ struct ChatView: View {
 
     private func openAcceptedCallIfNeeded() {
         guard nativeCalls.acceptedInvite != nil, !showingVoiceCall else { return }
-        showingVoiceCall = true
-        nativeCalls.consumeAcceptedInvite()
+        presentVoiceCallDirectly()
+    }
+
+    private func presentVoiceCallDirectly() {
+        guard !showingVoiceCall else { return }
+        nativeCalls.transitionToInAppCall()
+        // Let the incoming overlay / system CallKit surface finish dismissing before
+        // asking SwiftUI for a different full-screen presentation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            showingVoiceCall = true
+        }
     }
 }
 

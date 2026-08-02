@@ -99,6 +99,16 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         acceptedInvite = nil
     }
 
+    func transitionToInAppCall() {
+        if let activeUUID {
+            provider.reportCall(with: activeUUID, endedAt: Date(), reason: .answeredElsewhere)
+            invites.removeValue(forKey: activeUUID)
+        }
+        activeUUID = nil
+        ringingInvite = nil
+        acceptedInvite = nil
+    }
+
     func finishCurrentCall() {
         guard let activeUUID else { return }
         endSystemCall(uuid: activeUUID)

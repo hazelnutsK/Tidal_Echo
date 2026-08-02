@@ -18,6 +18,7 @@ struct MessageRow: View {
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let chatWeight: Double
+    let onToggleStar: () -> Void
     let attachmentRequest: (Attachment) -> URLRequest?
 
     var body: some View {
@@ -104,6 +105,16 @@ struct MessageRow: View {
             if message.author == .ai { Spacer(minLength: showsAIAvatar ? 44 : 18) }
         }
         .frame(maxWidth: .infinity)
+        .contextMenu {
+            if message.id > 0 {
+                Button {
+                    onToggleStar()
+                } label: {
+                    Label(message.meta.starred == nil ? "收藏" : "取消收藏",
+                          systemImage: message.meta.starred == nil ? "star" : "star.slash")
+                }
+            }
+        }
     }
 
     private static func formatTime(_ raw: String) -> String {

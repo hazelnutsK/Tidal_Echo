@@ -102,6 +102,96 @@ struct APIClient {
         try decoder.decode(APIUsageStats.self, from: try await data(for: request(url: endpoint("app/loop_stats"))))
     }
 
+    func stars() async throws -> [ChatMessage] {
+        let responseData = try await data(for: request(url: endpoint("app/stars")))
+        return try decoder.decode(StarsResponse.self, from: responseData).stars
+    }
+
+    func setStar(messageID: Int, on: Bool) async throws -> String? {
+        var req = request(url: endpoint("app/star/\(messageID)"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(StarPayload(on: on))
+        return try decoder.decode(StarResponse.self, from: try await data(for: req)).starred
+    }
+
+    func album() async throws -> [AlbumPhoto] {
+        let responseData = try await data(for: request(url: endpoint("app/album")))
+        return try decoder.decode(AlbumResponse.self, from: responseData).photos
+    }
+
+    func giftPages() async throws -> [GiftPage] {
+        let responseData = try await data(for: request(url: endpoint("app/pages")))
+        return try decoder.decode(GiftPagesResponse.self, from: responseData).pages
+    }
+
+    func giftPageURL(file: String) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        components.path = "/chat/pages/\(file)"
+        components.query = nil
+        return components.url
+    }
+
+    func moments(kind: MomentKind, before: Int? = nil, limit: Int = 20) async throws -> MomentsResponse {
+        var components = URLComponents(url: endpoint("app/posts"), resolvingAgainstBaseURL: false)
+        var items = [
+            URLQueryItem(name: "kind", value: kind.rawValue),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        if let before { items.append(URLQueryItem(name: "before", value: String(before))) }
+        components?.queryItems = items
+        guard let url = components?.url else { throw APIError.invalidURL }
+        return try decoder.decode(MomentsResponse.self, from: try await data(for: request(url: url)))
+    }
+
+    func createMoment(kind: MomentKind, text: String, attachments: [Attachment]) async throws -> MomentPost {
+        var req = request(url: endpoint("app/posts"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(MomentCreatePayload(author: .human, kind: kind, text: text, attachments: attachments))
+        return try decoder.decode(MomentPostResponse.self, from: try await data(for: req)).post
+    }
+
+    func likeMoment(id: Int, on: Bool) async throws -> [String: String] {
+        var req = request(url: endpoint("app/posts/\(id)/like"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(MomentLikePayload(author: .human, on: on))
+        return try decoder.decode(MomentLikeResponse.self, from: try await data(for: req)).likes
+    }
+
+    func commentMoment(id: Int, text: String, replyTo: MessageAuthor? = nil) async throws -> MomentComment {
+        var req = request(url: endpoint("app/posts/\(id)/comment"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(MomentCommentPayload(author: .human, text: text, replyTo: replyTo))
+        return try decoder.decode(MomentCommentResponse.self, from: try await data(for: req)).comment
+    }
+
+    func deleteMoment(id: Int) async throws {
+        var components = URLComponents(url: endpoint("app/posts/\(id)"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "author", value: "human")]
+        guard let url = components?.url else { throw APIError.invalidURL }
+        _ = try await data(for: request(url: url, method: "DELETE"))
+    }
+
+    func calendar(year: Int, month: Int) async throws -> CalendarMonthResponse {
+        var components = URLComponents(url: endpoint("app/calendar"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "year", value: String(year)),
+            URLQueryItem(name: "month", value: String(month))
+        ]
+        guard let url = components?.url else { throw APIError.invalidURL }
+        return try decoder.decode(CalendarMonthResponse.self, from: try await data(for: request(url: url)))
+    }
+
+    func createCalendarEvent(_ payload: CalendarCreatePayload) async throws -> CalendarEvent {
+        var req = request(url: endpoint("app/calendar"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(payload)
+        return try decoder.decode(CalendarEvent.self, from: try await data(for: req))
+    }
+
+    func deleteCalendarEvent(id: Int) async throws {
+        _ = try await data(for: request(url: endpoint("app/calendar/\(id)"), method: "DELETE"))
+    }
+
     func desktopModel() async throws -> DesktopModelResponse {
         let responseData = try await data(for: request(url: endpoint("app/desktop_model")))
         return try decoder.decode(DesktopModelResponse.self, from: responseData)
@@ -207,6 +297,39 @@ private struct LoopPresetPayload: Encodable {
 }
 
 private struct ChatModePayload: Encodable { let mode: ChatMode }
+
+private struct StarPayload: Encodable { let on: Bool }
+
+private struct MomentCreatePayload: Encodable {
+    let author: MessageAuthor
+    let kind: MomentKind
+    let text: String
+    let attachments: [Attachment]
+}
+
+private struct MomentLikePayload: Encodable {
+    let author: MessageAuthor
+    let on: Bool
+}
+
+private struct MomentCommentPayload: Encodable {
+    let author: MessageAuthor
+    let text: String
+    let replyTo: MessageAuthor?
+    enum CodingKeys: String, CodingKey {
+        case author, text
+        case replyTo = "reply_to"
+    }
+}
+
+struct CalendarCreatePayload: Encodable {
+    let date: String
+    let time: String
+    let title: String
+    let kind: String
+    let visible: Bool
+    let remind: Bool
+}
 
 private struct DesktopModelPayload: Encodable { let model: String }
 

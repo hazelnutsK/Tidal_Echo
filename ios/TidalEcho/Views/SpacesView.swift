@@ -1,0 +1,1023 @@
+import PhotosUI
+import SwiftUI
+import UniformTypeIdentifiers
+import WebKit
+
+struct SpacesView: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+
+    private var palette: EchoPalette { model.theme.palette }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("我们的空间")
+                            .font(.system(size: 30, weight: .bold, design: .rounded))
+                        Text("把聊天以外的那些小东西，也好好收在一起。")
+                            .font(.subheadline)
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                        SpaceLink(title: "收藏", subtitle: "舍不得丢的对话", icon: "star.fill", color: .orange) {
+                            StarsView(model: model)
+                        }
+                        SpaceLink(title: "相册", subtitle: "聊天里的照片", icon: "photo.on.rectangle.angled", color: .cyan) {
+                            AlbumView(model: model)
+                        }
+                        SpaceLink(title: "礼物室", subtitle: "小克做的页面", icon: "gift.fill", color: .pink) {
+                            GiftsView(model: model)
+                        }
+                        SpaceLink(title: "Moments", subtitle: "动态与日志", icon: "sparkles", color: .purple) {
+                            MomentsView(model: model)
+                        }
+                        SpaceLink(title: "日历", subtitle: "日程与纪念日", icon: "calendar", color: .green) {
+                            EchoCalendarView(model: model)
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .background(palette.background.ignoresSafeArea())
+            .foregroundStyle(palette.text)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
+                        .foregroundStyle(palette.accent)
+                }
+            }
+        }
+        .tint(palette.accent)
+    }
+}
+
+private struct SpaceLink<Destination: View>: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+    let destination: () -> Destination
+
+    var body: some View {
+        NavigationLink(destination: destination) {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 23, weight: .semibold))
+                    .foregroundStyle(color)
+                    .frame(width: 46, height: 46)
+                    .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 14))
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, minHeight: 142, alignment: .leading)
+            .padding(15)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SpaceEmptyState: View {
+    let icon: String
+    let title: String
+    let text: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.secondary)
+            Text(title).font(.headline)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 70)
+        .padding(.horizontal, 30)
+    }
+}
+
+// MARK: - 收藏
+
+private struct StarsView: View {
+    @ObservedObject var model: AppModel
+    @State private var messages: [ChatMessage] = []
+    @State private var isLoading = true
+    @State private var errorText: String?
+
+    var body: some View {
+        Group {
+            if isLoading && messages.isEmpty {
+                ProgressView("正在翻收藏夹…")
+            } else if messages.isEmpty {
+                SpaceEmptyState(icon: "star", title: "还没有收藏", text: "回到聊天页，长按一条气泡就可以收藏。")
+            } else {
+                List {
+                    ForEach(messages) { message in
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack {
+                                Label(message.author == .human ? "小雪" : "小克", systemImage: message.author == .human ? "person.fill" : "sparkle")
+                                    .font(.caption.weight(.semibold))
+                                Spacer()
+                                Text(shortTimestamp(message.timestamp))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            if !message.text.isEmpty {
+                                Text(message.text)
+                                    .font(.body)
+                                    .textSelection(.enabled)
+                            }
+                            ForEach(message.meta.attachments.filter(\.isImage)) { attachment in
+                                if let request = model.authenticatedRequest(path: attachment.url) {
+                                    SpaceRemoteImage(request: request)
+                                        .frame(maxHeight: 260)
+                                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                                }
+                            }
+                        }
+                        .padding(.vertical, 7)
+                        .swipeActions {
+                            Button(role: .destructive) {
+                                Task { await unstar(message) }
+                            } label: {
+                                Label("取消收藏", systemImage: "star.slash")
+                            }
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle("收藏")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            messages = try await model.spaceStars()
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func unstar(_ message: ChatMessage) async {
+        do {
+            try await model.setStar(messageID: message.id, on: false)
+            messages.removeAll { $0.id == message.id }
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - 相册
+
+private struct AlbumView: View {
+    @ObservedObject var model: AppModel
+    @State private var photos: [AlbumPhoto] = []
+    @State private var selectedPhoto: AlbumPhoto?
+    @State private var isLoading = true
+    @State private var errorText: String?
+
+    private let columns = [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)]
+
+    var body: some View {
+        Group {
+            if isLoading && photos.isEmpty {
+                ProgressView("正在整理相册…")
+            } else if photos.isEmpty {
+                SpaceEmptyState(icon: "photo", title: "相册还是空的", text: "聊天里发过的图片会自动出现在这里。")
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: columns, spacing: 3) {
+                        ForEach(photos) { photo in
+                            Button { selectedPhoto = photo } label: {
+                                if let request = model.authenticatedRequest(path: photo.url) {
+                                    SpaceRemoteImage(request: request, contentMode: .fill)
+                                        .frame(height: 124)
+                                        .frame(maxWidth: .infinity)
+                                        .clipped()
+                                        .overlay(alignment: .bottomTrailing) {
+                                            Image(systemName: photo.author == .human ? "person.fill" : "sparkle")
+                                                .font(.caption2)
+                                                .padding(5)
+                                                .background(.ultraThinMaterial, in: Circle())
+                                                .padding(5)
+                                        }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("相册")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+        .sheet(item: $selectedPhoto) { photo in
+            AlbumLightbox(model: model, photo: photo)
+        }
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            photos = try await model.spaceAlbum()
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+private struct AlbumLightbox: View {
+    @ObservedObject var model: AppModel
+    let photo: AlbumPhoto
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if let request = model.authenticatedRequest(path: photo.url) {
+                    SpaceRemoteImage(request: request, contentMode: .fit)
+                        .padding(.vertical)
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("关闭") { dismiss() }.foregroundStyle(.white)
+                }
+                ToolbarItem(placement: .principal) {
+                    Text(shortTimestamp(photo.timestamp)).font(.caption).foregroundStyle(.white.opacity(0.8))
+                }
+            }
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+        }
+    }
+}
+
+// MARK: - 礼物室
+
+private struct GiftsView: View {
+    @ObservedObject var model: AppModel
+    @State private var pages: [GiftPage] = []
+    @State private var isLoading = true
+    @State private var errorText: String?
+
+    var body: some View {
+        Group {
+            if isLoading && pages.isEmpty {
+                ProgressView("正在打开礼物室…")
+            } else if pages.isEmpty {
+                SpaceEmptyState(icon: "gift", title: "礼物室还是空的", text: "以后小克做给你的网页礼物，会出现在这里。")
+            } else {
+                List(pages) { page in
+                    if let url = model.giftPageURL(file: page.file) {
+                        NavigationLink {
+                            GiftPageView(title: page.title, url: url)
+                        } label: {
+                            HStack(spacing: 13) {
+                                Image(systemName: "gift.fill")
+                                    .foregroundStyle(.pink)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.pink.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(page.title).font(.headline).lineLimit(2)
+                                    Text(page.modified).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .padding(.vertical, 5)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+        }
+        .navigationTitle("礼物室")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            pages = try await model.spaceGiftPages()
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+private struct GiftPageView: View {
+    let title: String
+    let url: URL
+
+    var body: some View {
+        GiftWebView(url: url)
+            .ignoresSafeArea(edges: .bottom)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct GiftWebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let view = WKWebView(frame: .zero)
+        view.isOpaque = false
+        view.backgroundColor = .clear
+        view.scrollView.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        guard webView.url != url else { return }
+        webView.load(URLRequest(url: url))
+    }
+}
+
+// MARK: - Moments
+
+private struct MomentsView: View {
+    @ObservedObject var model: AppModel
+    @State private var kind: MomentKind = .moment
+    @State private var posts: [MomentPost] = []
+    @State private var hasMore = false
+    @State private var isLoading = true
+    @State private var showingComposer = false
+    @State private var errorText: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("类型", selection: $kind) {
+                Text("动态").tag(MomentKind.moment)
+                Text("日志").tag(MomentKind.journal)
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            if isLoading && posts.isEmpty {
+                Spacer()
+                ProgressView("正在看看最近发生了什么…")
+                Spacer()
+            } else if posts.isEmpty {
+                Spacer()
+                SpaceEmptyState(icon: "sparkles", title: kind == .moment ? "还没有动态" : "还没有日志", text: "右上角的加号可以写下第一条。")
+                Spacer()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(posts) { post in
+                            MomentCard(
+                                model: model,
+                                post: post,
+                                onLike: { Task { await toggleLike(post) } },
+                                onComment: { text, replyTo in await addComment(post, text: text, replyTo: replyTo) },
+                                onDelete: { Task { await delete(post) } }
+                            )
+                        }
+                        if hasMore {
+                            Button {
+                                Task { await load(reset: false) }
+                            } label: {
+                                if isLoading { ProgressView() } else { Text("加载更早的内容") }
+                            }
+                            .padding()
+                            .disabled(isLoading)
+                        }
+                    }
+                    .padding(14)
+                }
+                .refreshable { await load(reset: true) }
+            }
+        }
+        .navigationTitle("Moments")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingComposer = true } label: { Image(systemName: "plus") }
+            }
+        }
+        .task(id: kind) { await load(reset: true) }
+        .sheet(isPresented: $showingComposer) {
+            MomentComposer(model: model, kind: kind) { post in
+                posts.insert(post, at: 0)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func load(reset: Bool) async {
+        if isLoading && !reset { return }
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let before = reset ? nil : posts.last?.id
+            let response = try await model.spaceMoments(kind: kind, before: before)
+            posts = reset ? response.posts : posts + response.posts.filter { newPost in
+                !posts.contains(where: { $0.id == newPost.id })
+            }
+            hasMore = response.hasMore
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func toggleLike(_ post: MomentPost) async {
+        do {
+            let likes = try await model.likeMoment(id: post.id, on: post.meta.likes["human"] == nil)
+            if let index = posts.firstIndex(where: { $0.id == post.id }) {
+                posts[index].meta.likes = likes
+            }
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func addComment(_ post: MomentPost, text: String, replyTo: MessageAuthor?) async -> Bool {
+        do {
+            let comment = try await model.commentMoment(id: post.id, text: text, replyTo: replyTo)
+            if let index = posts.firstIndex(where: { $0.id == post.id }) {
+                posts[index].meta.comments.append(comment)
+            }
+            return true
+        } catch {
+            errorText = error.localizedDescription
+            return false
+        }
+    }
+
+    @MainActor
+    private func delete(_ post: MomentPost) async {
+        do {
+            try await model.deleteMoment(id: post.id)
+            posts.removeAll { $0.id == post.id }
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+private struct MomentCard: View {
+    @ObservedObject var model: AppModel
+    let post: MomentPost
+    let onLike: () -> Void
+    let onComment: (String, MessageAuthor?) async -> Bool
+    let onDelete: () -> Void
+    @State private var comment = ""
+    @State private var replyingTo: MessageAuthor?
+    @State private var isSendingComment = false
+
+    private var isLiked: Bool { post.meta.likes["human"] != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: post.author == .human ? "person.crop.circle.fill" : "sparkles")
+                    .font(.title2)
+                    .foregroundStyle(post.author == .human ? Color.blue : Color.purple)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(post.author == .human ? "小雪" : "小克").font(.headline)
+                    Text(shortTimestamp(post.timestamp)).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if post.author == .human {
+                    Menu {
+                        Button(role: .destructive, action: onDelete) {
+                            Label("删除", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis").foregroundStyle(.secondary).padding(8)
+                    }
+                }
+            }
+
+            if !post.text.isEmpty {
+                Text(post.text)
+                    .font(post.kind == .journal ? .body.leading(.loose) : .body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+
+            ForEach(post.meta.attachments.filter(\.isImage)) { attachment in
+                if let request = model.authenticatedRequest(path: attachment.url) {
+                    SpaceRemoteImage(request: request)
+                        .frame(maxHeight: 330)
+                        .clipShape(RoundedRectangle(cornerRadius: 15))
+                }
+            }
+
+            HStack(spacing: 20) {
+                Button(action: onLike) {
+                    Label(post.meta.likes.isEmpty ? "喜欢" : "\(post.meta.likes.count)", systemImage: isLiked ? "heart.fill" : "heart")
+                        .foregroundStyle(isLiked ? .pink : .secondary)
+                }
+                Button { replyingTo = nil } label: {
+                    Label(post.meta.comments.isEmpty ? "评论" : "\(post.meta.comments.count)", systemImage: "bubble.left")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.subheadline.weight(.medium))
+
+            if !post.meta.comments.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(post.meta.comments) { item in
+                        Button {
+                            replyingTo = item.author
+                        } label: {
+                            (Text(item.author == .human ? "小雪" : "小克")
+                                .fontWeight(.semibold)
+                             + Text(item.replyTo == nil ? "：" : " 回复 \(item.replyTo == .human ? "小雪" : "小克")：")
+                             + Text(item.text))
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(10)
+                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            HStack(spacing: 8) {
+                TextField(replyingTo == nil ? "写评论…" : "回复 \(replyingTo == .human ? "小雪" : "小克")…", text: $comment)
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.send)
+                    .onSubmit { sendComment() }
+                Button(action: sendComment) {
+                    if isSendingComment {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.up.circle.fill").font(.title2)
+                    }
+                }
+                .disabled(comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSendingComment)
+            }
+        }
+        .padding(15)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func sendComment() {
+        let text = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !isSendingComment else { return }
+        isSendingComment = true
+        Task {
+            let sent = await onComment(text, replyingTo)
+            await MainActor.run {
+                if sent {
+                    comment = ""
+                    replyingTo = nil
+                }
+                isSendingComment = false
+            }
+        }
+    }
+}
+
+private struct MomentComposer: View {
+    @ObservedObject var model: AppModel
+    let kind: MomentKind
+    let onCreated: (MomentPost) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @State private var selections: [PhotosPickerItem] = []
+    @State private var previews: [UIImage] = []
+    @State private var attachments: [Attachment] = []
+    @State private var isWorking = false
+    @State private var errorText: String?
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextEditor(text: $text)
+                        .frame(minHeight: kind == .journal ? 220 : 130)
+                        .overlay(alignment: .topLeading) {
+                            if text.isEmpty {
+                                Text(kind == .moment ? "此刻想说什么？" : "慢慢写下今天吧…")
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                }
+                Section("图片") {
+                    PhotosPicker(selection: $selections, maxSelectionCount: 9, matching: .images) {
+                        Label("选择照片", systemImage: "photo.on.rectangle")
+                    }
+                    if !previews.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(Array(previews.enumerated()), id: \.offset) { _, image in
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 76, height: 76)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                }
+                            }
+                        }
+                    }
+                }
+                if let errorText {
+                    Section { Text(errorText).foregroundStyle(.red).font(.footnote) }
+                }
+            }
+            .navigationTitle(kind == .moment ? "新动态" : "新日志")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("发布") { Task { await publish() } }
+                        .disabled(isWorking || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty && selections.isEmpty))
+                }
+            }
+            .overlay {
+                if isWorking {
+                    ZStack {
+                        Color.black.opacity(0.12).ignoresSafeArea()
+                        ProgressView("正在发布…").padding(20).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                }
+            }
+            .onChange(of: selections) { items in
+                Task { await prepare(items) }
+            }
+        }
+    }
+
+    @MainActor
+    private func prepare(_ items: [PhotosPickerItem]) async {
+        isWorking = true
+        defer { isWorking = false }
+        var newPreviews: [UIImage] = []
+        var newAttachments: [Attachment] = []
+        do {
+            for (index, item) in items.enumerated() {
+                guard let data = try await item.loadTransferable(type: Data.self), let image = UIImage(data: data) else { continue }
+                let type = item.supportedContentTypes.first ?? .jpeg
+                let mime = type.preferredMIMEType ?? "image/jpeg"
+                let ext = type.preferredFilenameExtension ?? "jpg"
+                let attachment = try await model.uploadMomentImage(data: data, name: "moment-\(index + 1).\(ext)", mime: mime)
+                newPreviews.append(image)
+                newAttachments.append(attachment)
+            }
+            previews = newPreviews
+            attachments = newAttachments
+            errorText = nil
+        } catch {
+            errorText = "图片上传失败：\(error.localizedDescription)"
+        }
+    }
+
+    @MainActor
+    private func publish() async {
+        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanText.isEmpty || !attachments.isEmpty else { return }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            let post = try await model.createMoment(kind: kind, text: cleanText, attachments: attachments)
+            onCreated(post)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - 日历
+
+private struct EchoCalendarView: View {
+    @ObservedObject var model: AppModel
+    @State private var selectedDate = Date()
+    @State private var response: CalendarMonthResponse?
+    @State private var isLoading = true
+    @State private var showingCreate = false
+    @State private var errorText: String?
+
+    private var selectedKey: String { dateKey(selectedDate) }
+    private var dayEvents: [CalendarEvent] { response?.events.filter { $0.date == selectedKey } ?? [] }
+    private var holiday: String? { response?.holidays[selectedKey] }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                DatePicker("日期", selection: $selectedDate, displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .padding(10)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(dayTitle(selectedDate)).font(.title3.bold())
+                            if let holiday { Text(holiday).font(.subheadline).foregroundStyle(.pink) }
+                        }
+                        Spacer()
+                        Button { showingCreate = true } label: {
+                            Label("添加", systemImage: "plus").font(.subheadline.weight(.semibold))
+                        }
+                    }
+
+                    if isLoading && response == nil {
+                        ProgressView().frame(maxWidth: .infinity).padding()
+                    } else if dayEvents.isEmpty {
+                        Text("这一天还没有安排。")
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 18)
+                    } else {
+                        ForEach(dayEvents) { event in
+                            CalendarEventRow(event: event) {
+                                Task { await delete(event) }
+                            }
+                            if event.id != dayEvents.last?.id { Divider() }
+                        }
+                    }
+                }
+                .padding(16)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            }
+            .padding(14)
+        }
+        .navigationTitle("日历")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await loadMonth() }
+        .onChange(of: monthKey(selectedDate)) { _ in Task { await loadMonth() } }
+        .refreshable { await loadMonth() }
+        .sheet(isPresented: $showingCreate) {
+            CalendarComposer(model: model, date: selectedDate) { _ in
+                Task { await loadMonth() }
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func loadMonth() async {
+        isLoading = true
+        defer { isLoading = false }
+        let values = Calendar.current.dateComponents([.year, .month], from: selectedDate)
+        do {
+            response = try await model.spaceCalendar(year: values.year ?? 2026, month: values.month ?? 1)
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func delete(_ event: CalendarEvent) async {
+        do {
+            try await model.deleteCalendarEvent(id: event.id)
+            await loadMonth()
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+private struct CalendarEventRow: View {
+    let event: CalendarEvent
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: event.kind == "anniversary" ? "heart.fill" : "calendar.badge.clock")
+                .foregroundStyle(event.kind == "anniversary" ? .pink : .green)
+                .frame(width: 30, height: 30)
+                .background((event.kind == "anniversary" ? Color.pink : Color.green).opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 4) {
+                Text(event.title).font(.headline)
+                HStack(spacing: 7) {
+                    if !event.time.isEmpty { Text(event.time) }
+                    if event.kind == "anniversary", let days = event.daysSince { Text("第 \(days) 天") }
+                    if !event.visible { Label("仅自己", systemImage: "eye.slash") }
+                    if event.remind { Image(systemName: "bell.fill") }
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if event.author == .human {
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash").foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+private struct CalendarComposer: View {
+    @ObservedObject var model: AppModel
+    let date: Date
+    let onCreated: (CalendarEvent) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var eventDate: Date
+    @State private var eventTime = Date()
+    @State private var isAllDay = true
+    @State private var isAnniversary = false
+    @State private var isVisible = true
+    @State private var shouldRemind = false
+    @State private var isSaving = false
+    @State private var errorText: String?
+
+    init(model: AppModel, date: Date, onCreated: @escaping (CalendarEvent) -> Void) {
+        self.model = model
+        self.date = date
+        self.onCreated = onCreated
+        _eventDate = State(initialValue: date)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("内容") {
+                    TextField("要记住什么？", text: $title)
+                    Toggle("纪念日", isOn: $isAnniversary)
+                }
+                Section("时间") {
+                    DatePicker("日期", selection: $eventDate, displayedComponents: .date)
+                    Toggle("全天", isOn: $isAllDay)
+                    if !isAllDay {
+                        DatePicker("时间", selection: $eventTime, displayedComponents: .hourAndMinute)
+                    }
+                }
+                Section("分享与提醒") {
+                    Toggle("让小克也能看到", isOn: $isVisible)
+                    Toggle("提醒我", isOn: $shouldRemind)
+                }
+                if isAnniversary {
+                    Section { Text("纪念日会默认每年重复，并显示已经一起走过的天数。") }.font(.footnote).foregroundStyle(.secondary)
+                }
+                if let errorText { Section { Text(errorText).foregroundStyle(.red) } }
+            }
+            .navigationTitle("添加日程")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") { Task { await save() } }
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func save() async {
+        isSaving = true
+        defer { isSaving = false }
+        let payload = CalendarCreatePayload(
+            date: dateKey(eventDate),
+            time: isAllDay ? "" : timeKey(eventTime),
+            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+            kind: isAnniversary ? "anniversary" : "event",
+            visible: isVisible,
+            remind: shouldRemind
+        )
+        do {
+            let event = try await model.createCalendarEvent(payload)
+            onCreated(event)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+// MARK: - Shared helpers
+
+private struct SpaceRemoteImage: View {
+    let request: URLRequest
+    var contentMode: ContentMode = .fit
+    @State private var image: UIImage?
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            Color.secondary.opacity(0.08)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+            } else if failed {
+                Image(systemName: "photo.badge.exclamationmark").foregroundStyle(.secondary)
+            } else {
+                ProgressView()
+            }
+        }
+        .task(id: request.url) {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), let loaded = UIImage(data: data) else {
+                    failed = true
+                    return
+                }
+                image = loaded
+            } catch {
+                failed = true
+            }
+        }
+    }
+}
+
+private struct SpaceErrorBanner: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle.fill")
+            .font(.footnote)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color.red.opacity(0.9), in: Capsule())
+            .padding(.bottom, 12)
+            .padding(.horizontal)
+    }
+}
+
+private func shortTimestamp(_ value: String) -> String {
+    value.replacingOccurrences(of: "T", with: " ").prefix(16).description
+}
+
+private func dateKey(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter.string(from: date)
+}
+
+private func timeKey(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "HH:mm"
+    return formatter.string(from: date)
+}
+
+private func monthKey(_ date: Date) -> String {
+    let values = Calendar.current.dateComponents([.year, .month], from: date)
+    return "\(values.year ?? 0)-\(values.month ?? 0)"
+}
+
+private func dayTitle(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "zh_Hans_CN")
+    formatter.dateFormat = "M月d日 EEEE"
+    return formatter.string(from: date)
+}

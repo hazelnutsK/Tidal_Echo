@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ChatView: View {
     @ObservedObject var model: AppModel
     @State private var showingSettings = false
+    @State private var showingSpaces = false
     @State private var didPositionInitialHistory = false
 
     private var palette: EchoPalette { model.theme.palette }
@@ -36,6 +37,9 @@ struct ChatView: View {
             SettingsView(model: model)
                 .presentationDetents([.medium, .large])
         }
+        .fullScreenCover(isPresented: $showingSpaces) {
+            SpacesView(model: model)
+        }
     }
 
     private var topBar: some View {
@@ -65,6 +69,14 @@ struct ChatView: View {
 
             if model.isLoadingHistory {
                 ProgressView().tint(palette.accent)
+            }
+
+            Button { showingSpaces = true } label: {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(palette.text)
+                    .frame(width: 38, height: 38)
+                    .background(palette.composer, in: Circle())
             }
 
             Button { showingSettings = true } label: {
@@ -113,6 +125,18 @@ struct ChatView: View {
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             chatWeight: model.chatWeight,
+                            onToggleStar: {
+                                Task {
+                                    do {
+                                        try await model.setStar(
+                                            messageID: message.id,
+                                            on: message.meta.starred == nil
+                                        )
+                                    } catch {
+                                        model.errorMessage = error.localizedDescription
+                                    }
+                                }
+                            },
                             attachmentRequest: model.attachmentRequest
                         )
                         .id(message.id)

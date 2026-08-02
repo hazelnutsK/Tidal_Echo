@@ -1,6 +1,6 @@
 import Foundation
 
-enum MessageAuthor: String, Decodable, Hashable {
+enum MessageAuthor: String, Codable, Hashable {
     case human
     case ai
 }
@@ -32,6 +32,7 @@ struct MessageMeta: Decodable, Hashable {
     var apiSession: String?
     var streamID: String?
     var sortAfter: Int?
+    var starred: String?
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -40,6 +41,7 @@ struct MessageMeta: Decodable, Hashable {
         case apiSession = "api_session"
         case streamID = "stream_id"
         case sortAfter = "sort_after"
+        case starred
     }
 
     init(
@@ -56,6 +58,7 @@ struct MessageMeta: Decodable, Hashable {
         self.apiSession = apiSession
         self.streamID = streamID
         self.sortAfter = sortAfter
+        self.starred = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -66,6 +69,7 @@ struct MessageMeta: Decodable, Hashable {
         apiSession = try values.decodeIfPresent(String.self, forKey: .apiSession)
         streamID = try values.decodeIfPresent(String.self, forKey: .streamID)
         sortAfter = try values.decodeIfPresent(Int.self, forKey: .sortAfter)
+        starred = try values.decodeIfPresent(String.self, forKey: .starred)
     }
 }
 
@@ -134,9 +138,10 @@ struct StreamEnvelope: Decodable {
     let text: String?
     let done: Bool?
     let timestamp: String?
+    let starred: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, active, id, reactions, text, done
+        case type, active, id, reactions, text, done, starred
         case streamID = "stream_id"
         case timestamp = "ts"
     }
@@ -297,6 +302,132 @@ struct APIUsageStats: Decodable {
         case cacheHitRate = "cache_hit_rate"
         case cacheTTL = "cache_ttl"
     }
+}
+
+struct StarsResponse: Decodable { let stars: [ChatMessage] }
+
+struct StarResponse: Decodable {
+    let starred: String?
+}
+
+struct AlbumPhoto: Decodable, Identifiable {
+    let url: String
+    let timestamp: String
+    let author: MessageAuthor
+    var id: String { "\(timestamp)#\(url)" }
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case timestamp = "ts"
+        case author = "from"
+    }
+}
+
+struct AlbumResponse: Decodable { let photos: [AlbumPhoto] }
+
+struct GiftPage: Decodable, Identifiable {
+    let file: String
+    let title: String
+    let modified: String
+    var id: String { file }
+
+    enum CodingKeys: String, CodingKey {
+        case file, title
+        case modified = "mtime"
+    }
+}
+
+struct GiftPagesResponse: Decodable { let pages: [GiftPage] }
+
+enum MomentKind: String, Codable, CaseIterable, Identifiable {
+    case moment
+    case journal
+    var id: String { rawValue }
+    var title: String { self == .moment ? "动态" : "日志" }
+}
+
+struct MomentComment: Codable, Identifiable, Hashable {
+    let id: Int
+    let timestamp: String
+    let author: MessageAuthor
+    let text: String
+    let replyTo: MessageAuthor?
+
+    enum CodingKeys: String, CodingKey {
+        case id, author, text
+        case timestamp = "ts"
+        case replyTo = "reply_to"
+    }
+}
+
+struct MomentMeta: Decodable, Hashable {
+    let attachments: [Attachment]
+    var likes: [String: String]
+    var comments: [MomentComment]
+
+    enum CodingKeys: String, CodingKey { case attachments, likes, comments }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        attachments = try values.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
+        likes = try values.decodeIfPresent([String: String].self, forKey: .likes) ?? [:]
+        comments = try values.decodeIfPresent([MomentComment].self, forKey: .comments) ?? []
+    }
+}
+
+struct MomentPost: Decodable, Identifiable, Hashable {
+    let id: Int
+    let timestamp: String
+    let author: MessageAuthor
+    let kind: MomentKind
+    let text: String
+    var meta: MomentMeta
+
+    enum CodingKeys: String, CodingKey {
+        case id, author, kind, text, meta
+        case timestamp = "ts"
+    }
+}
+
+struct MomentsResponse: Decodable {
+    let posts: [MomentPost]
+    let hasMore: Bool
+    enum CodingKeys: String, CodingKey {
+        case posts
+        case hasMore = "has_more"
+    }
+}
+
+struct MomentPostResponse: Decodable { let post: MomentPost }
+struct MomentLikeResponse: Decodable { let likes: [String: String] }
+struct MomentCommentResponse: Decodable { let comment: MomentComment }
+
+struct CalendarEvent: Decodable, Identifiable, Hashable {
+    let id: Int
+    let date: String
+    let time: String
+    let title: String
+    let kind: String
+    let visible: Bool
+    let author: MessageAuthor
+    let recurrence: String
+    let remind: Bool
+    let daysSince: Int?
+    let years: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id, date, time, title, kind, visible, author, remind, years
+        case recurrence = "recur"
+        case daysSince = "days_since"
+    }
+}
+
+struct CalendarMonthResponse: Decodable {
+    let year: Int
+    let month: Int
+    let today: String
+    let events: [CalendarEvent]
+    let holidays: [String: String]
 }
 
 struct DesktopModelResponse: Decodable {

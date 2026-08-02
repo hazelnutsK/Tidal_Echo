@@ -243,6 +243,54 @@ final class AppModel: ObservableObject {
         client?.attachmentRequest(path: attachment.url)
     }
 
+    func authenticatedRequest(path: String) -> URLRequest? {
+        client?.attachmentRequest(path: path)
+    }
+
+    func spaceStars() async throws -> [ChatMessage] { try await requireClient().stars() }
+    func spaceAlbum() async throws -> [AlbumPhoto] { try await requireClient().album() }
+    func spaceGiftPages() async throws -> [GiftPage] { try await requireClient().giftPages() }
+    func giftPageURL(file: String) -> URL? { client?.giftPageURL(file: file) }
+
+    func setStar(messageID: Int, on: Bool) async throws {
+        let starred = try await requireClient().setStar(messageID: messageID, on: on)
+        if let index = messages.firstIndex(where: { $0.id == messageID }) {
+            messages[index].meta.starred = starred
+        }
+    }
+
+    func spaceMoments(kind: MomentKind, before: Int? = nil) async throws -> MomentsResponse {
+        try await requireClient().moments(kind: kind, before: before)
+    }
+
+    func uploadMomentImage(data: Data, name: String, mime: String) async throws -> Attachment {
+        try await requireClient().upload(data: data, name: name, mime: mime)
+    }
+
+    func createMoment(kind: MomentKind, text: String, attachments: [Attachment]) async throws -> MomentPost {
+        try await requireClient().createMoment(kind: kind, text: text, attachments: attachments)
+    }
+
+    func likeMoment(id: Int, on: Bool) async throws -> [String: String] {
+        try await requireClient().likeMoment(id: id, on: on)
+    }
+
+    func commentMoment(id: Int, text: String, replyTo: MessageAuthor? = nil) async throws -> MomentComment {
+        try await requireClient().commentMoment(id: id, text: text, replyTo: replyTo)
+    }
+
+    func deleteMoment(id: Int) async throws { try await requireClient().deleteMoment(id: id) }
+
+    func spaceCalendar(year: Int, month: Int) async throws -> CalendarMonthResponse {
+        try await requireClient().calendar(year: year, month: month)
+    }
+
+    func createCalendarEvent(_ payload: CalendarCreatePayload) async throws -> CalendarEvent {
+        try await requireClient().createCalendarEvent(payload)
+    }
+
+    func deleteCalendarEvent(id: Int) async throws { try await requireClient().deleteCalendarEvent(id: id) }
+
     func resolvedAIBubbleColor(default fallback: Color) -> Color {
         Color(hexString: aiBubbleColorHex) ?? fallback
     }
@@ -561,6 +609,12 @@ final class AppModel: ObservableObject {
                 if let id = envelope.id,
                    let index = messages.firstIndex(where: { $0.id == id }) {
                     messages[index].meta.reactions = envelope.reactions ?? [:]
+                }
+                return
+            case "star":
+                if let id = envelope.id,
+                   let index = messages.firstIndex(where: { $0.id == id }) {
+                    messages[index].meta.starred = envelope.starred
                 }
                 return
             case "thinking_delta":

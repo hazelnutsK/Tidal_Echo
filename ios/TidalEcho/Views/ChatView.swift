@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct ChatView: View {
     @ObservedObject var model: AppModel
     @State private var showingSettings = false
+    @State private var didPositionInitialHistory = false
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -108,10 +109,35 @@ struct ChatView: View {
             }
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.refresh() }
-            .onAppear { scrollToBottom(proxy, animated: false) }
-            .onChange(of: model.messages.count) { _ in scrollToBottom(proxy, animated: true) }
+            .onAppear { positionInitialHistoryIfNeeded(proxy) }
+            .onChange(of: model.messages.count) { _ in
+                if didPositionInitialHistory && !model.isLoadingHistory {
+                    scrollToBottom(proxy, animated: true)
+                } else {
+                    scrollToBottom(proxy, animated: false)
+                }
+            }
+            .onChange(of: model.isLoadingHistory) { loading in
+                guard !loading, !model.messages.isEmpty else { return }
+                didPositionInitialHistory = true
+                settleAtBottom(proxy)
+            }
             .onChange(of: model.streamingReply) { _ in scrollToBottom(proxy, animated: false) }
             .onChange(of: model.isTyping) { _ in scrollToBottom(proxy, animated: true) }
+        }
+    }
+
+    private func positionInitialHistoryIfNeeded(_ proxy: ScrollViewProxy) {
+        guard !model.messages.isEmpty else { return }
+        didPositionInitialHistory = true
+        settleAtBottom(proxy)
+    }
+
+    private func settleAtBottom(_ proxy: ScrollViewProxy) {
+        scrollToBottom(proxy, animated: false)
+        // Lazy rows and authenticated images finish their first layout on later passes.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            proxy.scrollTo("chat-bottom", anchor: .bottom)
         }
     }
 

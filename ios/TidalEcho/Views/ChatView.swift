@@ -1,6 +1,7 @@
 import AudioToolbox
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ChatView: View {
@@ -9,7 +10,14 @@ struct ChatView: View {
     @State private var showingSettings = false
     @State private var showingSpaces = false
     @State private var showingVoiceCall = false
+    @State private var showingSearch = false
+    @State private var showingSessions = false
+    @State private var editingMessage: ChatMessage?
+    @State private var pendingRegeneration: ChatMessage?
+    @State private var pendingHide: ChatMessage?
     @State private var didPositionInitialHistory = false
+    @State private var canTriggerOlderHistory = false
+    @State private var isPrependingHistory = false
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -51,6 +59,15 @@ struct ChatView: View {
             SettingsView(model: model)
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showingSearch) {
+            MessageSearchView(model: model)
+        }
+        .sheet(isPresented: $showingSessions) {
+            SessionManagerView(model: model)
+        }
+        .sheet(item: $editingMessage) { message in
+            EditMessageView(model: model, message: message)
+        }
         .fullScreenCover(isPresented: $showingSpaces) {
             SpacesView(model: model)
         }
@@ -59,6 +76,41 @@ struct ChatView: View {
         }
         .onAppear { openAcceptedCallIfNeeded() }
         .onChange(of: nativeCalls.acceptedInvite?.id) { _ in openAcceptedCallIfNeeded() }
+        .confirmationDialog(
+            "重新生成这条回复？",
+            isPresented: Binding(
+                get: { pendingRegeneration != nil },
+                set: { if !$0 { pendingRegeneration = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("重新生成") {
+                guard let message = pendingRegeneration else { return }
+                pendingRegeneration = nil
+                Task {
+                    do { try await model.regenerateMessage(id: message.id) }
+                    catch { model.errorMessage = error.localizedDescription }
+                }
+            }
+            Button("取消", role: .cancel) { pendingRegeneration = nil }
+        }
+        .confirmationDialog(
+            "只在这台 iPhone 上隐藏这条消息？",
+            isPresented: Binding(
+                get: { pendingHide != nil },
+                set: { if !$0 { pendingHide = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("隐藏", role: .destructive) {
+                guard let message = pendingHide else { return }
+                pendingHide = nil
+                model.hideMessageLocally(id: message.id)
+            }
+            Button("取消", role: .cancel) { pendingHide = nil }
+        } message: {
+            Text("不会删除服务器或对方那边的记录。")
+        }
     }
 
     private var topBar: some View {
@@ -70,24 +122,44 @@ struct ChatView: View {
                     .foregroundStyle(palette.accent)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("小克")
-                    .font(.system(size: 17, weight: .semibold, design: .serif))
+            Button { showingSessions = true } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 4) {
+                        Text("小克")
+                            .font(.system(size: 17, weight: .semibold, design: .serif))
+                        if model.activeSessionID != AppModel.legacySessionID {
+                            Text("· \(model.activeSessionTitle)")
+                                .font(.caption.weight(.medium))
+                                .lineLimit(1)
+                        }
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                    }
                     .foregroundStyle(palette.text)
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(model.isStreamConnected ? Color.green.opacity(0.8) : palette.secondaryText)
-                        .frame(width: 6, height: 6)
-                    Text(model.connectionText)
-                        .font(.caption)
-                        .foregroundStyle(palette.secondaryText)
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(model.isStreamConnected ? Color.green.opacity(0.8) : palette.secondaryText)
+                            .frame(width: 6, height: 6)
+                        Text(model.connectionText)
+                            .font(.caption)
+                            .foregroundStyle(palette.secondaryText)
+                    }
                 }
             }
+            .buttonStyle(.plain)
 
             Spacer()
 
             if model.isLoadingHistory {
                 ProgressView().tint(palette.accent)
+            }
+
+            Button { showingSearch = true } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(palette.text)
+                    .frame(width: 36, height: 36)
+                    .background(palette.composer, in: Circle())
             }
 
             Button { showingVoiceCall = true } label: {
@@ -123,6 +195,18 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 9) {
+                    if canTriggerOlderHistory && model.canLoadOlderHistory {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("载入更早的记录…")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .onAppear { prependOlderHistory(using: proxy) }
+                    }
+
                     if model.messages.isEmpty && !model.isLoadingHistory {
                         VStack(spacing: 10) {
                             Image(systemName: "water.waves")
@@ -166,6 +250,18 @@ struct ChatView: View {
                             },
                             onSpeak: {
                                 Task { await model.speakMessage(message) }
+                            },
+                            onCopy: {
+                                UIPasteboard.general.string = message.text
+                            },
+                            onEdit: {
+                                editingMessage = message
+                            },
+                            onRegenerate: {
+                                pendingRegeneration = message
+                            },
+                            onHide: {
+                                pendingHide = message
                             },
                             onAnswerCall: {
                                 presentVoiceCallDirectly()
@@ -215,6 +311,7 @@ struct ChatView: View {
             .refreshable { await model.refresh() }
             .onAppear { positionInitialHistoryIfNeeded(proxy) }
             .onChange(of: model.messages.count) { _ in
+                guard !isPrependingHistory else { return }
                 if didPositionInitialHistory && !model.isLoadingHistory {
                     scrollToBottom(proxy, animated: true)
                 } else {
@@ -228,6 +325,14 @@ struct ChatView: View {
             }
             .onChange(of: model.streamingReply) { _ in scrollToBottom(proxy, animated: false) }
             .onChange(of: model.isTyping) { _ in scrollToBottom(proxy, animated: true) }
+            .onChange(of: model.navigationRequest) { request in
+                guard let request else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(request.messageID, anchor: .center)
+                    }
+                }
+            }
         }
     }
 
@@ -242,6 +347,21 @@ struct ChatView: View {
         // Lazy rows and authenticated images finish their first layout on later passes.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             proxy.scrollTo("chat-bottom", anchor: .bottom)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            canTriggerOlderHistory = true
+        }
+    }
+
+    private func prependOlderHistory(using proxy: ScrollViewProxy) {
+        guard !isPrependingHistory, !model.isLoadingOlderHistory else { return }
+        isPrependingHistory = true
+        Task {
+            let anchor = await model.loadOlderHistory()
+            DispatchQueue.main.async {
+                if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                isPrependingHistory = false
+            }
         }
     }
 
@@ -268,6 +388,326 @@ struct ChatView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
             showingVoiceCall = true
         }
+    }
+}
+
+private struct MessageSearchView: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var results: [ChatMessage] = []
+    @State private var isSearching = false
+    @State private var isOpening = false
+    @State private var errorText: String?
+
+    private var palette: EchoPalette { model.theme.palette }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && results.isEmpty && !isSearching {
+                    VStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 28, weight: .light))
+                        Text("没有找到相关聊天")
+                    }
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 70)
+                    .listRowBackground(Color.clear)
+                }
+
+                ForEach(results) { message in
+                    Button {
+                        guard !isOpening else { return }
+                        isOpening = true
+                        Task {
+                            await model.jumpToMessage(message)
+                            dismiss()
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack(spacing: 7) {
+                                Text(message.author == .human ? "小雪" : "小克")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(message.author == .ai ? palette.accent : palette.text)
+                                Text(model.sessionTitle(for: message))
+                                    .font(.caption2)
+                                    .foregroundStyle(palette.secondaryText)
+                                Spacer()
+                                Text(Self.shortDate(message.timestamp))
+                                    .font(.caption2)
+                                    .foregroundStyle(palette.secondaryText)
+                            }
+                            Text(message.text.isEmpty ? "[附件]" : message.text)
+                                .font(model.chatFont.font(size: 15, weight: model.chatWeight.echoFontWeight))
+                                .foregroundStyle(palette.text)
+                                .lineLimit(3)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .overlay {
+                if isSearching { ProgressView("正在搜索…").tint(palette.accent) }
+                else if query.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "text.magnifyingglass")
+                            .font(.system(size: 31, weight: .light))
+                        Text("搜索所有窗口里的聊天记录")
+                    }
+                    .foregroundStyle(palette.secondaryText)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(palette.background.ignoresSafeArea())
+            .navigationTitle("搜索聊天记录")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "输入关键词")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } }
+            }
+            .task(id: query) {
+                let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    results = []
+                    isSearching = false
+                    return
+                }
+                isSearching = true
+                do {
+                    try await Task.sleep(nanoseconds: 280_000_000)
+                    guard !Task.isCancelled else { return }
+                    results = try await model.searchMessages(trimmed)
+                    errorText = nil
+                } catch is CancellationError {
+                    return
+                } catch {
+                    results = []
+                    errorText = error.localizedDescription
+                }
+                isSearching = false
+            }
+            .alert("搜索失败", isPresented: Binding(
+                get: { errorText != nil },
+                set: { if !$0 { errorText = nil } }
+            )) {
+                Button("好", role: .cancel) { errorText = nil }
+            } message: {
+                Text(errorText ?? "")
+            }
+        }
+        .tint(palette.accent)
+        .presentationDetents([.large])
+    }
+
+    private static func shortDate(_ raw: String) -> String {
+        let input = ISO8601DateFormatter()
+        input.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = input.date(from: raw) ?? ISO8601DateFormatter().date(from: raw) else { return "" }
+        let output = DateFormatter()
+        output.locale = Locale(identifier: "zh_CN")
+        output.dateFormat = Calendar.current.isDateInToday(date) ? "HH:mm" : "M月d日"
+        return output.string(from: date)
+    }
+}
+
+private struct SessionManagerView: View {
+    @ObservedObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var renamingSession: APISession?
+    @State private var renameText = ""
+    @State private var deletingSession: APISession?
+    @State private var isCreating = false
+    @State private var errorText: String?
+
+    private var palette: EchoPalette { model.theme.palette }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("对话窗口") {
+                    sessionButton(id: AppModel.legacySessionID, title: "旧主线 / Desktop 记录", subtitle: "没有 API 窗口标记的聊天")
+                    ForEach(model.sessions) { session in
+                        sessionButton(
+                            id: session.id,
+                            title: session.title,
+                            subtitle: "从消息 #\(session.sinceID) 开始"
+                        )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { deletingSession = session } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                            Button {
+                                renameText = session.title
+                                renamingSession = session
+                            } label: {
+                                Label("改名", systemImage: "pencil")
+                            }
+                            .tint(palette.accent)
+                        }
+                    }
+                }
+
+                if model.sessions.isEmpty && !model.isLoadingSessions {
+                    Section {
+                        Text("API loop 没有开启时，只会显示旧主线；这不影响 Desktop 聊天。")
+                            .font(.footnote)
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                }
+            }
+            .overlay { if model.isLoadingSessions { ProgressView("读取对话窗口…") } }
+            .scrollContentBackground(.hidden)
+            .background(palette.background.ignoresSafeArea())
+            .navigationTitle("对话窗口")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("完成") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        guard !isCreating else { return }
+                        isCreating = true
+                        Task {
+                            defer { isCreating = false }
+                            do {
+                                try await model.createSession()
+                                dismiss()
+                            } catch { errorText = error.localizedDescription }
+                        }
+                    } label: {
+                        if isCreating { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "plus") }
+                    }
+                }
+            }
+            .task { await model.refreshSessions() }
+            .alert("重命名对话", isPresented: Binding(
+                get: { renamingSession != nil },
+                set: { if !$0 { renamingSession = nil } }
+            )) {
+                TextField("对话名称", text: $renameText)
+                Button("保存") {
+                    guard let session = renamingSession else { return }
+                    renamingSession = nil
+                    Task {
+                        do { try await model.renameSession(id: session.id, title: renameText) }
+                        catch { errorText = error.localizedDescription }
+                    }
+                }
+                Button("取消", role: .cancel) { renamingSession = nil }
+            }
+            .confirmationDialog(
+                "删除这个对话窗口？",
+                isPresented: Binding(
+                    get: { deletingSession != nil },
+                    set: { if !$0 { deletingSession = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("删除窗口和其中记录", role: .destructive) {
+                    guard let session = deletingSession else { return }
+                    deletingSession = nil
+                    Task {
+                        do { try await model.deleteSession(id: session.id) }
+                        catch { errorText = error.localizedDescription }
+                    }
+                }
+                Button("取消", role: .cancel) { deletingSession = nil }
+            } message: {
+                Text("服务器里的这个 API 窗口及聊天记录会被永久删除。")
+            }
+            .alert("对话操作失败", isPresented: Binding(
+                get: { errorText != nil },
+                set: { if !$0 { errorText = nil } }
+            )) {
+                Button("好", role: .cancel) { errorText = nil }
+            } message: {
+                Text(errorText ?? "")
+            }
+        }
+        .tint(palette.accent)
+        .presentationDetents([.medium, .large])
+    }
+
+    private func sessionButton(id: String, title: String, subtitle: String) -> some View {
+        Button {
+            Task {
+                await model.activateSession(id)
+                dismiss()
+            }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(.body.weight(.medium)).foregroundStyle(palette.text)
+                    Text(subtitle).font(.caption).foregroundStyle(palette.secondaryText)
+                }
+                Spacer()
+                if model.activeSessionID == id {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(palette.accent)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct EditMessageView: View {
+    @ObservedObject var model: AppModel
+    let message: ChatMessage
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var isSaving = false
+    @State private var errorText: String?
+
+    init(model: AppModel, message: ChatMessage) {
+        self.model = model
+        self.message = message
+        _text = State(initialValue: message.text)
+    }
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .font(model.chatFont.font(size: 17, weight: model.chatWeight.echoFontWeight))
+                .padding(12)
+                .navigationTitle("编辑消息")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        if isSaving { ProgressView().controlSize(.small) }
+                        else {
+                            Button("保存") {
+                                isSaving = true
+                                Task {
+                                    do {
+                                        try await model.editMessage(id: message.id, text: text)
+                                        dismiss()
+                                    } catch {
+                                        isSaving = false
+                                        errorText = error.localizedDescription
+                                    }
+                                }
+                            }
+                            .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                }
+                .alert("编辑失败", isPresented: Binding(
+                    get: { errorText != nil },
+                    set: { if !$0 { errorText = nil } }
+                )) {
+                    Button("好", role: .cancel) { errorText = nil }
+                } message: {
+                    Text(errorText ?? "")
+                }
+        }
+        .tint(model.theme.palette.accent)
+        .presentationDetents([.medium, .large])
     }
 }
 

@@ -19,6 +19,12 @@ final class AppModel: ObservableObject {
     @Published var streamingReply = ""
     @Published var isStreamConnected = false
     @Published var isLoadingHistory = false
+    @Published var isLoadingOlderHistory = false
+    @Published var canLoadOlderHistory = false
+    @Published var sessions: [APISession] = []
+    @Published var activeSessionID = AppModel.legacySessionID
+    @Published var isLoadingSessions = false
+    @Published var navigationRequest: MessageNavigationRequest?
     @Published var isUploading = false
     @Published var isUploadingVoice = false
     @Published var isSynthesizingMessageID: Int?
@@ -76,8 +82,12 @@ final class AppModel: ObservableObject {
     private var isCatchingUp = false
     private var temporaryID = -1
     private var didBootstrap = false
+    private var historyArchive: [ChatMessage] = []
+    private var locallyHiddenMessageIDs: Set<Int> = []
 
     private static let initialHistoryWindow = 120
+    private static let olderHistoryPageSize = 80
+    static let legacySessionID = "__legacy__"
 
     private enum Keys {
         static let relayURL = "tidalEcho.relayURL"
@@ -97,6 +107,8 @@ final class AppModel: ObservableObject {
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
         static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
+        static let activeSessionID = "tidalEcho.activeSessionID"
+        static let locallyHiddenMessageIDs = "tidalEcho.locallyHiddenMessageIDs"
     }
 
     enum AppearanceImageKind: Equatable {
@@ -131,6 +143,10 @@ final class AppModel: ObservableObject {
         bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
         aiBubbleColorHex = defaults.string(forKey: Keys.aiBubbleColor) ?? ""
         humanBubbleColorHex = defaults.string(forKey: Keys.humanBubbleColor) ?? ""
+        activeSessionID = defaults.string(forKey: Keys.activeSessionID) ?? Self.legacySessionID
+        if let hidden = defaults.array(forKey: Keys.locallyHiddenMessageIDs) as? [Int] {
+            locallyHiddenMessageIDs = Set(hidden)
+        }
         backgroundImage = Self.loadAppearanceImage(.background)
         aiAvatarImage = Self.loadAppearanceImage(.aiAvatar)
         humanAvatarImage = Self.loadAppearanceImage(.humanAvatar)
@@ -177,6 +193,9 @@ final class AppModel: ObservableObject {
         incrementalSyncTask = nil
         client = nil
         messages = []
+        historyArchive = []
+        sessions = []
+        canLoadOlderHistory = false
         pendingAttachments = []
         streamingThinking = ""
         streamingReply = ""
@@ -190,6 +209,145 @@ final class AppModel: ObservableObject {
         await loadHistory()
     }
 
+    func loadOlderHistory() async -> Int? {
+        guard !isLoadingOlderHistory, canLoadOlderHistory,
+              let oldestID = messages.filter({ $0.id > 0 }).map(\.id).min(),
+              let oldestIndex = historyArchive.firstIndex(where: { $0.id == oldestID }),
+              oldestIndex > 0 else {
+            canLoadOlderHistory = false
+            return nil
+        }
+        isLoadingOlderHistory = true
+        defer { isLoadingOlderHistory = false }
+        let start = max(0, oldestIndex - Self.olderHistoryPageSize)
+        let older = historyArchive[start..<oldestIndex]
+        var merged = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+        older.forEach { merged[$0.id] = $0 }
+        messages = merged.values.sorted(by: Self.messageComesBefore)
+        canLoadOlderHistory = start > 0
+        return oldestID
+    }
+
+    func searchMessages(_ query: String) async throws -> [ChatMessage] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        return try await requireClient().search(trimmed).filter { !locallyHiddenMessageIDs.contains($0.id) }
+    }
+
+    func sessionTitle(for message: ChatMessage) -> String {
+        guard let id = message.meta.apiSession, !id.isEmpty else { return "旧主线" }
+        return sessions.first(where: { $0.id == id })?.title ?? "API 对话"
+    }
+
+    func jumpToMessage(_ message: ChatMessage) async {
+        let targetSession = normalizedSessionID(message.meta.apiSession)
+        if targetSession != activeSessionID {
+            await activateSession(targetSession)
+        }
+        guard let index = historyArchive.firstIndex(where: { $0.id == message.id }) else {
+            errorMessage = "没有在当前记录中找到这条消息"
+            return
+        }
+        let start = max(0, index - 45)
+        let end = min(historyArchive.count, index + 46)
+        messages = Array(historyArchive[start..<end])
+        canLoadOlderHistory = start > 0
+        navigationRequest = MessageNavigationRequest(messageID: message.id)
+    }
+
+    func refreshSessions() async {
+        guard let client else { return }
+        isLoadingSessions = true
+        defer { isLoadingSessions = false }
+        do {
+            applySessionsResponse(try await client.sessions(), chooseServerActiveWhenNeeded: false)
+        } catch {
+            sessions = []
+        }
+    }
+
+    func activateSession(_ id: String) async {
+        guard let client else { return }
+        let next = normalizedSessionID(id)
+        guard next != activeSessionID else { return }
+        isLoadingHistory = true
+        defer { isLoadingHistory = false }
+        do {
+            if next != Self.legacySessionID {
+                applySessionsResponse(try await client.updateSession(id: next, active: true), chooseServerActiveWhenNeeded: false)
+            }
+            activeSessionID = next
+            UserDefaults.standard.set(next, forKey: Keys.activeSessionID)
+            streamingThinking = ""
+            streamingReply = ""
+            isTyping = false
+            await loadHistory(showLoadingState: false)
+        } catch {
+            errorMessage = "切换对话失败：\(error.localizedDescription)"
+        }
+    }
+
+    func createSession(title: String = "新对话") async throws {
+        let response = try await requireClient().createSession(title: title)
+        applySessionsResponse(response, chooseServerActiveWhenNeeded: true)
+        if let created = response.created {
+            activeSessionID = created.id
+        } else if let active = response.activeSession, !active.isEmpty {
+            activeSessionID = active
+        }
+        UserDefaults.standard.set(activeSessionID, forKey: Keys.activeSessionID)
+        historyArchive = []
+        messages = []
+        canLoadOlderHistory = false
+    }
+
+    func renameSession(id: String, title: String) async throws {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        applySessionsResponse(
+            try await requireClient().updateSession(id: id, title: trimmed),
+            chooseServerActiveWhenNeeded: false
+        )
+    }
+
+    func deleteSession(id: String) async throws {
+        let wasActive = activeSessionID == id
+        let response = try await requireClient().deleteSession(id: id)
+        applySessionsResponse(response, chooseServerActiveWhenNeeded: true)
+        if wasActive {
+            activeSessionID = normalizedSessionID(response.activeSession)
+            UserDefaults.standard.set(activeSessionID, forKey: Keys.activeSessionID)
+            await loadHistory()
+        }
+    }
+
+    func editMessage(id: Int, text: String) async throws {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        upsert(try await requireClient().editMessage(id: id, text: trimmed))
+    }
+
+    func regenerateMessage(id: Int) async throws {
+        try await requireClient().regenerateMessage(id: id)
+        isTyping = true
+    }
+
+    func hideMessageLocally(id: Int) {
+        guard id > 0 else {
+            messages.removeAll { $0.id == id }
+            return
+        }
+        locallyHiddenMessageIDs.insert(id)
+        UserDefaults.standard.set(Array(locallyHiddenMessageIDs).sorted(), forKey: Keys.locallyHiddenMessageIDs)
+        messages.removeAll { $0.id == id }
+        historyArchive.removeAll { $0.id == id }
+    }
+
+    var activeSessionTitle: String {
+        if activeSessionID == Self.legacySessionID { return "旧主线" }
+        return sessions.first(where: { $0.id == activeSessionID })?.title ?? "API 对话"
+    }
+
     func backgroundRefreshForNotifications() async -> Bool {
         if client == nil { await bootstrap() }
         guard let client else { return false }
@@ -199,7 +357,7 @@ final class AppModel: ObservableObject {
             let fetched = try await client.history(since: historyCursor, limit: 100).filter { !$0.meta.hidden }
             fetched.forEach(upsert)
             let lastNotified = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
-            let candidates = messages.filter {
+            let candidates = fetched.filter {
                 $0.id > lastNotified && $0.author == .ai && ($0.kind == "reply" || $0.kind == "call")
             }
             if lastNotified == 0 {
@@ -214,7 +372,7 @@ final class AppModel: ObservableObject {
                     NativeNotificationCenter.shared.scheduleMessage(message)
                 }
             }
-            markNativeNotificationCursor(messages.map(\.id).filter { $0 > 0 }.max() ?? historyCursor)
+            markNativeNotificationCursor(fetched.map(\.id).filter { $0 > 0 }.max() ?? historyCursor)
             return !candidates.isEmpty
         } catch {
             return false
@@ -235,20 +393,29 @@ final class AppModel: ObservableObject {
             author: .human,
             kind: "user",
             text: text,
-            meta: MessageMeta(attachments: attachments),
+            meta: MessageMeta(
+                attachments: attachments,
+                apiSession: activeSessionID == Self.legacySessionID ? nil : activeSessionID
+            ),
             delivery: .sending
         )
         messages.append(optimistic)
         pendingAttachments = []
 
         do {
-            let response = try await client.send(text: text, attachments: attachments)
+            let response = try await client.send(
+                text: text,
+                attachments: attachments,
+                sessionID: activeSessionID == Self.legacySessionID ? nil : activeSessionID
+            )
             if let realIndex = messages.firstIndex(where: { $0.id == response.id }) {
                 messages[realIndex].delivery = .sent
                 messages.removeAll { $0.id == tempID }
             } else if let tempIndex = messages.firstIndex(where: { $0.id == tempID }) {
                 messages[tempIndex].id = response.id
                 messages[tempIndex].delivery = .sent
+                historyArchive.append(messages[tempIndex])
+                historyArchive.sort(by: Self.messageComesBefore)
             }
         } catch {
             if let index = messages.firstIndex(where: { $0.id == tempID }) {
@@ -290,6 +457,9 @@ final class AppModel: ObservableObject {
         let starred = try await requireClient().setStar(messageID: messageID, on: on)
         if let index = messages.firstIndex(where: { $0.id == messageID }) {
             messages[index].meta.starred = starred
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
+            historyArchive[index].meta.starred = starred
         }
     }
 
@@ -521,6 +691,7 @@ final class AppModel: ObservableObject {
             // Open the real-time stream before loading a potentially large history.
             // Otherwise the chat UI is already usable while replies are not yet observed.
             phase = .connected
+            await loadInitialSessions(using: nextClient)
             await loadHistory()
             if UIApplication.shared.applicationState == .active {
                 markNativeNotificationCursor(messages.map(\.id).filter { $0 > 0 }.max() ?? 0)
@@ -535,37 +706,77 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func loadHistory() async {
+    private func loadHistory(showLoadingState: Bool = true) async {
         guard let client else { return }
-        isLoadingHistory = true
-        defer { isLoadingHistory = false }
+        if showLoadingState { isLoadingHistory = true }
+        defer { if showLoadingState { isLoadingHistory = false } }
 
         do {
             var cursor = 0
-            var recent: [ChatMessage] = []
+            var archive: [ChatMessage] = []
             for _ in 0..<200 {
-                let batch = try await client.history(since: cursor, limit: 500)
+                let batch = try await client.history(since: cursor, limit: 500, sessionID: activeSessionID)
                 guard !batch.isEmpty else { break }
-                recent.append(contentsOf: batch.filter { !$0.meta.hidden })
-                if recent.count > 900 { recent.removeFirst(recent.count - 900) }
+                archive.append(contentsOf: batch.filter {
+                    !$0.meta.hidden && !locallyHiddenMessageIDs.contains($0.id) && messageBelongsToActiveSession($0)
+                })
                 guard let last = batch.last else { break }
                 cursor = max(cursor, last.id)
                 if batch.count < 500 { break }
             }
+            historyArchive = Dictionary(uniqueKeysWithValues: archive.map { ($0.id, $0) })
+                .values.sorted(by: Self.messageComesBefore)
             // Render only the newest window on launch. Building hundreds of variable-height
             // SwiftUI rows makes ScrollViewReader visibly travel through old conversations.
-            let historyMaxID = recent.map(\.id).max() ?? 0
-            let visibleHistory = recent.suffix(Self.initialHistoryWindow)
+            let historyMaxID = historyArchive.map(\.id).max() ?? 0
+            let visibleHistory = historyArchive.suffix(Self.initialHistoryWindow)
             var merged = Dictionary(uniqueKeysWithValues: visibleHistory.map { ($0.id, $0) })
             // Preserve SSE messages that arrived after the history snapshot, plus any
             // optimistic outgoing message still waiting for its permanent server id.
-            for message in messages where message.id < 0 || message.id > historyMaxID {
+            for message in messages where (message.id < 0 || message.id > historyMaxID) && messageBelongsToActiveSession(message) {
                 merged[message.id] = message
             }
             messages = merged.values.sorted(by: Self.messageComesBefore)
+            canLoadOlderHistory = historyArchive.count > visibleHistory.count
         } catch {
             errorMessage = "聊天记录加载失败：\(error.localizedDescription)"
         }
+    }
+
+    private func loadInitialSessions(using client: APIClient) async {
+        do {
+            let response = try await client.sessions()
+            applySessionsResponse(response, chooseServerActiveWhenNeeded: true)
+        } catch {
+            sessions = []
+            activeSessionID = Self.legacySessionID
+        }
+    }
+
+    private func applySessionsResponse(_ response: SessionsResponse, chooseServerActiveWhenNeeded: Bool) {
+        sessions = response.sessions
+        let validIDs = Set(response.sessions.map(\.id))
+        let saved = UserDefaults.standard.string(forKey: Keys.activeSessionID) ?? activeSessionID
+        if saved == Self.legacySessionID || validIDs.contains(saved) {
+            activeSessionID = saved
+        } else if chooseServerActiveWhenNeeded,
+                  let serverActive = response.activeSession,
+                  validIDs.contains(serverActive) {
+            activeSessionID = serverActive
+        } else {
+            activeSessionID = Self.legacySessionID
+        }
+        UserDefaults.standard.set(activeSessionID, forKey: Keys.activeSessionID)
+    }
+
+    private func normalizedSessionID(_ id: String?) -> String {
+        guard let id, !id.isEmpty else { return Self.legacySessionID }
+        return id
+    }
+
+    private func messageBelongsToActiveSession(_ message: ChatMessage) -> Bool {
+        let messageSession = normalizedSessionID(message.meta.apiSession)
+        return messageSession == activeSessionID
     }
 
     private func startStream(using client: APIClient) {
@@ -712,17 +923,33 @@ final class AppModel: ObservableObject {
                    let index = messages.firstIndex(where: { $0.id == id }) {
                     messages[index].meta.reactions = envelope.reactions ?? [:]
                 }
+                if let id = envelope.id,
+                   let index = historyArchive.firstIndex(where: { $0.id == id }) {
+                    historyArchive[index].meta.reactions = envelope.reactions ?? [:]
+                }
                 return
             case "star":
                 if let id = envelope.id,
                    let index = messages.firstIndex(where: { $0.id == id }) {
                     messages[index].meta.starred = envelope.starred
                 }
+                if let id = envelope.id,
+                   let index = historyArchive.firstIndex(where: { $0.id == id }) {
+                    historyArchive[index].meta.starred = envelope.starred
+                }
+                return
+            case "remove":
+                if let id = envelope.id {
+                    messages.removeAll { $0.id == id }
+                    historyArchive.removeAll { $0.id == id }
+                }
                 return
             case "thinking_delta":
+                guard normalizedSessionID(envelope.apiSession) == activeSessionID else { return }
                 streamingThinking += envelope.text ?? ""
                 return
             case "reply_delta":
+                guard normalizedSessionID(envelope.apiSession) == activeSessionID else { return }
                 streamingReply += envelope.text ?? ""
                 isTyping = true
                 return
@@ -734,7 +961,7 @@ final class AppModel: ObservableObject {
         guard let message = try? decoder.decode(ChatMessage.self, from: data),
               !message.meta.hidden else { return }
         upsert(message)
-        if message.author == .ai {
+        if message.author == .ai && messageBelongsToActiveSession(message) {
             if message.kind == "thinking" { streamingThinking = "" }
             if message.kind == "reply" {
                 streamingReply = ""
@@ -744,13 +971,31 @@ final class AppModel: ObservableObject {
     }
 
     private func upsert(_ message: ChatMessage) {
+        guard !locallyHiddenMessageIDs.contains(message.id) else { return }
         let wasKnown = messages.contains(where: { $0.id == message.id })
+        let belongsToActiveSession = messageBelongsToActiveSession(message)
+        if belongsToActiveSession {
+            if let archiveIndex = historyArchive.firstIndex(where: { $0.id == message.id }) {
+                historyArchive[archiveIndex] = message
+            } else if message.id > 0 {
+                historyArchive.append(message)
+                historyArchive.sort(by: Self.messageComesBefore)
+            }
+        }
+        guard belongsToActiveSession else {
+            handleNativeArrival(message, wasKnown: false)
+            return
+        }
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
             messages[index] = message
         } else {
             messages.append(message)
             messages.sort(by: Self.messageComesBefore)
         }
+        handleNativeArrival(message, wasKnown: wasKnown)
+    }
+
+    private func handleNativeArrival(_ message: ChatMessage, wasKnown: Bool) {
         guard !wasKnown, message.author == .ai else { return }
         if message.kind == "call" {
             NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)

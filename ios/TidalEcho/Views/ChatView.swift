@@ -167,6 +167,12 @@ struct ChatView: View {
                             onSpeak: {
                                 Task { await model.speakMessage(message) }
                             },
+                            onAnswerCall: {
+                                NativeCallCoordinator.shared.reportIncoming(
+                                    messageID: message.id,
+                                    text: message.text
+                                )
+                            },
                             attachmentRequest: model.attachmentRequest
                         )
                         .id(message.id)

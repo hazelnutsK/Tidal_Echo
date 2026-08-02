@@ -733,16 +733,7 @@ final class AppModel: ObservableObject {
 
         guard let message = try? decoder.decode(ChatMessage.self, from: data),
               !message.meta.hidden else { return }
-        let wasKnown = messages.contains(where: { $0.id == message.id })
         upsert(message)
-        if !wasKnown, message.author == .ai {
-            if message.kind == "call" {
-                NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
-            } else if message.kind == "reply", UIApplication.shared.applicationState != .active {
-                NativeNotificationCenter.shared.scheduleMessage(message)
-            }
-            markNativeNotificationCursor(message.id)
-        }
         if message.author == .ai {
             if message.kind == "thinking" { streamingThinking = "" }
             if message.kind == "reply" {
@@ -753,12 +744,20 @@ final class AppModel: ObservableObject {
     }
 
     private func upsert(_ message: ChatMessage) {
+        let wasKnown = messages.contains(where: { $0.id == message.id })
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
             messages[index] = message
         } else {
             messages.append(message)
             messages.sort(by: Self.messageComesBefore)
         }
+        guard !wasKnown, message.author == .ai else { return }
+        if message.kind == "call" {
+            NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
+        } else if message.kind == "reply", UIApplication.shared.applicationState != .active {
+            NativeNotificationCenter.shared.scheduleMessage(message)
+        }
+        markNativeNotificationCursor(message.id)
     }
 
     private func markNativeNotificationCursor(_ id: Int) {

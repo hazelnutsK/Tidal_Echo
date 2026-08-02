@@ -22,6 +22,21 @@ final class AppModel: ObservableObject {
     @Published var theme: EchoTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: Keys.theme) }
     }
+    @Published var chatFont: EchoChatFont {
+        didSet { UserDefaults.standard.set(chatFont.rawValue, forKey: Keys.chatFont) }
+    }
+    @Published var fontScale: Double {
+        didSet { UserDefaults.standard.set(fontScale, forKey: Keys.fontScale) }
+    }
+    @Published var showsAIAvatar: Bool {
+        didSet { UserDefaults.standard.set(showsAIAvatar, forKey: Keys.showsAIAvatar) }
+    }
+    @Published var bubbleOpacity: Double {
+        didSet { UserDefaults.standard.set(bubbleOpacity, forKey: Keys.bubbleOpacity) }
+    }
+    @Published var bubbleRadius: Double {
+        didSet { UserDefaults.standard.set(bubbleRadius, forKey: Keys.bubbleRadius) }
+    }
 
     private var client: APIClient?
     private let stream = SSEClient()
@@ -37,11 +52,23 @@ final class AppModel: ObservableObject {
         static let relayURL = "tidalEcho.relayURL"
         static let relaySecret = "relaySecret"
         static let theme = "tidalEcho.theme"
+        static let chatFont = "tidalEcho.chatFont"
+        static let fontScale = "tidalEcho.fontScale"
+        static let showsAIAvatar = "tidalEcho.showsAIAvatar"
+        static let bubbleOpacity = "tidalEcho.bubbleOpacity"
+        static let bubbleRadius = "tidalEcho.bubbleRadius"
     }
 
     init() {
-        let rawTheme = UserDefaults.standard.string(forKey: Keys.theme) ?? EchoTheme.mist.rawValue
+        let defaults = UserDefaults.standard
+        let rawTheme = defaults.string(forKey: Keys.theme) ?? EchoTheme.mist.rawValue
         theme = EchoTheme(rawValue: rawTheme) ?? .mist
+        let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
+        chatFont = EchoChatFont(rawValue: rawFont) ?? .system
+        fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
+        showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
+        bubbleOpacity = defaults.object(forKey: Keys.bubbleOpacity) == nil ? 1 : defaults.double(forKey: Keys.bubbleOpacity)
+        bubbleRadius = defaults.object(forKey: Keys.bubbleRadius) == nil ? 18 : defaults.double(forKey: Keys.bubbleRadius)
     }
 
     var savedServerAddress: String {
@@ -152,6 +179,42 @@ final class AppModel: ObservableObject {
 
     func attachmentRequest(for attachment: Attachment) -> URLRequest? {
         client?.attachmentRequest(path: attachment.url)
+    }
+
+    func settingsBrain() async throws -> BrainTarget {
+        try await requireClient().brain()
+    }
+
+    func updateSettingsBrain(_ target: BrainTarget) async throws -> BrainTarget {
+        try await requireClient().setBrain(target)
+    }
+
+    func settingsLoopConfig() async throws -> LoopConfigResponse {
+        try await requireClient().loopConfig()
+    }
+
+    func updateLoopModel(_ modelID: String, chainCount: Int) async throws -> LoopConfigResponse {
+        try await requireClient().setLoopModel(modelID, chainCount: chainCount)
+    }
+
+    func settingsDesktopModel() async throws -> DesktopModelResponse {
+        try await requireClient().desktopModel()
+    }
+
+    func updateDesktopModel(_ modelID: String) async throws -> DesktopModelResponse {
+        try await requireClient().setDesktopModel(modelID)
+    }
+
+    func settingsContextStatus() async throws -> ContextStatus {
+        try await requireClient().contextStatus()
+    }
+
+    func updateContextThreshold(triggerK: Int? = nil, auto: Bool? = nil) async throws -> ContextThresholdResponse {
+        try await requireClient().updateContextThreshold(triggerK: triggerK, auto: auto)
+    }
+
+    func performContextAction(_ action: String, sid: String? = nil) async throws -> ContextActionResponse {
+        try await requireClient().performContextAction(action, sid: sid)
     }
 
     static func normalizedRelayURL(_ raw: String) throws -> URL {
@@ -272,6 +335,11 @@ final class AppModel: ObservableObject {
         } catch {
             // SSE is already active; a transient catch-up failure can recover on refresh.
         }
+    }
+
+    private func requireClient() throws -> APIClient {
+        guard let client else { throw APIError.invalidResponse }
+        return client
     }
 
     private func startIncrementalSync(using client: APIClient) {

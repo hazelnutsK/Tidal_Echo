@@ -1,5 +1,7 @@
 import Combine
 import Foundation
+import SwiftUI
+import UIKit
 
 @MainActor
 final class AppModel: ObservableObject {
@@ -37,6 +39,33 @@ final class AppModel: ObservableObject {
     @Published var bubbleRadius: Double {
         didSet { UserDefaults.standard.set(bubbleRadius, forKey: Keys.bubbleRadius) }
     }
+    @Published var chatWeight: Double {
+        didSet { UserDefaults.standard.set(chatWeight, forKey: Keys.chatWeight) }
+    }
+    @Published var backgroundOpacity: Double {
+        didSet { UserDefaults.standard.set(backgroundOpacity, forKey: Keys.backgroundOpacity) }
+    }
+    @Published var showsAIBubble: Bool {
+        didSet { UserDefaults.standard.set(showsAIBubble, forKey: Keys.showsAIBubble) }
+    }
+    @Published var showsHumanAvatar: Bool {
+        didSet { UserDefaults.standard.set(showsHumanAvatar, forKey: Keys.showsHumanAvatar) }
+    }
+    @Published var bubbleWidthScale: Double {
+        didSet { UserDefaults.standard.set(bubbleWidthScale, forKey: Keys.bubbleWidthScale) }
+    }
+    @Published var bubbleBorderWidth: Double {
+        didSet { UserDefaults.standard.set(bubbleBorderWidth, forKey: Keys.bubbleBorderWidth) }
+    }
+    @Published var aiBubbleColorHex: String {
+        didSet { UserDefaults.standard.set(aiBubbleColorHex, forKey: Keys.aiBubbleColor) }
+    }
+    @Published var humanBubbleColorHex: String {
+        didSet { UserDefaults.standard.set(humanBubbleColorHex, forKey: Keys.humanBubbleColor) }
+    }
+    @Published var backgroundImage: UIImage?
+    @Published var aiAvatarImage: UIImage?
+    @Published var humanAvatarImage: UIImage?
 
     private var client: APIClient?
     private let stream = SSEClient()
@@ -57,6 +86,28 @@ final class AppModel: ObservableObject {
         static let showsAIAvatar = "tidalEcho.showsAIAvatar"
         static let bubbleOpacity = "tidalEcho.bubbleOpacity"
         static let bubbleRadius = "tidalEcho.bubbleRadius"
+        static let chatWeight = "tidalEcho.chatWeight"
+        static let backgroundOpacity = "tidalEcho.backgroundOpacity"
+        static let showsAIBubble = "tidalEcho.showsAIBubble"
+        static let showsHumanAvatar = "tidalEcho.showsHumanAvatar"
+        static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
+        static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
+        static let aiBubbleColor = "tidalEcho.aiBubbleColor"
+        static let humanBubbleColor = "tidalEcho.humanBubbleColor"
+    }
+
+    enum AppearanceImageKind: Equatable {
+        case background
+        case aiAvatar
+        case humanAvatar
+
+        var filename: String {
+            switch self {
+            case .background: return "chat-background.jpg"
+            case .aiAvatar: return "ai-avatar.jpg"
+            case .humanAvatar: return "human-avatar.jpg"
+            }
+        }
     }
 
     init() {
@@ -69,6 +120,17 @@ final class AppModel: ObservableObject {
         showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
         bubbleOpacity = defaults.object(forKey: Keys.bubbleOpacity) == nil ? 1 : defaults.double(forKey: Keys.bubbleOpacity)
         bubbleRadius = defaults.object(forKey: Keys.bubbleRadius) == nil ? 18 : defaults.double(forKey: Keys.bubbleRadius)
+        chatWeight = defaults.object(forKey: Keys.chatWeight) == nil ? 400 : defaults.double(forKey: Keys.chatWeight)
+        backgroundOpacity = defaults.object(forKey: Keys.backgroundOpacity) == nil ? 1 : defaults.double(forKey: Keys.backgroundOpacity)
+        showsAIBubble = defaults.object(forKey: Keys.showsAIBubble) == nil ? true : defaults.bool(forKey: Keys.showsAIBubble)
+        showsHumanAvatar = defaults.object(forKey: Keys.showsHumanAvatar) == nil ? false : defaults.bool(forKey: Keys.showsHumanAvatar)
+        bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)
+        bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
+        aiBubbleColorHex = defaults.string(forKey: Keys.aiBubbleColor) ?? ""
+        humanBubbleColorHex = defaults.string(forKey: Keys.humanBubbleColor) ?? ""
+        backgroundImage = Self.loadAppearanceImage(.background)
+        aiAvatarImage = Self.loadAppearanceImage(.aiAvatar)
+        humanAvatarImage = Self.loadAppearanceImage(.humanAvatar)
     }
 
     var savedServerAddress: String {
@@ -181,6 +243,46 @@ final class AppModel: ObservableObject {
         client?.attachmentRequest(path: attachment.url)
     }
 
+    func resolvedAIBubbleColor(default fallback: Color) -> Color {
+        Color(hexString: aiBubbleColorHex) ?? fallback
+    }
+
+    func resolvedHumanBubbleColor(default fallback: Color) -> Color {
+        Color(hexString: humanBubbleColorHex) ?? fallback
+    }
+
+    func setAIBubbleColor(_ color: Color) {
+        aiBubbleColorHex = Self.hexString(color) ?? ""
+    }
+
+    func setHumanBubbleColor(_ color: Color) {
+        humanBubbleColorHex = Self.hexString(color) ?? ""
+    }
+
+    func resetBubbleColors() {
+        aiBubbleColorHex = ""
+        humanBubbleColorHex = ""
+    }
+
+    func saveAppearanceImage(data: Data, kind: AppearanceImageKind) throws {
+        guard let original = UIImage(data: data) else { throw APIError.invalidResponse }
+        let maxDimension: CGFloat = kind == .background ? 2200 : 640
+        let image = Self.resizedImage(original, maxDimension: maxDimension)
+        guard let encoded = image.jpegData(compressionQuality: kind == .background ? 0.84 : 0.9) else {
+            throw APIError.invalidResponse
+        }
+        let url = try Self.appearanceImageURL(kind)
+        try encoded.write(to: url, options: [.atomic, .completeFileProtection])
+        setAppearanceImage(image, kind: kind)
+    }
+
+    func removeAppearanceImage(_ kind: AppearanceImageKind) {
+        if let url = try? Self.appearanceImageURL(kind) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        setAppearanceImage(nil, kind: kind)
+    }
+
     func settingsBrain() async throws -> BrainTarget {
         try await requireClient().brain()
     }
@@ -195,6 +297,30 @@ final class AppModel: ObservableObject {
 
     func updateLoopModel(_ modelID: String, chainCount: Int) async throws -> LoopConfigResponse {
         try await requireClient().setLoopModel(modelID, chainCount: chainCount)
+    }
+
+    func activateAPIPreset(_ index: Int) async throws -> LoopConfigResponse {
+        try await requireClient().activateAPIPreset(index)
+    }
+
+    func replaceAPIPresets(_ presets: [APIPresetInput]) async throws -> LoopConfigResponse {
+        try await requireClient().replaceAPIPresets(presets)
+    }
+
+    func settingsChatMode() async throws -> ChatMode {
+        try await requireClient().chatMode()
+    }
+
+    func updateChatMode(_ mode: ChatMode) async throws -> ChatMode {
+        try await requireClient().setChatMode(mode)
+    }
+
+    func settingsQuota() async throws -> QuotaResponse {
+        try await requireClient().quota()
+    }
+
+    func settingsAPIUsage() async throws -> APIUsageStats {
+        try await requireClient().loopStats()
     }
 
     func settingsDesktopModel() async throws -> DesktopModelResponse {
@@ -340,6 +466,50 @@ final class AppModel: ObservableObject {
     private func requireClient() throws -> APIClient {
         guard let client else { throw APIError.invalidResponse }
         return client
+    }
+
+    private func setAppearanceImage(_ image: UIImage?, kind: AppearanceImageKind) {
+        switch kind {
+        case .background: backgroundImage = image
+        case .aiAvatar: aiAvatarImage = image
+        case .humanAvatar: humanAvatarImage = image
+        }
+    }
+
+    private static func appearanceImageURL(_ kind: AppearanceImageKind) throws -> URL {
+        let base = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("TidalEcho", isDirectory: true)
+        try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base.appendingPathComponent(kind.filename)
+    }
+
+    private static func loadAppearanceImage(_ kind: AppearanceImageKind) -> UIImage? {
+        guard let url = try? appearanceImageURL(kind),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func resizedImage(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let largest = max(image.size.width, image.size.height)
+        guard largest > maxDimension else { return image }
+        let scale = maxDimension / largest
+        let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: size)) }
+    }
+
+    private static func hexString(_ color: Color) -> String? {
+        let resolved = UIColor(color)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        guard resolved.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
+        return String(format: "#%02X%02X%02X", Int(red * 255), Int(green * 255), Int(blue * 255))
     }
 
     private func startIncrementalSync(using client: APIClient) {

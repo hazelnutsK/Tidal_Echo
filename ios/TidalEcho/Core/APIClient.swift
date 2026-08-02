@@ -68,6 +68,40 @@ struct APIClient {
         return try decoder.decode(LoopConfigResponse.self, from: responseData)
     }
 
+    func activateAPIPreset(_ index: Int) async throws -> LoopConfigResponse {
+        var req = request(url: endpoint("app/loop_config"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(LoopPresetPayload(activatePreset: index, apiPresets: nil))
+        return try decoder.decode(LoopConfigResponse.self, from: try await data(for: req))
+    }
+
+    func replaceAPIPresets(_ presets: [APIPresetInput]) async throws -> LoopConfigResponse {
+        var req = request(url: endpoint("app/loop_config"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(LoopPresetPayload(activatePreset: nil, apiPresets: presets))
+        return try decoder.decode(LoopConfigResponse.self, from: try await data(for: req))
+    }
+
+    func chatMode() async throws -> ChatMode {
+        let responseData = try await data(for: request(url: endpoint("app/chat_mode")))
+        return try decoder.decode(ChatModeResponse.self, from: responseData).mode
+    }
+
+    func setChatMode(_ mode: ChatMode) async throws -> ChatMode {
+        var req = request(url: endpoint("app/chat_mode"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(ChatModePayload(mode: mode))
+        return try decoder.decode(ChatModeResponse.self, from: try await data(for: req)).mode
+    }
+
+    func quota() async throws -> QuotaResponse {
+        try decoder.decode(QuotaResponse.self, from: try await data(for: request(url: endpoint("app/quota"))))
+    }
+
+    func loopStats() async throws -> APIUsageStats {
+        try decoder.decode(APIUsageStats.self, from: try await data(for: request(url: endpoint("app/loop_stats"))))
+    }
+
     func desktopModel() async throws -> DesktopModelResponse {
         let responseData = try await data(for: request(url: endpoint("app/desktop_model")))
         return try decoder.decode(DesktopModelResponse.self, from: responseData)
@@ -162,6 +196,17 @@ private struct LoopConfigPayload: Encodable {
     let mainChain: [LoopRoute]
     enum CodingKeys: String, CodingKey { case mainChain = "main_chain" }
 }
+
+private struct LoopPresetPayload: Encodable {
+    let activatePreset: Int?
+    let apiPresets: [APIPresetInput]?
+    enum CodingKeys: String, CodingKey {
+        case activatePreset = "activate_preset"
+        case apiPresets = "api_presets"
+    }
+}
+
+private struct ChatModePayload: Encodable { let mode: ChatMode }
 
 private struct DesktopModelPayload: Encodable { let model: String }
 

@@ -162,9 +162,140 @@ struct LoopRoute: Codable {
 
 struct LoopConfigResponse: Decodable {
     let mainChain: [LoopRoute]
+    let apiPresets: [APIPreset]
 
     enum CodingKeys: String, CodingKey {
         case mainChain = "main_chain"
+        case apiPresets = "api_presets"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        mainChain = try values.decodeIfPresent([LoopRoute].self, forKey: .mainChain) ?? []
+        apiPresets = try values.decodeIfPresent([APIPreset].self, forKey: .apiPresets) ?? []
+    }
+}
+
+struct APIPreset: Codable, Identifiable {
+    let index: Int
+    let name: String
+    let url: String
+    let model: String
+    let keyMasked: String
+    let active: Bool
+
+    var id: Int { index }
+
+    enum CodingKeys: String, CodingKey {
+        case index, name, url, model, active
+        case keyMasked = "key_masked"
+    }
+}
+
+struct APIPresetInput: Encodable {
+    let name: String
+    let url: String
+    let key: String
+    let model: String
+}
+
+enum ChatMode: String, Codable, CaseIterable, Identifiable {
+    case long
+    case short
+    var id: String { rawValue }
+    var title: String { self == .long ? "长聊" : "短聊" }
+}
+
+struct ChatModeResponse: Decodable {
+    let mode: ChatMode
+}
+
+indirect enum JSONValue: Decodable {
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case null
+
+    init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer()
+        if value.decodeNil() { self = .null }
+        else if let object = try? value.decode([String: JSONValue].self) { self = .object(object) }
+        else if let array = try? value.decode([JSONValue].self) { self = .array(array) }
+        else if let bool = try? value.decode(Bool.self) { self = .bool(bool) }
+        else if let number = try? value.decode(Double.self) { self = .number(number) }
+        else if let string = try? value.decode(String.self) { self = .string(string) }
+        else { self = .null }
+    }
+}
+
+struct QuotaResponse: Decodable {
+    let raw: JSONValue
+}
+
+struct APIUsageNumbers: Decodable {
+    let input: Int
+    let output: Int
+    let cacheRead: Int
+    let cacheWrite: Int
+    let costUSD: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case input, output
+        case cacheRead = "cache_read"
+        case cacheWrite = "cache_write"
+        case costUSD = "cost_usd"
+    }
+}
+
+struct APIKeepaliveStats: Decodable {
+    let beats: Int
+    let costUSD: Double
+    let badCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case beats
+        case costUSD = "cost_usd"
+        case badCount = "bad_count"
+    }
+}
+
+struct APIUsageEntry: Decodable, Identifiable {
+    let id: Int
+    let timestamp: String
+    let model: String?
+    let input: Int
+    let output: Int
+    let cacheRead: Int
+    let cacheWrite: Int
+    let costUSD: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id, model, input, output
+        case timestamp = "ts"
+        case cacheRead = "cache_read"
+        case cacheWrite = "cache_write"
+        case costUSD = "cost_usd"
+    }
+}
+
+struct APIUsageStats: Decodable {
+    let messages: Int
+    let total: APIUsageNumbers
+    let totalCostUSD: Double
+    let average: APIUsageNumbers
+    let cacheHitRate: Double
+    let keepalive: APIKeepaliveStats
+    let cacheTTL: String
+    let recent: [APIUsageEntry]
+
+    enum CodingKeys: String, CodingKey {
+        case messages, total, keepalive, recent
+        case totalCostUSD = "total_cost_usd"
+        case average = "avg_per_message"
+        case cacheHitRate = "cache_hit_rate"
+        case cacheTTL = "cache_ttl"
     }
 }
 

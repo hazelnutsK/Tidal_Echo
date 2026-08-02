@@ -12,6 +12,14 @@ struct ChatView: View {
     var body: some View {
         ZStack {
             palette.background.ignoresSafeArea()
+            if let background = model.backgroundImage {
+                Image(uiImage: background)
+                    .resizable()
+                    .scaledToFill()
+                    .opacity(model.backgroundOpacity)
+                    .ignoresSafeArea()
+                    .clipped()
+            }
 
             VStack(spacing: 0) {
                 topBar
@@ -90,8 +98,17 @@ struct ChatView: View {
                             chatFont: model.chatFont,
                             fontScale: model.fontScale,
                             showsAIAvatar: model.showsAIAvatar,
+                            showsHumanAvatar: model.showsHumanAvatar,
+                            aiAvatarImage: model.aiAvatarImage,
+                            humanAvatarImage: model.humanAvatarImage,
+                            showsAIBubble: model.showsAIBubble,
+                            aiBubbleColor: model.resolvedAIBubbleColor(default: palette.aiBubble),
+                            humanBubbleColor: model.resolvedHumanBubbleColor(default: palette.humanBubble),
                             bubbleOpacity: model.bubbleOpacity,
                             bubbleRadius: model.bubbleRadius,
+                            bubbleWidthScale: model.bubbleWidthScale,
+                            bubbleBorderWidth: model.bubbleBorderWidth,
+                            chatWeight: model.chatWeight,
                             attachmentRequest: model.attachmentRequest
                         )
                         .id(message.id)
@@ -103,7 +120,8 @@ struct ChatView: View {
                             text: model.streamingThinking,
                             palette: palette,
                             chatFont: model.chatFont,
-                            fontScale: model.fontScale
+                            fontScale: model.fontScale,
+                            chatWeight: model.chatWeight
                         )
                     }
 
@@ -114,8 +132,14 @@ struct ChatView: View {
                             chatFont: model.chatFont,
                             fontScale: model.fontScale,
                             showsAIAvatar: model.showsAIAvatar,
+                            aiAvatarImage: model.aiAvatarImage,
+                            showsAIBubble: model.showsAIBubble,
+                            aiBubbleColor: model.resolvedAIBubbleColor(default: palette.aiBubble),
                             bubbleOpacity: model.bubbleOpacity,
-                            bubbleRadius: model.bubbleRadius
+                            bubbleRadius: model.bubbleRadius,
+                            bubbleWidthScale: model.bubbleWidthScale,
+                            bubbleBorderWidth: model.bubbleBorderWidth,
+                            chatWeight: model.chatWeight
                         )
                     } else if model.isTyping {
                         TypingRow(palette: palette)
@@ -215,7 +239,7 @@ private struct ComposerView: View {
 
                 TextField("写点什么…", text: $draftText, axis: .vertical)
                     .lineLimit(1...5)
-                    .font(model.chatFont.font(size: 16 * model.fontScale))
+                    .font(model.chatFont.font(size: 16 * model.fontScale, weight: model.chatWeight.echoFontWeight))
                     .foregroundStyle(palette.text)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 10)

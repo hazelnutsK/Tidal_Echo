@@ -130,4 +130,23 @@ extension Color {
             opacity: alpha
         )
     }
+
+    init?(hexString: String) {
+        let value = hexString.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard value.count == 6, let hex = UInt(value, radix: 16) else { return nil }
+        self.init(hex: hex)
+    }
+}
+
+extension Double {
+    var echoFontWeight: Font.Weight {
+        switch self {
+        case ..<350: return .light
+        case ..<450: return .regular
+        case ..<550: return .medium
+        case ..<650: return .semibold
+        case ..<750: return .bold
+        default: return .heavy
+        }
+    }
 }

@@ -19,6 +19,7 @@ struct MessageRow: View {
     let bubbleBorderWidth: Double
     let chatWeight: Double
     let onToggleStar: () -> Void
+    let onSpeak: () -> Void
     let attachmentRequest: (Attachment) -> URLRequest?
 
     var body: some View {
@@ -112,6 +113,11 @@ struct MessageRow: View {
                 } label: {
                     Label(message.meta.starred == nil ? "收藏" : "取消收藏",
                           systemImage: message.meta.starred == nil ? "star" : "star.slash")
+                }
+            }
+            if message.author == .ai && !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button(action: onSpeak) {
+                    Label("朗读", systemImage: "speaker.wave.2")
                 }
             }
         }
@@ -296,13 +302,79 @@ private struct AttachmentView: View {
             AuthenticatedImageView(request: request, palette: palette)
                 .frame(maxWidth: 260, minHeight: 120, maxHeight: 330)
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        } else if attachment.kind == "audio" || attachment.mime?.hasPrefix("audio/") == true {
+            VoiceAttachmentView(attachment: attachment, request: request, palette: palette)
         } else {
-            Label(attachment.name, systemImage: attachment.kind == "audio" ? "waveform" : "doc")
+            Label(attachment.name, systemImage: "doc")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(palette.text)
                 .padding(10)
                 .background(palette.composer.opacity(0.72), in: RoundedRectangle(cornerRadius: 11))
         }
+    }
+}
+
+private struct VoiceAttachmentView: View {
+    let attachment: Attachment
+    let request: URLRequest?
+    let palette: EchoPalette
+    @ObservedObject private var playback = VoicePlaybackCenter.shared
+
+    private var isCurrent: Bool { playback.currentID == attachment.id }
+
+    var body: some View {
+        Button {
+            guard let request else { return }
+            Task { await playback.toggle(id: attachment.id, request: request) }
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(palette.accent.opacity(0.15))
+                    if isCurrent && playback.isLoading {
+                        ProgressView().controlSize(.small).tint(palette.accent)
+                    } else {
+                        Image(systemName: isCurrent && playback.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(palette.accent)
+                    }
+                }
+                .frame(width: 32, height: 32)
+
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        HStack(alignment: .center, spacing: 2) {
+                            ForEach(0..<22, id: \.self) { index in
+                                Capsule()
+                                    .fill(palette.secondaryText.opacity(0.34))
+                                    .frame(width: 2, height: CGFloat(7 + ((index * 7) % 12)))
+                            }
+                        }
+                        .frame(maxHeight: .infinity)
+                        if isCurrent {
+                            Rectangle()
+                                .fill(palette.accent.opacity(0.34))
+                                .frame(width: geometry.size.width * playback.progress)
+                                .blendMode(.sourceAtop)
+                        }
+                    }
+                }
+                .frame(width: 86, height: 24)
+
+                Text(isCurrent && playback.duration > 0 ? voiceTime(playback.duration) : "语音")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(minWidth: 30, alignment: .trailing)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 7)
+            .background(palette.composer.opacity(0.72), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func voiceTime(_ value: TimeInterval) -> String {
+        let total = max(0, Int(value.rounded()))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

@@ -6,6 +6,7 @@ struct ChatView: View {
     @ObservedObject var model: AppModel
     @State private var showingSettings = false
     @State private var showingSpaces = false
+    @State private var showingVoiceCall = false
     @State private var didPositionInitialHistory = false
 
     private var palette: EchoPalette { model.theme.palette }
@@ -40,6 +41,9 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $showingSpaces) {
             SpacesView(model: model)
         }
+        .fullScreenCover(isPresented: $showingVoiceCall) {
+            VoiceCallView(model: model)
+        }
     }
 
     private var topBar: some View {
@@ -69,6 +73,14 @@ struct ChatView: View {
 
             if model.isLoadingHistory {
                 ProgressView().tint(palette.accent)
+            }
+
+            Button { showingVoiceCall = true } label: {
+                Image(systemName: "phone.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(palette.text)
+                    .frame(width: 38, height: 38)
+                    .background(palette.composer, in: Circle())
             }
 
             Button { showingSpaces = true } label: {
@@ -136,6 +148,9 @@ struct ChatView: View {
                                         model.errorMessage = error.localizedDescription
                                     }
                                 }
+                            },
+                            onSpeak: {
+                                Task { await model.speakMessage(message) }
                             },
                             attachmentRequest: model.attachmentRequest
                         )
@@ -225,6 +240,7 @@ struct ChatView: View {
 
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
+    @StateObject private var recorder = VoiceRecorder()
     @State private var photoItem: PhotosPickerItem?
     @State private var draftText = ""
 
@@ -232,6 +248,48 @@ private struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            if recorder.isRecording || recorder.hasRecording {
+                HStack(spacing: 11) {
+                    Button { recorder.cancel() } label: {
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                    }
+                    .foregroundStyle(palette.secondaryText)
+
+                    HStack(alignment: .center, spacing: 3) {
+                        ForEach(0..<18, id: \.self) { index in
+                            Capsule()
+                                .fill(palette.accent.opacity(0.45 + min(0.5, recorder.level)))
+                                .frame(width: 2.5, height: CGFloat(7 + ((index * 5) % 13)) * (0.55 + recorder.level * 0.7))
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(formatVoiceTime(recorder.duration))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(palette.secondaryText)
+
+                    Button {
+                        sendVoice()
+                    } label: {
+                        if model.isUploadingVoice {
+                            ProgressView().controlSize(.small).tint(.white)
+                        } else {
+                            Label(recorder.isRecording ? "发送" : "发出", systemImage: "arrow.up")
+                                .font(.caption.weight(.bold))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .frame(height: 32)
+                    .background(palette.accent, in: Capsule())
+                    .disabled(model.isUploadingVoice)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(palette.composer.opacity(0.92), in: RoundedRectangle(cornerRadius: 16))
+                .padding(.horizontal, 14)
+            }
+
             if !model.pendingAttachments.isEmpty || model.isUploading {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -275,6 +333,17 @@ private struct ComposerView: View {
                     .overlay(RoundedRectangle(cornerRadius: 19).stroke(palette.hairline))
 
                 Button {
+                    toggleRecording()
+                } label: {
+                    Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(recorder.isRecording ? Color.white : palette.accent)
+                        .frame(width: 38, height: 38)
+                        .background(recorder.isRecording ? Color.red.opacity(0.82) : palette.aiBubble, in: Circle())
+                }
+                .disabled(model.isUploadingVoice)
+
+                Button {
                     send()
                 } label: {
                     Image(systemName: "arrow.up")
@@ -291,6 +360,7 @@ private struct ComposerView: View {
         .padding(.top, 9)
         .padding(.bottom, 8)
         .background(.ultraThinMaterial)
+        .onDisappear { recorder.cancel() }
         .onChange(of: photoItem) { item in
             guard let item else { return }
             Task {
@@ -319,6 +389,35 @@ private struct ComposerView: View {
         let text = draftText
         draftText = ""
         Task { await model.sendMessage(text: text) }
+    }
+
+    private func toggleRecording() {
+        if recorder.isRecording {
+            recorder.finish()
+        } else {
+            recorder.cancel()
+            Task {
+                do { try await recorder.start() }
+                catch { model.errorMessage = error.localizedDescription }
+            }
+        }
+    }
+
+    private func sendVoice() {
+        if recorder.isRecording { recorder.finish() }
+        Task {
+            do {
+                let result = try recorder.result()
+                if await model.sendVoiceRecording(result) { recorder.markSent() }
+            } catch {
+                model.errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func formatVoiceTime(_ value: TimeInterval) -> String {
+        let total = max(0, Int(value))
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

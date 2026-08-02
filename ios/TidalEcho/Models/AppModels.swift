@@ -129,6 +129,12 @@ struct SendResponse: Decodable {
     let id: Int
 }
 
+struct VoiceResponse: Decodable {
+    let id: Int
+    let text: String?
+    let attachment: Attachment?
+}
+
 struct StreamEnvelope: Decodable {
     let type: String?
     let active: Bool?

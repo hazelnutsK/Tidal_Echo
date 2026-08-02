@@ -4,11 +4,16 @@ import UIKit
 struct MessageRow: View {
     let message: ChatMessage
     let palette: EchoPalette
+    let chatFont: EchoChatFont
+    let fontScale: Double
+    let showsAIAvatar: Bool
+    let bubbleOpacity: Double
+    let bubbleRadius: Double
     let attachmentRequest: (Attachment) -> URLRequest?
 
     var body: some View {
         if message.kind == "thinking" || message.kind == "act" {
-            ProcessRow(message: message, palette: palette)
+            ProcessRow(message: message, palette: palette, chatFont: chatFont, fontScale: fontScale)
         } else if message.kind == "call" {
             Text(message.text)
                 .font(.caption)
@@ -24,7 +29,7 @@ struct MessageRow: View {
         HStack(alignment: .bottom, spacing: 8) {
             if message.author == .human { Spacer(minLength: 56) }
 
-            if message.author == .ai {
+            if message.author == .ai && showsAIAvatar {
                 Image(systemName: "sparkle")
                     .font(.system(size: 13, weight: .light))
                     .foregroundStyle(palette.accent)
@@ -40,7 +45,7 @@ struct MessageRow: View {
 
                     if !message.text.isEmpty {
                         Text(message.text)
-                            .font(.system(size: 16))
+                            .font(chatFont.font(size: 16 * fontScale))
                             .lineSpacing(4)
                             .textSelection(.enabled)
                     }
@@ -49,8 +54,8 @@ struct MessageRow: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    message.author == .human ? palette.humanBubble : palette.aiBubble,
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    (message.author == .human ? palette.humanBubble : palette.aiBubble).opacity(bubbleOpacity),
+                    in: RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
                 )
 
                 HStack(spacing: 5) {
@@ -72,7 +77,7 @@ struct MessageRow: View {
                 .padding(.horizontal, 3)
             }
 
-            if message.author == .ai { Spacer(minLength: 44) }
+            if message.author == .ai { Spacer(minLength: showsAIAvatar ? 44 : 18) }
         }
         .frame(maxWidth: .infinity)
     }
@@ -93,12 +98,14 @@ struct MessageRow: View {
 private struct ProcessRow: View {
     let message: ChatMessage
     let palette: EchoPalette
+    let chatFont: EchoChatFont
+    let fontScale: Double
     @State private var expanded = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             Text(message.text)
-                .font(.system(size: 13))
+                .font(chatFont.font(size: 13 * fontScale))
                 .lineSpacing(4)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,13 +131,15 @@ struct StreamingProcessRow: View {
     let title: String
     let text: String
     let palette: EchoPalette
+    let chatFont: EchoChatFont
+    let fontScale: Double
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Label(title, systemImage: "sparkles")
                 .font(.caption.weight(.medium))
             Text(text)
-                .font(.system(size: 13))
+                .font(chatFont.font(size: 13 * fontScale))
                 .lineLimit(4)
         }
         .foregroundStyle(palette.secondaryText)
@@ -145,22 +154,32 @@ struct StreamingProcessRow: View {
 struct StreamingReplyRow: View {
     let text: String
     let palette: EchoPalette
+    let chatFont: EchoChatFont
+    let fontScale: Double
+    let showsAIAvatar: Bool
+    let bubbleOpacity: Double
+    let bubbleRadius: Double
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            Image(systemName: "sparkle")
-                .font(.system(size: 13, weight: .light))
-                .foregroundStyle(palette.accent)
-                .frame(width: 25, height: 25)
-                .background(palette.aiBubble, in: Circle())
+            if showsAIAvatar {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 13, weight: .light))
+                    .foregroundStyle(palette.accent)
+                    .frame(width: 25, height: 25)
+                    .background(palette.aiBubble, in: Circle())
+            }
             Text(text)
-                .font(.system(size: 16))
+                .font(chatFont.font(size: 16 * fontScale))
                 .lineSpacing(4)
                 .foregroundStyle(palette.text)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(palette.aiBubble, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            Spacer(minLength: 44)
+                .background(
+                    palette.aiBubble.opacity(bubbleOpacity),
+                    in: RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                )
+            Spacer(minLength: showsAIAvatar ? 44 : 18)
         }
     }
 }

@@ -69,6 +69,37 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
+    case system
+    case serif
+    case rounded
+    case monospaced
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "黑体"
+        case .serif: return "宋体"
+        case .rounded: return "圆体"
+        case .monospaced: return "等宽"
+        }
+    }
+
+    var design: Font.Design {
+        switch self {
+        case .system: return .default
+        case .serif: return .serif
+        case .rounded: return .rounded
+        case .monospaced: return .monospaced
+        }
+    }
+
+    func font(size: Double, weight: Font.Weight = .regular) -> Font {
+        .system(size: CGFloat(size), weight: weight, design: design)
+    }
+}
+
 struct EchoPalette {
     let backgroundTop: Color
     let backgroundBottom: Color

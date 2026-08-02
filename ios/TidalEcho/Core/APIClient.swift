@@ -39,6 +39,69 @@ struct APIClient {
         _ = try await data(for: req)
     }
 
+    func brain() async throws -> BrainTarget {
+        let responseData = try await data(for: request(url: endpoint("app/brain")))
+        return try decoder.decode(BrainResponse.self, from: responseData).target
+    }
+
+    func setBrain(_ target: BrainTarget) async throws -> BrainTarget {
+        var req = request(url: endpoint("app/brain"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(BrainPayload(target: target))
+        let responseData = try await data(for: req)
+        return try decoder.decode(BrainResponse.self, from: responseData).target
+    }
+
+    func loopConfig() async throws -> LoopConfigResponse {
+        let responseData = try await data(for: request(url: endpoint("app/loop_config")))
+        return try decoder.decode(LoopConfigResponse.self, from: responseData)
+    }
+
+    func setLoopModel(_ model: String, chainCount: Int) async throws -> LoopConfigResponse {
+        var req = request(url: endpoint("app/loop_config"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let routes = (0..<max(1, chainCount)).map { index in
+            LoopRoute(index: index, url: nil, model: index == 0 ? model : nil)
+        }
+        req.httpBody = try JSONEncoder().encode(LoopConfigPayload(mainChain: routes))
+        let responseData = try await data(for: req)
+        return try decoder.decode(LoopConfigResponse.self, from: responseData)
+    }
+
+    func desktopModel() async throws -> DesktopModelResponse {
+        let responseData = try await data(for: request(url: endpoint("app/desktop_model")))
+        return try decoder.decode(DesktopModelResponse.self, from: responseData)
+    }
+
+    func setDesktopModel(_ model: String) async throws -> DesktopModelResponse {
+        var req = request(url: endpoint("app/desktop_model"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(DesktopModelPayload(model: model))
+        let responseData = try await data(for: req)
+        return try decoder.decode(DesktopModelResponse.self, from: responseData)
+    }
+
+    func contextStatus() async throws -> ContextStatus {
+        let responseData = try await data(for: request(url: endpoint("app/context_status")))
+        return try decoder.decode(ContextStatus.self, from: responseData)
+    }
+
+    func updateContextThreshold(triggerK: Int? = nil, auto: Bool? = nil) async throws -> ContextThresholdResponse {
+        var req = request(url: endpoint("app/context_threshold"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(ContextThresholdPayload(triggerK: triggerK, auto: auto))
+        let responseData = try await data(for: req)
+        return try decoder.decode(ContextThresholdResponse.self, from: responseData)
+    }
+
+    func performContextAction(_ action: String, sid: String? = nil) async throws -> ContextActionResponse {
+        var req = request(url: endpoint("app/context_action"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(ContextActionPayload(action: action, sid: sid))
+        let responseData = try await data(for: req)
+        return try decoder.decode(ContextActionResponse.self, from: responseData)
+    }
+
     func streamRequest() -> URLRequest {
         var req = request(url: endpoint("app/stream"))
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
@@ -91,6 +154,29 @@ struct APIClient {
 private struct SendPayload: Encodable {
     let text: String
     let attachments: [Attachment]
+}
+
+private struct BrainPayload: Encodable { let target: BrainTarget }
+
+private struct LoopConfigPayload: Encodable {
+    let mainChain: [LoopRoute]
+    enum CodingKeys: String, CodingKey { case mainChain = "main_chain" }
+}
+
+private struct DesktopModelPayload: Encodable { let model: String }
+
+private struct ContextThresholdPayload: Encodable {
+    let triggerK: Int?
+    let auto: Bool?
+    enum CodingKeys: String, CodingKey {
+        case auto
+        case triggerK = "trigger_k"
+    }
+}
+
+private struct ContextActionPayload: Encodable {
+    let action: String
+    let sid: String?
 }
 
 private struct ErrorResponse: Decodable {

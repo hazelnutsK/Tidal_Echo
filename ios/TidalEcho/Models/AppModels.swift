@@ -142,3 +142,76 @@ struct StreamEnvelope: Decodable {
     }
 }
 
+enum BrainTarget: String, Codable, CaseIterable, Identifiable {
+    case desktop
+    case loop
+
+    var id: String { rawValue }
+    var title: String { self == .desktop ? "Desktop" : "API" }
+}
+
+struct BrainResponse: Decodable {
+    let target: BrainTarget
+}
+
+struct LoopRoute: Codable {
+    var index: Int?
+    var url: String?
+    var model: String?
+}
+
+struct LoopConfigResponse: Decodable {
+    let mainChain: [LoopRoute]
+
+    enum CodingKeys: String, CodingKey {
+        case mainChain = "main_chain"
+    }
+}
+
+struct DesktopModelResponse: Decodable {
+    let model: String
+    let applied: Bool?
+    let note: String?
+}
+
+struct ContextPending: Decodable {
+    let newSID: String
+
+    enum CodingKeys: String, CodingKey {
+        case newSID = "new_sid"
+    }
+}
+
+struct ContextStatus: Decodable {
+    let ok: Bool
+    let usageTokens: Int
+    let thresholdText: String
+    let triggerK: Int
+    let auto: Bool
+    let activeSID: String
+    let pending: ContextPending?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, auto, pending
+        case usageTokens = "usage_tokens"
+        case thresholdText = "threshold_k"
+        case triggerK = "trigger_k"
+        case activeSID = "active_sid"
+    }
+}
+
+struct ContextThresholdResponse: Decodable {
+    let triggerK: Int
+    let auto: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case auto
+        case triggerK = "trigger_k"
+    }
+}
+
+struct ContextActionResponse: Decodable {
+    let ok: Bool
+    let action: String
+}
+

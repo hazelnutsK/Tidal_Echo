@@ -87,17 +87,36 @@ struct ChatView: View {
                         MessageRow(
                             message: message,
                             palette: palette,
+                            chatFont: model.chatFont,
+                            fontScale: model.fontScale,
+                            showsAIAvatar: model.showsAIAvatar,
+                            bubbleOpacity: model.bubbleOpacity,
+                            bubbleRadius: model.bubbleRadius,
                             attachmentRequest: model.attachmentRequest
                         )
                         .id(message.id)
                     }
 
                     if !model.streamingThinking.isEmpty {
-                        StreamingProcessRow(title: "Thought process", text: model.streamingThinking, palette: palette)
+                        StreamingProcessRow(
+                            title: "Thought process",
+                            text: model.streamingThinking,
+                            palette: palette,
+                            chatFont: model.chatFont,
+                            fontScale: model.fontScale
+                        )
                     }
 
                     if !model.streamingReply.isEmpty {
-                        StreamingReplyRow(text: model.streamingReply, palette: palette)
+                        StreamingReplyRow(
+                            text: model.streamingReply,
+                            palette: palette,
+                            chatFont: model.chatFont,
+                            fontScale: model.fontScale,
+                            showsAIAvatar: model.showsAIAvatar,
+                            bubbleOpacity: model.bubbleOpacity,
+                            bubbleRadius: model.bubbleRadius
+                        )
                     } else if model.isTyping {
                         TypingRow(palette: palette)
                     }
@@ -196,6 +215,7 @@ private struct ComposerView: View {
 
                 TextField("写点什么…", text: $draftText, axis: .vertical)
                     .lineLimit(1...5)
+                    .font(model.chatFont.font(size: 16 * model.fontScale))
                     .foregroundStyle(palette.text)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 10)

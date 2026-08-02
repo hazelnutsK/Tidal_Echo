@@ -13,12 +13,16 @@ struct ChatView: View {
         ZStack {
             palette.background.ignoresSafeArea()
             if let background = model.backgroundImage {
-                Image(uiImage: background)
-                    .resizable()
-                    .scaledToFill()
-                    .opacity(model.backgroundOpacity)
-                    .ignoresSafeArea()
-                    .clipped()
+                GeometryReader { geometry in
+                    Image(uiImage: background)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                        .opacity(model.backgroundOpacity)
+                }
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
             }
 
             VStack(spacing: 0) {

@@ -1,0 +1,77 @@
+name: iOS Build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Prepare app icons
+        working-directory: ios
+        run: bash scripts/prepare-assets.sh
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Build for iOS Simulator
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TidalEcho.xcodeproj \
+            -scheme TidalEcho \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath DerivedData-Simulator \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Build unsigned device app
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project TidalEcho.xcodeproj \
+            -scheme TidalEcho \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedData-Device \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package unsigned IPA
+        working-directory: ios
+        run: |
+          APP_PATH="DerivedData-Device/Build/Products/Release-iphoneos/Tidal Echo.app"
+          test -d "$APP_PATH"
+          mkdir -p Payload
+          ditto "$APP_PATH" "Payload/Tidal Echo.app"
+          ditto -c -k --sequesterRsrc --keepParent Payload TidalEcho-unsigned.ipa
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-unsigned-ipa
+          path: ios/TidalEcho-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14

@@ -12,7 +12,7 @@ struct VoiceCallView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [palette.backgroundTop, palette.background, palette.accent.opacity(0.18)],
+                colors: [palette.backgroundTop, palette.backgroundBottom, palette.accent.opacity(0.18)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -181,14 +181,14 @@ private struct CallWaveRing: View {
         ZStack {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
-                    .stroke(color.opacity(0.20 - Double(index) * 0.045), lineWidth: 2)
-                    .scaleEffect(0.70 + Double(index) * 0.14 + (pulse ? 0.06 : 0) + level * 0.05)
+                    .stroke(color.opacity(ringOpacity(index)), lineWidth: 2)
+                    .scaleEffect(ringScale(index))
             }
             HStack(spacing: 4) {
                 ForEach(0..<17, id: \.self) { index in
                     Capsule()
                         .fill(color.opacity(0.50))
-                        .frame(width: 3, height: CGFloat(12 + ((index * 11) % 32)) * (0.55 + level * 0.8))
+                        .frame(width: 3, height: barHeight(index))
                 }
             }
             .opacity(speaking || level > 0.08 ? 0.85 : 0.25)
@@ -196,6 +196,20 @@ private struct CallWaveRing: View {
         .onAppear {
             withAnimation(.easeInOut(duration: 1.25).repeatForever(autoreverses: true)) { pulse = true }
         }
+    }
+
+    private func ringOpacity(_ index: Int) -> Double {
+        0.20 - Double(index) * 0.045
+    }
+
+    private func ringScale(_ index: Int) -> Double {
+        let base = 0.70 + Double(index) * 0.14
+        return base + (pulse ? 0.06 : 0) + level * 0.05
+    }
+
+    private func barHeight(_ index: Int) -> CGFloat {
+        let base = CGFloat(12 + ((index * 11) % 32))
+        return base * CGFloat(0.55 + level * 0.8)
     }
 }
 

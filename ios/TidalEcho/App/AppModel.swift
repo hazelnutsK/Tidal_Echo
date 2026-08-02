@@ -11,7 +11,6 @@ final class AppModel: ObservableObject {
 
     @Published var phase: Phase = .signedOut
     @Published var messages: [ChatMessage] = []
-    @Published var draftText = ""
     @Published var pendingAttachments: [Attachment] = []
     @Published var isTyping = false
     @Published var streamingThinking = ""
@@ -93,9 +92,9 @@ final class AppModel: ObservableObject {
         await loadHistory()
     }
 
-    func sendCurrentMessage() async {
+    func sendMessage(text rawText: String) async {
         guard let client else { return }
-        let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = pendingAttachments
         guard !text.isEmpty || !attachments.isEmpty else { return }
 
@@ -111,7 +110,6 @@ final class AppModel: ObservableObject {
             delivery: .sending
         )
         messages.append(optimistic)
-        draftText = ""
         pendingAttachments = []
 
         do {
@@ -176,9 +174,11 @@ final class AppModel: ObservableObject {
                 UserDefaults.standard.set(url.absoluteString, forKey: Keys.relayURL)
                 try KeychainStore.save(secret, account: Keys.relaySecret)
             }
+            startStream(using: nextClient)
+            // Open the real-time stream before loading a potentially large history.
+            // Otherwise the chat UI is already usable while replies are not yet observed.
             phase = .connected
             await loadHistory()
-            startStream(using: nextClient)
             await waitForStreamConnection()
             await catchUp(using: nextClient)
             startHeartbeat()
@@ -206,7 +206,13 @@ final class AppModel: ObservableObject {
                 cursor = max(cursor, last.id)
                 if batch.count < 500 { break }
             }
-            messages = recent.sorted(by: Self.messageComesBefore)
+            // Preserve messages that arrived over SSE while history was loading, as well
+            // as any optimistic outgoing message that is still waiting for its server id.
+            var merged = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+            for message in recent {
+                merged[message.id] = message
+            }
+            messages = merged.values.sorted(by: Self.messageComesBefore)
         } catch {
             errorMessage = "聊天记录加载失败：\(error.localizedDescription)"
         }

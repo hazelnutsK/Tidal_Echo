@@ -43,6 +43,8 @@ struct APIClient {
         var req = request(url: endpoint("app/stream"))
         req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        // Avoid an intermediary compressing and buffering the event stream.
+        req.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         req.timeoutInterval = 60 * 60
         return req
     }

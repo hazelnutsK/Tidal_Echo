@@ -129,6 +129,7 @@ struct ChatView: View {
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
     @State private var photoItem: PhotosPickerItem?
+    @State private var draftText = ""
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -167,7 +168,7 @@ private struct ComposerView: View {
                 }
                 .disabled(model.isUploading)
 
-                TextField("写点什么…", text: $model.draftText, axis: .vertical)
+                TextField("写点什么…", text: $draftText, axis: .vertical)
                     .lineLimit(1...5)
                     .foregroundStyle(palette.text)
                     .padding(.horizontal, 15)
@@ -176,7 +177,7 @@ private struct ComposerView: View {
                     .overlay(RoundedRectangle(cornerRadius: 19).stroke(palette.hairline))
 
                 Button {
-                    Task { await model.sendCurrentMessage() }
+                    send()
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 17, weight: .bold))
@@ -184,8 +185,8 @@ private struct ComposerView: View {
                         .frame(width: 39, height: 39)
                         .background(palette.accent, in: Circle())
                 }
-                .disabled(model.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingAttachments.isEmpty)
-                .opacity((model.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && model.pendingAttachments.isEmpty) ? 0.45 : 1)
+                .disabled(!canSend)
+                .opacity(canSend ? 1 : 0.45)
             }
             .padding(.horizontal, 14)
         }
@@ -209,6 +210,17 @@ private struct ComposerView: View {
                 )
             }
         }
+    }
+
+    private var canSend: Bool {
+        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pendingAttachments.isEmpty
+    }
+
+    private func send() {
+        guard canSend else { return }
+        let text = draftText
+        draftText = ""
+        Task { await model.sendMessage(text: text) }
     }
 }
 

@@ -12,7 +12,13 @@ struct RootView: View {
                 ChatView(model: model)
             }
         }
-        .task { await model.bootstrap() }
+        .task {
+            NativeNotificationCenter.shared.fetchHandler = { [weak model] in
+                guard let model else { return false }
+                return await model.backgroundRefreshForNotifications()
+            }
+            await model.bootstrap()
+        }
         .alert(
             "Tidal Echo",
             isPresented: Binding(

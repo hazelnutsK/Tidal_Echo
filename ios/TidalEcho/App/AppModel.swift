@@ -96,6 +96,7 @@ final class AppModel: ObservableObject {
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
+        static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
     }
 
     enum AppearanceImageKind: Equatable {
@@ -187,6 +188,37 @@ final class AppModel: ObservableObject {
     func refresh() async {
         guard client != nil else { return }
         await loadHistory()
+    }
+
+    func backgroundRefreshForNotifications() async -> Bool {
+        if client == nil { await bootstrap() }
+        guard let client else { return false }
+        let historyCursor = messages.map(\.id).filter { $0 > 0 }.max() ?? 0
+        guard historyCursor > 0 else { return false }
+        do {
+            let fetched = try await client.history(since: historyCursor, limit: 100).filter { !$0.meta.hidden }
+            fetched.forEach(upsert)
+            let lastNotified = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
+            let candidates = messages.filter {
+                $0.id > lastNotified && $0.author == .ai && ($0.kind == "reply" || $0.kind == "call")
+            }
+            if lastNotified == 0 {
+                markNativeNotificationCursor(historyCursor)
+                return false
+            }
+            for message in candidates {
+                upsert(message)
+                if message.author == .ai && message.kind == "call" {
+                    NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
+                } else if message.author == .ai && message.kind == "reply" {
+                    NativeNotificationCenter.shared.scheduleMessage(message)
+                }
+            }
+            markNativeNotificationCursor(messages.map(\.id).filter { $0 > 0 }.max() ?? historyCursor)
+            return !candidates.isEmpty
+        } catch {
+            return false
+        }
     }
 
     func sendMessage(text rawText: String) async {
@@ -490,6 +522,9 @@ final class AppModel: ObservableObject {
             // Otherwise the chat UI is already usable while replies are not yet observed.
             phase = .connected
             await loadHistory()
+            if UIApplication.shared.applicationState == .active {
+                markNativeNotificationCursor(messages.map(\.id).filter { $0 > 0 }.max() ?? 0)
+            }
             await waitForStreamConnection()
             await catchUp(using: nextClient)
             startHeartbeat()
@@ -698,7 +733,16 @@ final class AppModel: ObservableObject {
 
         guard let message = try? decoder.decode(ChatMessage.self, from: data),
               !message.meta.hidden else { return }
+        let wasKnown = messages.contains(where: { $0.id == message.id })
         upsert(message)
+        if !wasKnown, message.author == .ai {
+            if message.kind == "call" {
+                NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
+            } else if message.kind == "reply", UIApplication.shared.applicationState != .active {
+                NativeNotificationCenter.shared.scheduleMessage(message)
+            }
+            markNativeNotificationCursor(message.id)
+        }
         if message.author == .ai {
             if message.kind == "thinking" { streamingThinking = "" }
             if message.kind == "reply" {
@@ -715,6 +759,12 @@ final class AppModel: ObservableObject {
             messages.append(message)
             messages.sort(by: Self.messageComesBefore)
         }
+    }
+
+    private func markNativeNotificationCursor(_ id: Int) {
+        guard id > 0 else { return }
+        let current = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
+        if id > current { UserDefaults.standard.set(id, forKey: Keys.lastNativeNotificationID) }
     }
 
     private static func messageComesBefore(_ lhs: ChatMessage, _ rhs: ChatMessage) -> Bool {

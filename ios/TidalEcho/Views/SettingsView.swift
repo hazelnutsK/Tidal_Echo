@@ -47,6 +47,18 @@ struct SettingsView: View {
                             palette: palette
                         )
                     }
+
+                    NavigationLink {
+                        NotificationSettingsView(model: model)
+                    } label: {
+                        SettingsRouteLabel(
+                            icon: "bell.badge",
+                            title: "通知与后台",
+                            subtitle: "锁屏提醒、后台音频与来电",
+                            badge: nil,
+                            palette: palette
+                        )
+                    }
                 }
                 .listRowBackground(palette.composer.opacity(0.72))
 
@@ -77,6 +89,59 @@ struct SettingsView: View {
             }
         }
         .preferredColorScheme(model.theme.preferredColorScheme)
+    }
+}
+
+private struct NotificationSettingsView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var notifications = NativeNotificationCenter.shared
+    private var palette: EchoPalette { model.theme.palette }
+
+    var body: some View {
+        List {
+            Section("原生通知") {
+                Toggle("允许消息提醒", isOn: Binding(
+                    get: { notifications.enabled },
+                    set: { value in
+                        if value {
+                            Task { _ = await notifications.requestAuthorization() }
+                        } else {
+                            notifications.enabled = false
+                            Task { await notifications.refreshAuthorizationStatus() }
+                        }
+                    }
+                ))
+                LabeledContent("权限状态", value: notifications.authorizationText)
+                    .foregroundStyle(palette.secondaryText)
+                Button("发送测试通知") { notifications.scheduleTest() }
+                    .disabled(!notifications.enabled)
+                if notifications.authorizationText == "系统已拒绝" {
+                    Button("打开系统设置") {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+
+            Section("后台能力") {
+                Label("语音条播放可在锁屏后继续", systemImage: "waveform")
+                Label("通话期间保持麦克风和音频会话", systemImage: "phone.fill")
+                Label("系统会择机后台刷新新消息", systemImage: "arrow.clockwise")
+            }
+
+            Section {
+                Text("当前个人 P12 没有 APNs/PushKit 权限：App 被系统彻底结束后，无法保证立即收到原生通知或系统来电。以后换成开发者账号和带推送权限的描述文件，可以直接在这一层接入真正的远程推送。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+            }
+        }
+        .tint(palette.accent)
+        .scrollContentBackground(.hidden)
+        .background(palette.background.ignoresSafeArea())
+        .listRowBackground(palette.composer.opacity(0.72))
+        .navigationTitle("通知与后台")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await notifications.refreshAuthorizationStatus() }
     }
 }
 

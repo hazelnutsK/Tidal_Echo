@@ -16,6 +16,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
 
     @Published private(set) var acceptedInvite: IncomingCallInvite?
     @Published private(set) var ringingInvite: IncomingCallInvite?
+    @Published private(set) var lastCallKitError: String?
 
     private let provider: CXProvider
     private let controller = CXCallController()
@@ -35,7 +36,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
     }
 
     func reportIncoming(messageID: Int, text: String) {
-        guard ringingInvite?.id != messageID, acceptedInvite?.id != messageID else { return }
+        guard ringingInvite == nil, acceptedInvite == nil, activeUUID == nil else { return }
         let invite = IncomingCallInvite(id: messageID, uuid: UUID(), text: text)
         invites[invite.uuid] = invite
         ringingInvite = invite
@@ -50,12 +51,32 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         update.supportsUngrouping = false
         update.supportsDTMF = false
         provider.reportNewIncomingCall(with: invite.uuid, update: update) { error in
-            if error != nil {
-                Task { @MainActor in
+            Task { @MainActor in
+                if let error {
+                    self.lastCallKitError = error.localizedDescription
                     NativeNotificationCenter.shared.scheduleIncomingCall(invite)
+                } else {
+                    self.lastCallKitError = nil
                 }
             }
         }
+    }
+
+    func acceptRingingCall() {
+        guard let invite = ringingInvite else { return }
+        ringingInvite = nil
+        acceptedInvite = invite
+        activeUUID = invite.uuid
+        let transaction = CXTransaction(action: CXAnswerCallAction(call: invite.uuid))
+        controller.request(transaction) { _ in }
+    }
+
+    func declineRingingCall() {
+        guard let invite = ringingInvite else { return }
+        ringingInvite = nil
+        acceptedInvite = nil
+        endSystemCall(uuid: invite.uuid)
+        activeUUID = nil
     }
 
     func acceptFromNotification(messageID: Int, text: String) {

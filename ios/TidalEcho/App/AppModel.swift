@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
     private var client: APIClient?
     private let stream = SSEClient()
     private var heartbeatTask: Task<Void, Never>?
+    private var incrementalSyncTask: Task<Void, Never>?
+    private var isCatchingUp = false
     private var temporaryID = -1
     private var didBootstrap = false
 
@@ -77,6 +79,8 @@ final class AppModel: ObservableObject {
         stream.stop()
         heartbeatTask?.cancel()
         heartbeatTask = nil
+        incrementalSyncTask?.cancel()
+        incrementalSyncTask = nil
         client = nil
         messages = []
         pendingAttachments = []
@@ -175,6 +179,7 @@ final class AppModel: ObservableObject {
                 try KeychainStore.save(secret, account: Keys.relaySecret)
             }
             startStream(using: nextClient)
+            startIncrementalSync(using: nextClient)
             // Open the real-time stream before loading a potentially large history.
             // Otherwise the chat UI is already usable while replies are not yet observed.
             phase = .connected
@@ -242,7 +247,13 @@ final class AppModel: ObservableObject {
     }
 
     private func catchUp(using client: APIClient) async {
+        guard !isCatchingUp else { return }
         var cursor = messages.map(\.id).filter { $0 > 0 }.max() ?? 0
+        // While the initial history request is still walking old pages, wait until
+        // either it finds a cursor or a newly sent message gives us one.
+        guard cursor > 0 || !isLoadingHistory else { return }
+        isCatchingUp = true
+        defer { isCatchingUp = false }
         do {
             for _ in 0..<20 {
                 let batch = try await client.history(since: cursor, limit: 500)
@@ -254,6 +265,24 @@ final class AppModel: ObservableObject {
             }
         } catch {
             // SSE is already active; a transient catch-up failure can recover on refresh.
+        }
+    }
+
+    private func startIncrementalSync(using client: APIClient) {
+        incrementalSyncTask?.cancel()
+        incrementalSyncTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 1_200_000_000)
+                } catch {
+                    return
+                }
+                guard let self, self.phase == .connected else { return }
+                // This is deliberately incremental (`since=<latest id>`), so the
+                // response is normally empty and cheap. It covers iOS/network stacks
+                // that report an open SSE connection but delay delivery of its chunks.
+                await self.catchUp(using: client)
+            }
         }
     }
 

@@ -144,7 +144,10 @@ struct VoiceCallView: View {
         .interactiveDismissDisabled()
         .task { await call.start(model: model) }
         .onChange(of: model.messages.count) { _ in call.consume(messages: model.messages) }
-        .onDisappear { Task { await call.end() } }
+        .onDisappear {
+            NativeCallCoordinator.shared.finishCurrentCall()
+            Task { await call.end() }
+        }
     }
 }
 

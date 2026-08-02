@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct ChatView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var nativeCalls = NativeCallCoordinator.shared
     @State private var showingSettings = false
     @State private var showingSpaces = false
     @State private var showingVoiceCall = false
@@ -44,6 +45,8 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $showingVoiceCall) {
             VoiceCallView(model: model)
         }
+        .onAppear { openAcceptedCallIfNeeded() }
+        .onChange(of: nativeCalls.acceptedInvite?.id) { _ in openAcceptedCallIfNeeded() }
     }
 
     private var topBar: some View {
@@ -235,6 +238,12 @@ struct ChatView: View {
                 proxy.scrollTo("chat-bottom", anchor: .bottom)
             }
         }
+    }
+
+    private func openAcceptedCallIfNeeded() {
+        guard nativeCalls.acceptedInvite != nil, !showingVoiceCall else { return }
+        showingVoiceCall = true
+        nativeCalls.consumeAcceptedInvite()
     }
 }
 

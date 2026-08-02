@@ -20,6 +20,7 @@ struct MessageRow: View {
     let chatWeight: Double
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
+    let onAnswerCall: () -> Void
     let attachmentRequest: (Attachment) -> URLRequest?
 
     var body: some View {
@@ -32,11 +33,36 @@ struct MessageRow: View {
                 chatWeight: chatWeight
             )
         } else if message.kind == "call" {
-            Text(message.text)
-                .font(.caption)
-                .foregroundStyle(palette.secondaryText)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
+            if message.author == .ai {
+                Button(action: onAnswerCall) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .background(Color.green, in: Circle())
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("小克来电").font(.subheadline.weight(.semibold))
+                            Text(message.text).font(.caption).lineLimit(2)
+                        }
+                        .foregroundStyle(palette.text)
+                        Spacer()
+                        Text("接听")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.accent)
+                    }
+                    .padding(12)
+                    .background(palette.composer.opacity(0.86), in: RoundedRectangle(cornerRadius: 17))
+                    .padding(.horizontal, 28)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text(message.text)
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 7)
+            }
         } else {
             bubble
         }

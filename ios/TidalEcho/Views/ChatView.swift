@@ -1,3 +1,4 @@
+import AudioToolbox
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -33,6 +34,17 @@ struct ChatView: View {
                 Divider().overlay(palette.hairline)
                 messageList
                 ComposerView(model: model)
+            }
+
+            if let invite = nativeCalls.ringingInvite {
+                NativeIncomingCallOverlay(
+                    model: model,
+                    invite: invite,
+                    onAccept: { nativeCalls.acceptRingingCall() },
+                    onDecline: { nativeCalls.declineRingingCall() }
+                )
+                .transition(.opacity)
+                .zIndex(20)
             }
         }
         .sheet(isPresented: $showingSettings) {
@@ -244,6 +256,113 @@ struct ChatView: View {
         guard nativeCalls.acceptedInvite != nil, !showingVoiceCall else { return }
         showingVoiceCall = true
         nativeCalls.consumeAcceptedInvite()
+    }
+}
+
+private struct NativeIncomingCallOverlay: View {
+    @ObservedObject var model: AppModel
+    let invite: IncomingCallInvite
+    let onAccept: () -> Void
+    let onDecline: () -> Void
+    @StateObject private var ringer = IncomingCallRinger()
+
+    private var palette: EchoPalette { model.theme.palette }
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom, palette.accent.opacity(0.25)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Text("incoming call")
+                    .font(.caption.weight(.semibold))
+                    .tracking(2)
+                    .foregroundStyle(palette.secondaryText)
+                    .padding(.top, 72)
+
+                Spacer()
+
+                Group {
+                    if let image = model.aiAvatarImage {
+                        Image(uiImage: image).resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 45, weight: .light))
+                            .foregroundStyle(palette.accent)
+                            .background(palette.aiBubble)
+                    }
+                }
+                .frame(width: 134, height: 134)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.6), lineWidth: 1))
+                .shadow(color: palette.accent.opacity(0.25), radius: 28)
+                .scaleEffect(ringer.pulse ? 1.025 : 0.98)
+
+                Text("小克来电")
+                    .font(.system(size: 29, weight: .semibold, design: .serif))
+                    .foregroundStyle(palette.text)
+                    .padding(.top, 24)
+                Text(invite.text)
+                    .font(.subheadline)
+                    .foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 36)
+                    .padding(.top, 10)
+
+                Spacer()
+
+                HStack(spacing: 82) {
+                    incomingAction(title: "拒绝", icon: "phone.down.fill", color: .red, action: onDecline)
+                    incomingAction(title: "接听", icon: "phone.fill", color: .green, action: onAccept)
+                }
+                .padding(.bottom, 62)
+            }
+        }
+        .onAppear { ringer.start() }
+        .onDisappear { ringer.stop() }
+    }
+
+    private func incomingAction(title: String, icon: String, color: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 66, height: 66)
+                    .background(color, in: Circle())
+                    .shadow(color: color.opacity(0.28), radius: 14, y: 8)
+                Text(title).font(.caption).foregroundStyle(palette.text)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+@MainActor
+private final class IncomingCallRinger: ObservableObject {
+    @Published var pulse = false
+    private var timer: Timer?
+
+    func start() {
+        guard timer == nil else { return }
+        ring()
+        withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) { pulse = true }
+        timer = Timer.scheduledTimer(withTimeInterval: 2.2, repeats: true) { _ in
+            AudioServicesPlayAlertSound(SystemSoundID(1005))
+        }
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func ring() {
+        AudioServicesPlayAlertSound(SystemSoundID(1005))
     }
 }
 

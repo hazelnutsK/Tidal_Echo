@@ -125,6 +125,46 @@ struct HistoryResponse: Decodable {
     let messages: [ChatMessage]
 }
 
+struct APISession: Codable, Hashable, Identifiable {
+    let id: String
+    var title: String
+    let sinceID: Int
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title
+        case sinceID = "since_id"
+        case createdAt = "created_at"
+    }
+}
+
+struct SessionsResponse: Decodable {
+    let activeSession: String?
+    let sessions: [APISession]
+    let created: APISession?
+
+    enum CodingKeys: String, CodingKey {
+        case sessions, created
+        case activeSession = "active_session"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        activeSession = try values.decodeIfPresent(String.self, forKey: .activeSession)
+        sessions = try values.decodeIfPresent([APISession].self, forKey: .sessions) ?? []
+        created = try values.decodeIfPresent(APISession.self, forKey: .created)
+    }
+}
+
+struct SearchResponse: Decodable {
+    let results: [ChatMessage]
+}
+
+struct MessageNavigationRequest: Equatable {
+    let token = UUID()
+    let messageID: Int
+}
+
 struct SendResponse: Decodable {
     let id: Int
 }
@@ -145,11 +185,13 @@ struct StreamEnvelope: Decodable {
     let done: Bool?
     let timestamp: String?
     let starred: String?
+    let apiSession: String?
 
     enum CodingKeys: String, CodingKey {
         case type, active, id, reactions, text, done, starred
         case streamID = "stream_id"
         case timestamp = "ts"
+        case apiSession = "api_session"
     }
 }
 

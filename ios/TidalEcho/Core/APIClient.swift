@@ -4,23 +4,73 @@ struct APIClient {
     let baseURL: URL
     let secret: String
 
-    func history(since: Int, limit: Int = 500) async throws -> [ChatMessage] {
+    func history(since: Int, limit: Int = 500, sessionID: String? = nil) async throws -> [ChatMessage] {
         var components = URLComponents(url: endpoint("app/history"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "since", value: String(since)),
             URLQueryItem(name: "limit", value: String(limit))
         ]
+        if let sessionID, !sessionID.isEmpty {
+            queryItems.append(URLQueryItem(name: "session_id", value: sessionID))
+        }
+        components?.queryItems = queryItems
         guard let url = components?.url else { throw APIError.invalidURL }
         let data = try await data(for: request(url: url))
         return try decoder.decode(HistoryResponse.self, from: data).messages
     }
 
-    func send(text: String, attachments: [Attachment]) async throws -> SendResponse {
+    func send(text: String, attachments: [Attachment], sessionID: String? = nil) async throws -> SendResponse {
         var req = request(url: endpoint("app/send"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(SendPayload(text: text, attachments: attachments))
+        req.httpBody = try JSONEncoder().encode(SendPayload(text: text, attachments: attachments, apiSession: sessionID))
         let responseData = try await data(for: req)
         return try decoder.decode(SendResponse.self, from: responseData)
+    }
+
+    func search(_ query: String, limit: Int = 80) async throws -> [ChatMessage] {
+        var components = URLComponents(url: endpoint("app/search"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "q", value: query),
+            URLQueryItem(name: "limit", value: String(limit))
+        ]
+        guard let url = components?.url else { throw APIError.invalidURL }
+        return try decoder.decode(SearchResponse.self, from: try await data(for: request(url: url))).results
+    }
+
+    func sessions() async throws -> SessionsResponse {
+        try decoder.decode(SessionsResponse.self, from: try await data(for: request(url: endpoint("app/sessions"))))
+    }
+
+    func createSession(title: String) async throws -> SessionsResponse {
+        var req = request(url: endpoint("app/sessions"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(SessionCreatePayload(title: title, activate: true))
+        return try decoder.decode(SessionsResponse.self, from: try await data(for: req))
+    }
+
+    func updateSession(id: String, title: String? = nil, active: Bool? = nil) async throws -> SessionsResponse {
+        var req = request(url: endpoint("app/sessions/\(id)"), method: "PATCH")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(SessionUpdatePayload(title: title, active: active))
+        return try decoder.decode(SessionsResponse.self, from: try await data(for: req))
+    }
+
+    func deleteSession(id: String) async throws -> SessionsResponse {
+        try decoder.decode(
+            SessionsResponse.self,
+            from: try await data(for: request(url: endpoint("app/sessions/\(id)"), method: "DELETE"))
+        )
+    }
+
+    func editMessage(id: Int, text: String) async throws -> ChatMessage {
+        var req = request(url: endpoint("app/message/\(id)/edit"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(MessageEditPayload(text: text))
+        return try decoder.decode(ChatMessage.self, from: try await data(for: req))
+    }
+
+    func regenerateMessage(id: Int) async throws {
+        _ = try await data(for: request(url: endpoint("app/message/\(id)/regen"), method: "POST"))
     }
 
     func upload(data: Data, name: String, mime: String) async throws -> Attachment {
@@ -311,7 +361,25 @@ struct APIClient {
 private struct SendPayload: Encodable {
     let text: String
     let attachments: [Attachment]
+    let apiSession: String?
+
+    enum CodingKeys: String, CodingKey {
+        case text, attachments
+        case apiSession = "api_session"
+    }
 }
+
+private struct SessionCreatePayload: Encodable {
+    let title: String
+    let activate: Bool
+}
+
+private struct SessionUpdatePayload: Encodable {
+    let title: String?
+    let active: Bool?
+}
+
+private struct MessageEditPayload: Encodable { let text: String }
 
 private struct VoiceTextPayload: Encodable {
     let text: String

@@ -20,6 +20,10 @@ struct MessageRow: View {
     let chatWeight: Double
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
+    let onCopy: () -> Void
+    let onEdit: () -> Void
+    let onRegenerate: () -> Void
+    let onHide: () -> Void
     let onAnswerCall: () -> Void
     let attachmentRequest: (Attachment) -> URLRequest?
 
@@ -133,6 +137,11 @@ struct MessageRow: View {
         }
         .frame(maxWidth: .infinity)
         .contextMenu {
+            if !message.text.isEmpty {
+                Button(action: onCopy) {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+            }
             if message.id > 0 {
                 Button {
                     onToggleStar()
@@ -145,6 +154,19 @@ struct MessageRow: View {
                 Button(action: onSpeak) {
                     Label("朗读", systemImage: "speaker.wave.2")
                 }
+            }
+            if message.id > 0 && message.author == .human && (message.kind == "user" || message.kind == "voice") {
+                Button(action: onEdit) {
+                    Label("编辑", systemImage: "pencil")
+                }
+            }
+            if message.id > 0 && message.author == .ai && message.kind == "reply" {
+                Button(action: onRegenerate) {
+                    Label("重新生成", systemImage: "arrow.clockwise")
+                }
+            }
+            Button(role: .destructive, action: onHide) {
+                Label("在本机隐藏", systemImage: "eye.slash")
             }
         }
     }
@@ -210,6 +232,7 @@ struct StreamingProcessRow: View {
             Text(text)
                 .font(chatFont.font(size: 13 * fontScale, weight: chatWeight.echoFontWeight))
                 .lineLimit(4)
+                .textSelection(.enabled)
         }
         .foregroundStyle(palette.secondaryText)
         .frame(maxWidth: .infinity, alignment: .leading)

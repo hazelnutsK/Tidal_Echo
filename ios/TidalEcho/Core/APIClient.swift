@@ -34,6 +34,39 @@ struct APIClient {
         return try decoder.decode(Attachment.self, from: responseData)
     }
 
+    func sendVoiceAudio(data: Data, name: String, mime: String, callID: String? = nil) async throws -> VoiceResponse {
+        var components = URLComponents(url: endpoint("app/voice"), resolvingAgainstBaseURL: false)
+        var query = [URLQueryItem(name: "name", value: name)]
+        if let callID, !callID.isEmpty { query.append(URLQueryItem(name: "call_id", value: callID)) }
+        components?.queryItems = query
+        guard let url = components?.url else { throw APIError.invalidURL }
+        var req = request(url: url, method: "POST")
+        req.setValue(mime, forHTTPHeaderField: "Content-Type")
+        req.httpBody = data
+        return try decoder.decode(VoiceResponse.self, from: try await self.data(for: req))
+    }
+
+    func sendVoiceText(_ text: String, source: String = "ios_speech", callID: String? = nil) async throws -> VoiceResponse {
+        var req = request(url: endpoint("app/voice"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(VoiceTextPayload(text: text, source: source, callID: callID))
+        return try decoder.decode(VoiceResponse.self, from: try await data(for: req))
+    }
+
+    func callEvent(_ action: String, callID: String) async throws -> SendResponse {
+        var req = request(url: endpoint("app/call"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(CallPayload(action: action, callID: callID))
+        return try decoder.decode(SendResponse.self, from: try await data(for: req))
+    }
+
+    func tts(text: String, messageID: Int? = nil, persist: Bool = false) async throws -> Data {
+        var req = request(url: endpoint("app/tts"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(TTSPayload(text: text, messageID: messageID, persist: persist))
+        return try await data(for: req)
+    }
+
     func ping() async throws {
         let req = request(url: endpoint("app/ping"), method: "POST")
         _ = try await data(for: req)
@@ -278,6 +311,38 @@ struct APIClient {
 private struct SendPayload: Encodable {
     let text: String
     let attachments: [Attachment]
+}
+
+private struct VoiceTextPayload: Encodable {
+    let text: String
+    let source: String
+    let callID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case text, source
+        case callID = "call_id"
+    }
+}
+
+private struct CallPayload: Encodable {
+    let action: String
+    let callID: String
+
+    enum CodingKeys: String, CodingKey {
+        case action
+        case callID = "call_id"
+    }
+}
+
+private struct TTSPayload: Encodable {
+    let text: String
+    let messageID: Int?
+    let persist: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case text, persist
+        case messageID = "message_id"
+    }
 }
 
 private struct BrainPayload: Encodable { let target: BrainTarget }

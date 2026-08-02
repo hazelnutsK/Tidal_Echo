@@ -29,6 +29,8 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Tidal Echo
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: 选择图片发送到你自己的 Tidal Echo 频道。
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: 用于录制语音消息和进行实时语音通话。
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: 用于在语音通话中把你的话实时分段转成文字。
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

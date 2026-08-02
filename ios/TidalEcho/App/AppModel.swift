@@ -20,6 +20,8 @@ final class AppModel: ObservableObject {
     @Published var isStreamConnected = false
     @Published var isLoadingHistory = false
     @Published var isUploading = false
+    @Published var isUploadingVoice = false
+    @Published var isSynthesizingMessageID: Int?
     @Published var errorMessage: String?
     @Published var theme: EchoTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: Keys.theme) }
@@ -256,6 +258,71 @@ final class AppModel: ObservableObject {
         let starred = try await requireClient().setStar(messageID: messageID, on: on)
         if let index = messages.firstIndex(where: { $0.id == messageID }) {
             messages[index].meta.starred = starred
+        }
+    }
+
+    func sendVoiceRecording(_ recording: VoiceRecordingResult) async -> Bool {
+        guard let client else { return false }
+        isUploadingVoice = true
+        defer { isUploadingVoice = false }
+        do {
+            let response = try await client.sendVoiceAudio(
+                data: recording.data,
+                name: recording.name,
+                mime: recording.mime
+            )
+            if !messages.contains(where: { $0.id == response.id }) {
+                let transcript = (response.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                upsert(ChatMessage(
+                    id: response.id,
+                    timestamp: ISO8601DateFormatter().string(from: Date()),
+                    author: .human,
+                    kind: "voice",
+                    text: transcript.isEmpty ? "" : "🎤 \(transcript)",
+                    meta: MessageMeta(attachments: response.attachment.map { [$0] } ?? []),
+                    delivery: .sent
+                ))
+            }
+            await catchUp(using: client)
+            return true
+        } catch {
+            errorMessage = "语音发送失败：\(error.localizedDescription)"
+            return false
+        }
+    }
+
+    func sendCallTranscript(_ text: String, callID: String) async throws -> VoiceResponse {
+        let client = try requireClient()
+        let response = try await client.sendVoiceText(text, source: "ios_speech", callID: callID)
+        await catchUp(using: client)
+        return response
+    }
+
+    func sendCallAudioSegment(data: Data, name: String, mime: String, callID: String) async throws -> VoiceResponse {
+        let client = try requireClient()
+        let response = try await client.sendVoiceAudio(data: data, name: name, mime: mime, callID: callID)
+        await catchUp(using: client)
+        return response
+    }
+
+    func postCallEvent(_ action: String, callID: String) async throws {
+        _ = try await requireClient().callEvent(action, callID: callID)
+    }
+
+    func synthesizeSpeech(text: String, messageID: Int? = nil, persist: Bool = false) async throws -> Data {
+        try await requireClient().tts(text: text, messageID: messageID, persist: persist)
+    }
+
+    func speakMessage(_ message: ChatMessage) async {
+        let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, isSynthesizingMessageID == nil else { return }
+        isSynthesizingMessageID = message.id
+        defer { isSynthesizingMessageID = nil }
+        do {
+            let data = try await synthesizeSpeech(text: text)
+            try VoicePlaybackCenter.shared.play(data: data, id: "tts-\(message.id)")
+        } catch {
+            errorMessage = "朗读失败：\(error.localizedDescription)"
         }
     }
 

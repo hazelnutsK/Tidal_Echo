@@ -31,6 +31,8 @@ final class AppModel: ObservableObject {
     private var temporaryID = -1
     private var didBootstrap = false
 
+    private static let initialHistoryWindow = 120
+
     private enum Keys {
         static let relayURL = "tidalEcho.relayURL"
         static let relaySecret = "relaySecret"
@@ -211,10 +213,14 @@ final class AppModel: ObservableObject {
                 cursor = max(cursor, last.id)
                 if batch.count < 500 { break }
             }
-            // Preserve messages that arrived over SSE while history was loading, as well
-            // as any optimistic outgoing message that is still waiting for its server id.
-            var merged = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
-            for message in recent {
+            // Render only the newest window on launch. Building hundreds of variable-height
+            // SwiftUI rows makes ScrollViewReader visibly travel through old conversations.
+            let historyMaxID = recent.map(\.id).max() ?? 0
+            let visibleHistory = recent.suffix(Self.initialHistoryWindow)
+            var merged = Dictionary(uniqueKeysWithValues: visibleHistory.map { ($0.id, $0) })
+            // Preserve SSE messages that arrived after the history snapshot, plus any
+            // optimistic outgoing message still waiting for its permanent server id.
+            for message in messages where message.id < 0 || message.id > historyMaxID {
                 merged[message.id] = message
             }
             messages = merged.values.sorted(by: Self.messageComesBefore)

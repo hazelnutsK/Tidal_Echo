@@ -23,6 +23,7 @@ struct MessageRow: View {
     let peerName: String
     let showsTimestamp: Bool
     let isTail: Bool
+    let isPaper: Bool
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
     let onCopy: () -> Void
@@ -41,7 +42,10 @@ struct MessageRow: View {
                 palette: palette,
                 chatFont: chatFont,
                 fontScale: fontScale,
-                chatWeight: chatWeight
+                chatWeight: chatWeight,
+                isPaper: isPaper,
+                showsAIAvatar: showsAIAvatar,
+                bubbleWidthScale: bubbleWidthScale
             )
         } else if message.kind == "call" {
             if message.author == .ai {
@@ -190,7 +194,7 @@ struct MessageRow: View {
             } else {
                 shape
                     .fill(color.opacity(bubbleOpacity))
-                    .shadow(color: Color.black.opacity(0.12 * bubbleOpacity), radius: 4.5, y: 2)
+                    .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
             }
         }
     }
@@ -198,7 +202,7 @@ struct MessageRow: View {
     private var bubbleShape: PWAChatBubbleShape {
         PWAChatBubbleShape(
             radius: CGFloat(bubbleRadius),
-            bottomLeftRadius: message.author == .ai && isTail ? 5 : CGFloat(bubbleRadius),
+            bottomLeftRadius: message.author == .ai ? 5 : CGFloat(bubbleRadius),
             bottomRightRadius: message.author == .human && isTail ? 5 : CGFloat(bubbleRadius)
         )
     }
@@ -292,7 +296,10 @@ private struct MarkdownMessageText: View {
 
     private var attributedText: AttributedString {
         let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .full,
+            // SwiftUI Text does not lay out Markdown block presentation intents;
+            // `.full` therefore collapsed the overflow paragraphs in short-chat's
+            // fifth bubble. Preserve whitespace while still parsing inline markup.
+            interpretedSyntax: .inlineOnlyPreservingWhitespace,
             failurePolicy: .returnPartiallyParsedIfPossible
         )
         var value = (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
@@ -434,30 +441,127 @@ private struct ProcessRow: View {
     let chatFont: EchoChatFont
     let fontScale: Double
     let chatWeight: Double
+    let isPaper: Bool
+    let showsAIAvatar: Bool
+    let bubbleWidthScale: Double
     @State private var expanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            Text(message.text)
-                .font(chatFont.font(size: 13 * fontScale, weight: chatWeight.echoFontWeight))
-                .lineSpacing(4)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 8)
-        } label: {
-            HStack(spacing: 7) {
-                Image(systemName: message.kind == "thinking" ? "sparkles" : "wrench.and.screwdriver")
-                Text(message.kind == "thinking" ? "Thought process" : "Action")
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                guard canExpand else { return }
+                withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 7) {
+                    if isThinking {
+                        Text("THINKING")
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 7.5, weight: .bold))
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                    } else {
+                        Image(systemName: "wrench")
+                            .font(.system(size: 11, weight: .medium))
+                        Text(toolTitle)
+                    }
+                }
+                .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                .foregroundStyle(palette.secondaryText)
+                .padding(.horizontal, isPaper ? 0 : 11)
+                .padding(.vertical, isPaper ? 2 : 4)
+                .background {
+                    if !isPaper {
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
+                    }
+                }
             }
-            .font(.system(size: 12, weight: .medium))
+            .buttonStyle(.plain)
+
+            if expanded {
+                processDetail
+                    .transition(.opacity)
+            }
         }
-        .tint(palette.accent)
+        .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
+        .padding(.leading, showsAIAvatar ? 35 : 0)
+        .padding(.trailing, 44)
+    }
+
+    private var isThinking: Bool { message.kind == "thinking" }
+    private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
+
+    private var toolTitle: String {
+        let title = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title.isEmpty { return "他做了点什么" }
+        return title.hasPrefix("他") ? title : "他(title)"
+    }
+
+    @ViewBuilder
+    private var processDetail: some View {
+        Group {
+            if isThinking {
+                Text(message.text)
+                    .font(chatFont.font(size: 13 * fontScale, weight: chatWeight.echoFontWeight))
+                    .lineSpacing(CGFloat(13 * fontScale * 0.52))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(Array(message.meta.steps.enumerated()), id: \.offset) { _, step in
+                        ToolStepPreview(step: step, palette: palette)
+                    }
+                }
+            }
+        }
         .foregroundStyle(palette.secondaryText)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(palette.composer.opacity(0.62), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .padding(.leading, 34)
-        .padding(.trailing, 60)
+        .italic(isPaper)
+        .padding(.leading, isPaper ? 15 : 12)
+        .padding(.trailing, isPaper ? 2 : 12)
+        .padding(.vertical, isPaper ? 2 : 10)
+        .background {
+            if !isPaper {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.hairline))
+            }
+        }
+        .overlay(alignment: .leading) {
+            if isPaper {
+                Rectangle()
+                    .fill(Color(hex: 0xD6D4CE))
+                    .frame(width: 1.5)
+            }
+        }
+    }
+}
+
+private struct ToolStepPreview: View {
+    let step: ToolStep
+    let palette: EchoPalette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            previewLine("tool", step.tool, monospaced: false, limit: 1)
+            previewLine("cmd", step.cmd, monospaced: true, limit: 5)
+            previewLine("result", step.result, monospaced: true, limit: 4)
+        }
+        .font(.system(size: 12))
+    }
+
+    @ViewBuilder
+    private func previewLine(_ key: String, _ value: String?, monospaced: Bool, limit: Int) -> some View {
+        if let value, !value.isEmpty {
+            HStack(alignment: .top, spacing: 3) {
+                Text("\(key):")
+                    .foregroundStyle(palette.secondaryText.opacity(0.76))
+                Text(value)
+                    .font(monospaced ? .system(size: 11.5, design: .monospaced) : .system(size: 12))
+                    .foregroundStyle(palette.text.opacity(0.78))
+                    .lineLimit(limit)
+                    .textSelection(.enabled)
+            }
+        }
     }
 }
 
@@ -465,25 +569,56 @@ struct StreamingProcessRow: View {
     let title: String
     let text: String
     let palette: EchoPalette
+    let isPaper: Bool
+    let showsAIAvatar: Bool
     let chatFont: EchoChatFont
     let fontScale: Double
     let chatWeight: Double
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Label(title, systemImage: "sparkles")
-                .font(.caption.weight(.medium))
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Text("THINKING")
+                Image(systemName: "play.fill")
+                    .font(.system(size: 7.5, weight: .bold))
+                    .rotationEffect(.degrees(90))
+            }
+            .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+            .padding(.horizontal, isPaper ? 0 : 11)
+            .padding(.vertical, isPaper ? 2 : 4)
+            .background {
+                if !isPaper {
+                    Capsule().fill(.ultraThinMaterial)
+                        .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
+                }
+            }
+
             Text(text)
                 .font(chatFont.font(size: 13 * fontScale, weight: chatWeight.echoFontWeight))
                 .lineLimit(4)
+                .lineSpacing(CGFloat(13 * fontScale * 0.52))
+                .italic(isPaper)
                 .textSelection(.enabled)
+                .padding(.leading, isPaper ? 15 : 12)
+                .padding(.trailing, isPaper ? 2 : 12)
+                .padding(.vertical, isPaper ? 2 : 10)
+                .background {
+                    if !isPaper {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.hairline))
+                    }
+                }
+                .overlay(alignment: .leading) {
+                    if isPaper {
+                        Rectangle().fill(Color(hex: 0xD6D4CE)).frame(width: 1.5)
+                    }
+                }
         }
         .foregroundStyle(palette.secondaryText)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(palette.composer.opacity(0.60), in: RoundedRectangle(cornerRadius: 14))
-        .padding(.leading, 34)
-        .padding(.trailing, 60)
+        .frame(maxWidth: 280, alignment: .leading)
+        .padding(.leading, showsAIAvatar ? 35 : 0)
+        .padding(.trailing, 44)
     }
 }
 

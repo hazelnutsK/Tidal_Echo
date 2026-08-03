@@ -73,6 +73,18 @@ struct APIClient {
         _ = try await data(for: request(url: endpoint("app/message/\(id)/regen"), method: "POST"))
     }
 
+    func reactToMessage(id: Int, emoji: String) async throws -> [String: String] {
+        var req = request(url: endpoint("app/message/\(id)/reaction"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(ReactionPayload(emoji: emoji))
+        return try decoder.decode(ReactionResponse.self, from: try await data(for: req)).reactions
+    }
+
+    func completeTimer(messageID: Int) async throws -> MessageTimer {
+        let req = request(url: endpoint("app/timer/\(messageID)/done"), method: "POST")
+        return try decoder.decode(TimerResponse.self, from: try await data(for: req)).timer
+    }
+
     func upload(data: Data, name: String, mime: String) async throws -> Attachment {
         var components = URLComponents(url: endpoint("app/upload"), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "name", value: name)]
@@ -380,6 +392,7 @@ private struct SessionUpdatePayload: Encodable {
 }
 
 private struct MessageEditPayload: Encodable { let text: String }
+private struct ReactionPayload: Encodable { let emoji: String }
 
 private struct VoiceTextPayload: Encodable {
     let text: String

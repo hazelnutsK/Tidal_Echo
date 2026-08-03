@@ -11,6 +11,28 @@ enum DeliveryState: Hashable {
     case failed
 }
 
+enum EchoBubbleStyle: String, Codable, CaseIterable, Identifiable {
+    case classic
+    case frosted
+
+    var id: String { rawValue }
+    var title: String { self == .classic ? "经典" : "磨砂" }
+}
+
+struct MessageTimer: Codable, Hashable {
+    var label: String
+    var minutes: Int
+    var endsAt: String
+    var status: String
+    var doneAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case label, minutes, status
+        case endsAt = "ends_at"
+        case doneAt = "done_at"
+    }
+}
+
 struct Attachment: Codable, Hashable, Identifiable {
     var url: String
     var name: String
@@ -33,6 +55,8 @@ struct MessageMeta: Decodable, Hashable {
     var streamID: String?
     var sortAfter: Int?
     var starred: String?
+    var timer: MessageTimer?
+    var edited: Bool
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -41,7 +65,7 @@ struct MessageMeta: Decodable, Hashable {
         case apiSession = "api_session"
         case streamID = "stream_id"
         case sortAfter = "sort_after"
-        case starred
+        case starred, timer, edited
     }
 
     init(
@@ -59,6 +83,8 @@ struct MessageMeta: Decodable, Hashable {
         self.streamID = streamID
         self.sortAfter = sortAfter
         self.starred = nil
+        self.timer = nil
+        self.edited = false
     }
 
     init(from decoder: Decoder) throws {
@@ -70,6 +96,8 @@ struct MessageMeta: Decodable, Hashable {
         streamID = try values.decodeIfPresent(String.self, forKey: .streamID)
         sortAfter = try values.decodeIfPresent(Int.self, forKey: .sortAfter)
         starred = try values.decodeIfPresent(String.self, forKey: .starred)
+        timer = try values.decodeIfPresent(MessageTimer.self, forKey: .timer)
+        edited = try values.decodeIfPresent(Bool.self, forKey: .edited) ?? false
     }
 }
 
@@ -160,6 +188,14 @@ struct SearchResponse: Decodable {
     let results: [ChatMessage]
 }
 
+struct ReactionResponse: Decodable {
+    let reactions: [String: String]
+}
+
+struct TimerResponse: Decodable {
+    let timer: MessageTimer
+}
+
 struct MessageNavigationRequest: Equatable {
     let token = UUID()
     let messageID: Int
@@ -186,9 +222,10 @@ struct StreamEnvelope: Decodable {
     let timestamp: String?
     let starred: String?
     let apiSession: String?
+    let timer: MessageTimer?
 
     enum CodingKeys: String, CodingKey {
-        case type, active, id, reactions, text, done, starred
+        case type, active, id, reactions, text, done, starred, timer
         case streamID = "stream_id"
         case timestamp = "ts"
         case apiSession = "api_session"

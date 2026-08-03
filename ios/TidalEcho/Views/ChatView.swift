@@ -120,88 +120,156 @@ struct ChatView: View {
     }
 
     private var topBar: some View {
-        ZStack {
-            HStack {
-                Button { showingSpaces = true } label: {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(palette.text)
-                        .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
-                }
-
-                Spacer()
-
-                Button { showingSettings = true } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(palette.text)
-                        .frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
-                }
-            }
-
+        HStack(spacing: 12) {
             Button { showingSessions = true } label: {
-                VStack(spacing: 2) {
+                VStack(spacing: 3) {
                     HStack(spacing: 4) {
                         Text(model.peerDisplayName)
-                            .font(.system(size: 22, weight: .semibold, design: .serif))
-                        if model.activeSessionID != AppModel.legacySessionID {
-                            Text("· \(model.activeSessionTitle)")
-                                .font(.caption.weight(.medium))
-                                .lineLimit(1)
-                        }
+                            .font(.custom("AnthropicSerifWebVariable-TextRegular", size: 19).weight(.semibold))
+                            .lineLimit(1)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(palette.text)
+
                     HStack(spacing: 5) {
                         Circle()
                             .fill(model.isStreamConnected ? Color.green.opacity(0.8) : palette.secondaryText)
                             .frame(width: 6, height: 6)
                         Text(model.connectionText)
-                            .font(.caption)
+                            .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(palette.secondaryText)
                     }
                 }
-                .padding(.horizontal, 30)
-                .padding(.vertical, 7)
-                .frame(minWidth: 156)
-                .background(.ultraThinMaterial, in: Capsule())
-                .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
+                .padding(.horizontal, 26)
+                .padding(.top, 5)
+                .padding(.bottom, 7)
+                .frame(minWidth: 150)
+                .background { headerGlass(shape: Capsule()) }
             }
             .buttonStyle(.plain)
+
+            Spacer(minLength: 6)
+
+            if model.isLoadingHistory {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(palette.accent)
+            }
+
+            HStack(spacing: 14) {
+                headerButton(icon: "phone.fill", size: 15) { showingVoiceCall = true }
+                headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
+                headerButton(icon: "slider.horizontal.3", size: 17) { showingSettings = true }
+            }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 9)
+        .padding(.top, 9)
+        .padding(.bottom, 8)
     }
 
     private var topFog: some View {
         ZStack {
-            Rectangle()
-                .fill(.regularMaterial)
+            WallpaperBlurSlice(
+                image: model.backgroundImage,
+                imageOpacity: model.backgroundOpacity,
+                palette: palette,
+                radius: 2.5
+            )
                 .mask(
                     LinearGradient(
-                        colors: [.black, .black, .black.opacity(0.88), .black.opacity(0.46), .clear],
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.55),
+                            .init(color: .clear, location: 1)
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
-            Rectangle()
-                .fill(palette.backgroundTop.opacity(0.46))
+
+            WallpaperBlurSlice(
+                image: model.backgroundImage,
+                imageOpacity: model.backgroundOpacity,
+                palette: palette,
+                radius: 7
+            )
                 .mask(
                     LinearGradient(
-                        colors: [.black, .black.opacity(0.78), .black.opacity(0.28), .clear],
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.40),
+                            .init(color: .clear, location: 0.90)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+            WallpaperBlurSlice(
+                image: model.backgroundImage,
+                imageOpacity: model.backgroundOpacity,
+                palette: palette,
+                radius: 16
+            )
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.30),
+                            .init(color: .clear, location: 0.78)
+                        ],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
         }
-        .frame(height: 122)
+        .frame(height: 120)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
+    }
+
+    @ViewBuilder
+    private func headerGlass<S: InsettableShape>(shape: S) -> some View {
+        ZStack {
+            WallpaperBlurSlice(
+                image: model.backgroundImage,
+                imageOpacity: model.backgroundOpacity,
+                palette: palette,
+                radius: 18
+            )
+            shape.fill(headerGlassTint)
+        }
+        .clipShape(shape)
+        .overlay(shape.stroke(headerGlassRing, lineWidth: 0.5))
+        .shadow(color: Color.black.opacity(model.theme == .mist ? 0.10 : 0.06), radius: 11, y: 3)
+    }
+
+    private func headerButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(palette.text)
+                .frame(width: 32, height: 32)
+                .background { headerGlass(shape: Circle()) }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var headerGlassTint: Color {
+        switch model.theme {
+        case .mist: return Color(hex: 0xF7FAFC).opacity(0.52)
+        case .paper: return Color.white.opacity(0.90)
+        case .harbor: return Color(hex: 0x1C2A35).opacity(0.56)
+        }
+    }
+
+    private var headerGlassRing: Color {
+        switch model.theme {
+        case .mist: return Color.white.opacity(0.48)
+        case .paper: return Color(hex: 0xDEDDD8)
+        case .harbor: return Color.white.opacity(0.12)
+        }
     }
 
     private var messageList: some View {
@@ -884,6 +952,39 @@ private final class IncomingCallRinger: ObservableObject {
     }
 }
 
+/// Rebuilds the wallpaper at its screen-space position and blurs that copy.
+/// Unlike `Material`, it adds no automatic white/gray system tint.
+private struct WallpaperBlurSlice: View {
+    let image: UIImage?
+    let imageOpacity: Double
+    let palette: EchoPalette
+    let radius: CGFloat
+
+    var body: some View {
+        GeometryReader { geometry in
+            let frame = geometry.frame(in: .global)
+            let screen = UIScreen.main.bounds
+
+            ZStack {
+                palette.background
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: screen.width, height: screen.height)
+                        .clipped()
+                        .opacity(imageOpacity)
+                }
+            }
+            .frame(width: screen.width, height: screen.height)
+            .offset(x: -frame.minX, y: -frame.minY)
+            .blur(radius: radius, opaque: true)
+        }
+        .clipped()
+        .allowsHitTesting(false)
+    }
+}
+
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = VoiceRecorder()
@@ -1009,11 +1110,45 @@ private struct ComposerView: View {
         }
         .padding(.top, 9)
         .padding(.bottom, 8)
-        .background {
+        .background(alignment: .bottom) {
             ZStack {
-                Rectangle().fill(.ultraThinMaterial)
-                Rectangle().fill(palette.backgroundTop.opacity(0.07))
+                WallpaperBlurSlice(
+                    image: model.backgroundImage,
+                    imageOpacity: model.backgroundOpacity,
+                    palette: palette,
+                    radius: 7
+                )
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black.opacity(0.58), location: 0.42),
+                            .init(color: .black, location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
+                WallpaperBlurSlice(
+                    image: model.backgroundImage,
+                    imageOpacity: model.backgroundOpacity,
+                    palette: palette,
+                    radius: 18
+                )
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0),
+                            .init(color: .black.opacity(0.24), location: 0.34),
+                            .init(color: .black, location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
             }
+            .frame(height: 96)
         }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in

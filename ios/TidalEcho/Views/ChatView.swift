@@ -140,6 +140,7 @@ struct ChatView: View {
                             .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(palette.secondaryText)
                     }
+                    .offset(x: -4)
                 }
                 .padding(.horizontal, 26)
                 .padding(.top, 5)
@@ -170,54 +171,20 @@ struct ChatView: View {
 
     private var topFog: some View {
         ZStack {
-            WallpaperBlurSlice(
-                image: model.backgroundImage,
-                imageOpacity: model.backgroundOpacity,
-                palette: palette,
-                radius: 2.5
+            VariableBackdropBlur(
+                radius: 18,
+                mask: .blurredTopClearBottom,
+                startOffset: -0.08
             )
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.55),
-                            .init(color: .clear, location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
 
-            WallpaperBlurSlice(
-                image: model.backgroundImage,
-                imageOpacity: model.backgroundOpacity,
-                palette: palette,
-                radius: 7
-            )
+            Rectangle()
+                .fill(topFogTint)
                 .mask(
                     LinearGradient(
                         stops: [
                             .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.40),
-                            .init(color: .clear, location: 0.90)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-
-            WallpaperBlurSlice(
-                image: model.backgroundImage,
-                imageOpacity: model.backgroundOpacity,
-                palette: palette,
-                radius: 16
-            )
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.30),
-                            .init(color: .clear, location: 0.78)
+                            .init(color: .black.opacity(0.78), location: 0.42),
+                            .init(color: .clear, location: 0.88)
                         ],
                         startPoint: .top,
                         endPoint: .bottom
@@ -232,12 +199,7 @@ struct ChatView: View {
     @ViewBuilder
     private func headerGlass<S: InsettableShape>(shape: S) -> some View {
         ZStack {
-            WallpaperBlurSlice(
-                image: model.backgroundImage,
-                imageOpacity: model.backgroundOpacity,
-                palette: palette,
-                radius: 18
-            )
+            VariableBackdropBlur(radius: 18, mask: .solid, startOffset: 0)
             shape.fill(headerGlassTint)
         }
         .clipShape(shape)
@@ -269,6 +231,14 @@ struct ChatView: View {
         case .mist: return Color.white.opacity(0.48)
         case .paper: return Color(hex: 0xDEDDD8)
         case .harbor: return Color.white.opacity(0.12)
+        }
+    }
+
+    private var topFogTint: Color {
+        switch model.theme {
+        case .mist: return Color(hex: 0xECF1F6).opacity(0.24)
+        case .paper: return Color(hex: 0xFAFAF8).opacity(0.72)
+        case .harbor: return Color(hex: 0x15212D).opacity(0.38)
         }
     }
 
@@ -406,9 +376,12 @@ struct ChatView: View {
                     Color.clear.frame(height: 2).id("chat-bottom")
                 }
                 .padding(.horizontal, 14)
-                .padding(.top, 76)
                 .padding(.bottom, 14)
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 76)
+            }
+            .ignoresSafeArea(edges: .top)
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.refresh() }
             .onAppear { positionInitialHistoryIfNeeded(proxy) }
@@ -952,39 +925,6 @@ private final class IncomingCallRinger: ObservableObject {
     }
 }
 
-/// Rebuilds the wallpaper at its screen-space position and blurs that copy.
-/// Unlike `Material`, it adds no automatic white/gray system tint.
-private struct WallpaperBlurSlice: View {
-    let image: UIImage?
-    let imageOpacity: Double
-    let palette: EchoPalette
-    let radius: CGFloat
-
-    var body: some View {
-        GeometryReader { geometry in
-            let frame = geometry.frame(in: .global)
-            let screen = UIScreen.main.bounds
-
-            ZStack {
-                palette.background
-                if let image {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: screen.width, height: screen.height)
-                        .clipped()
-                        .opacity(imageOpacity)
-                }
-            }
-            .frame(width: screen.width, height: screen.height)
-            .offset(x: -frame.minX, y: -frame.minY)
-            .blur(radius: radius, opaque: true)
-        }
-        .clipped()
-        .allowsHitTesting(false)
-    }
-}
-
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = VoiceRecorder()
@@ -1111,43 +1051,11 @@ private struct ComposerView: View {
         .padding(.top, 9)
         .padding(.bottom, 8)
         .background(alignment: .bottom) {
-            ZStack {
-                WallpaperBlurSlice(
-                    image: model.backgroundImage,
-                    imageOpacity: model.backgroundOpacity,
-                    palette: palette,
-                    radius: 7
-                )
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0),
-                            .init(color: .black.opacity(0.58), location: 0.42),
-                            .init(color: .black, location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-
-                WallpaperBlurSlice(
-                    image: model.backgroundImage,
-                    imageOpacity: model.backgroundOpacity,
-                    palette: palette,
-                    radius: 18
-                )
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0),
-                            .init(color: .black.opacity(0.24), location: 0.34),
-                            .init(color: .black, location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-            }
+            VariableBackdropBlur(
+                radius: 18,
+                mask: .clearTopBlurredBottom,
+                startOffset: -0.08
+            )
             .frame(height: 96)
         }
         .onDisappear { recorder.cancel() }

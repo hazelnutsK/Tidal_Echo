@@ -120,12 +120,34 @@ struct ChatView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 12) {
+        ZStack {
+            HStack {
+                Button { showingSpaces = true } label: {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(palette.text)
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
+                }
+
+                Spacer()
+
+                Button { showingSettings = true } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(palette.text)
+                        .frame(width: 40, height: 40)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
+                }
+            }
+
             Button { showingSessions = true } label: {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(spacing: 2) {
                     HStack(spacing: 4) {
                         Text(model.peerDisplayName)
-                            .font(.system(size: 17, weight: .semibold, design: .serif))
+                            .font(.system(size: 22, weight: .semibold, design: .serif))
                         if model.activeSessionID != AppModel.legacySessionID {
                             Text("· \(model.activeSessionTitle)")
                                 .font(.caption.weight(.medium))
@@ -144,38 +166,13 @@ struct ChatView: View {
                             .foregroundStyle(palette.secondaryText)
                     }
                 }
+                .padding(.horizontal, 30)
+                .padding(.vertical, 7)
+                .frame(minWidth: 156)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
-
-            Spacer()
-
-            if model.isLoadingHistory {
-                ProgressView().tint(palette.accent)
-            }
-
-            Button { showingVoiceCall = true } label: {
-                Image(systemName: "phone.fill")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(palette.text)
-                    .frame(width: 38, height: 38)
-                    .background(palette.composer, in: Circle())
-            }
-
-            Button { showingSpaces = true } label: {
-                Image(systemName: "square.grid.2x2")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(palette.text)
-                    .frame(width: 38, height: 38)
-                    .background(palette.composer, in: Circle())
-            }
-
-            Button { showingSettings = true } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(palette.text)
-                    .frame(width: 38, height: 38)
-                    .background(palette.composer, in: Circle())
-            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
@@ -184,26 +181,25 @@ struct ChatView: View {
     private var topFog: some View {
         ZStack {
             Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.62)
+                .fill(.regularMaterial)
                 .mask(
                     LinearGradient(
-                        colors: [.black, .black.opacity(0.76), .black.opacity(0.22), .clear],
+                        colors: [.black, .black, .black.opacity(0.88), .black.opacity(0.46), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
             Rectangle()
-                .fill(palette.backgroundTop.opacity(0.30))
+                .fill(palette.backgroundTop.opacity(0.46))
                 .mask(
                     LinearGradient(
-                        colors: [.black, .black.opacity(0.48), .clear],
+                        colors: [.black, .black.opacity(0.78), .black.opacity(0.28), .clear],
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
         }
-        .frame(height: 96)
+        .frame(height: 122)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
@@ -1014,9 +1010,10 @@ private struct ComposerView: View {
         .padding(.top, 9)
         .padding(.bottom, 8)
         .background {
-            Rectangle()
-                .fill(.ultraThinMaterial)
-                .opacity(0.34)
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                Rectangle().fill(palette.backgroundTop.opacity(0.07))
+            }
         }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in

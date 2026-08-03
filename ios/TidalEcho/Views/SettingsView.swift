@@ -370,7 +370,7 @@ private struct AppearanceSettingsView: View {
                     model.showsHumanAvatar = false
                     model.showsAIBubble = true
                     model.bubbleOpacity = 1
-                    model.bubbleRadius = 18
+                    model.bubbleRadius = 14
                     model.bubbleWidthScale = 1
                     model.bubbleBorderWidth = 0
                     model.bubbleStyle = .classic

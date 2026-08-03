@@ -276,6 +276,11 @@ struct APIClient {
         return try decoder.decode(CalendarMonthResponse.self, from: try await data(for: request(url: url)))
     }
 
+    func anniversary() async throws -> AnniversarySummary? {
+        let req = request(url: endpoint("app/calendar/anniversary"))
+        return try decoder.decode(AnniversaryResponse.self, from: try await data(for: req)).anniversary
+    }
+
     func createCalendarEvent(_ payload: CalendarCreatePayload) async throws -> CalendarEvent {
         var req = request(url: endpoint("app/calendar"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

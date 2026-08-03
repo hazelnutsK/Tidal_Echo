@@ -38,9 +38,11 @@ struct ChatView: View {
             }
 
             VStack(spacing: 0) {
-                topBar
-                Divider().overlay(palette.hairline)
-                messageList
+                ZStack(alignment: .top) {
+                    messageList
+                    topFog
+                    topBar
+                }
                 ComposerView(model: model)
             }
 
@@ -151,14 +153,6 @@ struct ChatView: View {
                 ProgressView().tint(palette.accent)
             }
 
-            Button { showingSearch = true } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(palette.text)
-                    .frame(width: 36, height: 36)
-                    .background(palette.composer, in: Circle())
-            }
-
             Button { showingVoiceCall = true } label: {
                 Image(systemName: "phone.fill")
                     .font(.system(size: 16, weight: .medium))
@@ -185,7 +179,33 @@ struct ChatView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 9)
-        .background(palette.backgroundTop.opacity(0.82))
+    }
+
+    private var topFog: some View {
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.62)
+                .mask(
+                    LinearGradient(
+                        colors: [.black, .black.opacity(0.76), .black.opacity(0.22), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            Rectangle()
+                .fill(palette.backgroundTop.opacity(0.30))
+                .mask(
+                    LinearGradient(
+                        colors: [.black, .black.opacity(0.48), .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+        }
+        .frame(height: 96)
+        .ignoresSafeArea(edges: .top)
+        .allowsHitTesting(false)
     }
 
     private var messageList: some View {
@@ -322,7 +342,8 @@ struct ChatView: View {
                     Color.clear.frame(height: 2).id("chat-bottom")
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 14)
+                .padding(.top, 76)
+                .padding(.bottom, 14)
             }
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.refresh() }
@@ -992,7 +1013,11 @@ private struct ComposerView: View {
         }
         .padding(.top, 9)
         .padding(.bottom, 8)
-        .background(.ultraThinMaterial)
+        .background {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .opacity(0.34)
+        }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
             guard !items.isEmpty else { return }

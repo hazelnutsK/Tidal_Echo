@@ -533,6 +533,23 @@ struct CalendarMonthResponse: Decodable {
     let holidays: [String: String]
 }
 
+struct AnniversarySummary: Decodable, Hashable {
+    let id: Int
+    let title: String
+    let startDate: String
+    let daysSince: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, title
+        case startDate = "start_date"
+        case daysSince = "days_since"
+    }
+}
+
+struct AnniversaryResponse: Decodable {
+    let anniversary: AnniversarySummary?
+}
+
 struct DesktopModelResponse: Decodable {
     let model: String
     let applied: Bool?

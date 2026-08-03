@@ -190,9 +190,8 @@ struct MessageRow: View {
             if bubbleStyle == .frosted {
                 shape
                     .fill(.ultraThinMaterial)
-                    // A Material includes its own milky system fill. Reduce that
-                    // layer explicitly so opacity=0 resembles PWA's blur-only glass.
-                    .opacity(0.10 + bubbleOpacity * 0.20)
+                    // Keep backdrop sampling at full strength. The slider controls
+                    // only the color wash, so zero still looks like real glass.
                     .overlay(shape.fill(color.opacity(bubbleOpacity * 0.55)))
                     .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
             } else {
@@ -662,13 +661,12 @@ struct StreamingReplyRow: View {
                         if bubbleStyle == .frosted {
                             shape
                                 .fill(.ultraThinMaterial)
-                                .opacity(0.10 + bubbleOpacity * 0.20)
                                 .overlay(shape.fill(aiBubbleColor.opacity(bubbleOpacity * 0.55)))
                                 .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
                         } else {
                             shape
                                 .fill(aiBubbleColor.opacity(bubbleOpacity))
-                                .shadow(color: Color.black.opacity(0.12 * bubbleOpacity), radius: 4.5, y: 2)
+                                .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
                         }
                     }
                 }

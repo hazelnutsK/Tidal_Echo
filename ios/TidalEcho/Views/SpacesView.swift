@@ -737,7 +737,7 @@ private struct MomentComposer: View {
 
 // MARK: - 日历
 
-private struct EchoCalendarView: View {
+struct EchoCalendarView: View {
     @ObservedObject var model: AppModel
     @State private var selectedDate = Date()
     @State private var response: CalendarMonthResponse?

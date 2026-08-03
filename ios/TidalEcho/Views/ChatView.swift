@@ -56,7 +56,11 @@ struct ChatView: View {
             }
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsView(model: model)
+            SettingsView(
+                model: model,
+                onSearch: { showingSearch = true },
+                onCall: { showingVoiceCall = true }
+            )
                 .presentationDetents([.medium, .large])
         }
         .sheet(isPresented: $showingSearch) {
@@ -574,7 +578,7 @@ private struct SessionManagerView: View {
         NavigationStack {
             List {
                 Section("对话窗口") {
-                    sessionButton(id: AppModel.legacySessionID, title: "旧主线 / Desktop 记录", subtitle: "没有 API 窗口标记的聊天")
+                    sessionButton(id: AppModel.legacySessionID, title: "Claude Code", subtitle: "Claude Code / Desktop 会话记录")
                     ForEach(model.sessions) { session in
                         sessionButton(
                             id: session.id,
@@ -598,7 +602,7 @@ private struct SessionManagerView: View {
 
                 if model.sessions.isEmpty && !model.isLoadingSessions {
                     Section {
-                        Text("API loop 没有开启时，只会显示旧主线；这不影响 Desktop 聊天。")
+                        Text("API loop 没有开启时，只会显示 Claude Code；这不影响 Desktop 聊天。")
                             .font(.footnote)
                             .foregroundStyle(palette.secondaryText)
                     }

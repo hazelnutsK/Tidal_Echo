@@ -6,6 +6,7 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     let onSearch: () -> Void
     let onCall: () -> Void
+    @State private var anniversary: AnniversarySummary?
     @Environment(\.dismiss) private var dismiss
 
     private var palette: EchoPalette { model.theme.palette }
@@ -30,16 +31,30 @@ struct SettingsView: View {
 
                 ScrollView {
                     VStack(spacing: 18) {
-                        VStack(spacing: 3) {
-                            Text("星屿")
-                                .font(.system(size: 31, weight: .medium, design: .serif))
-                                .foregroundStyle(palette.text)
-                            Text("A PLACE FOR EVERY ECHO")
-                                .font(.system(size: 9, weight: .medium))
-                                .tracking(2.1)
-                                .foregroundStyle(palette.secondaryText)
-                        }
+                        Text("A PLACE FOR EVERY ECHO")
+                            .font(.system(size: 11.5, weight: .medium))
+                            .tracking(2.1)
+                            .foregroundStyle(palette.secondaryText)
                         .padding(.top, 5)
+
+                        GeometryReader { geometry in
+                            let unit = (geometry.size.width - 20) / 3
+                            HStack(spacing: 10) {
+                                NavigationLink {
+                                    EchoCalendarView(model: model)
+                                } label: {
+                                    AnniversaryWideCard(summary: anniversary, palette: palette)
+                                }
+                                .frame(width: unit * 2 + 10)
+
+                                Button { leaveHub(for: onSearch) } label: {
+                                    HubTile(icon: "magnifyingglass", title: "搜索", subtitle: "全局消息", palette: palette)
+                                }
+                                .frame(width: unit)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .frame(height: 104)
 
                         LazyVGrid(columns: columns, spacing: 10) {
                             HubNavigationTile(icon: "paintpalette", title: "外观与聊天", subtitle: model.theme.title, palette: palette) {
@@ -54,14 +69,8 @@ struct SettingsView: View {
                             HubNavigationTile(icon: "bell.badge", title: "通知与后台", subtitle: "提醒与音频", palette: palette) {
                                 NotificationSettingsView(model: model)
                             }
-                            Button { leaveHub(for: onSearch) } label: {
-                                HubTile(icon: "magnifyingglass", title: "搜索", subtitle: "全局消息", palette: palette)
-                            }
                             Button { leaveHub(for: onCall) } label: {
                                 HubTile(icon: "phone", title: "打电话", subtitle: model.peerDisplayName, palette: palette)
-                            }
-                            HubNavigationTile(icon: "heart", title: "纪念日", subtitle: "日历与日程", palette: palette) {
-                                EchoCalendarView(model: model)
                             }
                             HubNavigationTile(icon: "chart.bar", title: "Claude 额度", subtitle: "限额与用量", palette: palette) {
                                 ClaudeQuotaView(model: model)
@@ -113,11 +122,54 @@ struct SettingsView: View {
             }
         }
         .preferredColorScheme(model.theme.preferredColorScheme)
+        .task { anniversary = try? await model.relationshipAnniversary() }
     }
 
     private func leaveHub(for action: @escaping () -> Void) {
         dismiss()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { action() }
+    }
+}
+
+private struct AnniversaryWideCard: View {
+    let summary: AnniversarySummary?
+    let palette: EchoPalette
+
+    var body: some View {
+        HStack(spacing: 13) {
+            Image(systemName: "heart")
+                .font(.system(size: 23, weight: .medium))
+                .foregroundStyle(palette.accent)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("在一起")
+                    .font(.system(size: 13, weight: .semibold))
+                Text(summary.map { "\($0.daysSince) 天" } ?? "尚未设置")
+                    .font(.system(size: summary == nil ? 18 : 26, weight: .semibold, design: .rounded))
+                    .lineLimit(1)
+                Text(startText)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(palette.text)
+        .padding(.horizontal, 17)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(palette.hairline))
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private var startText: String {
+        guard let raw = summary?.startDate else { return "从日历添加" }
+        let input = DateFormatter()
+        input.locale = Locale(identifier: "en_US_POSIX")
+        input.dateFormat = "yyyy-MM-dd"
+        guard let date = input.date(from: raw) else { return "从 \(raw) 起" }
+        let output = DateFormatter()
+        output.locale = Locale(identifier: "zh_CN")
+        output.dateFormat = "从 M月d日起"
+        return output.string(from: date)
     }
 }
 

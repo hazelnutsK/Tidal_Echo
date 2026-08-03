@@ -593,6 +593,10 @@ final class AppModel: ObservableObject {
         try await requireClient().calendar(year: year, month: month)
     }
 
+    func relationshipAnniversary() async throws -> AnniversarySummary? {
+        try await requireClient().anniversary()
+    }
+
     func createCalendarEvent(_ payload: CalendarCreatePayload) async throws -> CalendarEvent {
         try await requireClient().createCalendarEvent(payload)
     }

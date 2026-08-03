@@ -163,7 +163,6 @@ def set_reaction(message_id, who, emoji):
         conn.commit()
     return reactions
 
-
 def history(since: int, limit: int) -> list:
     with db() as conn:
         rows = conn.execute(
@@ -496,6 +495,22 @@ app.add_middleware(
 @app.get("/healthz")
 async def healthz():
     return {"ok": True, "plugin_subs": len(plugin_subs), "app_subs": len(app_subs)}
+
+
+@app.post("/app/message/{message_id}/reaction")
+async def app_message_reaction(request: Request, message_id: int):
+    """Set or clear the human's emoji reaction on an existing message."""
+    check_auth(request)
+    body = await request.json()
+    emoji = str(body.get("emoji") or "").strip()[:16]
+    reactions = set_reaction(message_id, "human", emoji)
+    if reactions is None:
+        raise HTTPException(status_code=404, detail="message not found")
+    await broadcast(app_subs, {
+        "type": "reaction", "id": message_id,
+        "reactions": reactions, "by": "human",
+    })
+    return {"id": message_id, "reactions": reactions}
 
 
 # ---- AI side ---------------------------------------------------------------

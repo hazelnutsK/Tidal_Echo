@@ -33,6 +33,17 @@ struct MessageTimer: Codable, Hashable {
     }
 }
 
+struct ToolStep: Decodable, Hashable {
+    var tool: String?
+    var cmd: String?
+    var result: String?
+}
+
+private struct ActMeta: Decodable {
+    var glyph: String?
+    var steps: [ToolStep]?
+}
+
 struct Attachment: Codable, Hashable, Identifiable {
     var url: String
     var name: String
@@ -57,6 +68,8 @@ struct MessageMeta: Decodable, Hashable {
     var starred: String?
     var timer: MessageTimer?
     var edited: Bool
+    var glyph: String?
+    var steps: [ToolStep]
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -65,7 +78,7 @@ struct MessageMeta: Decodable, Hashable {
         case apiSession = "api_session"
         case streamID = "stream_id"
         case sortAfter = "sort_after"
-        case starred, timer, edited
+        case starred, timer, edited, glyph, steps, act
     }
 
     init(
@@ -85,6 +98,8 @@ struct MessageMeta: Decodable, Hashable {
         self.starred = nil
         self.timer = nil
         self.edited = false
+        self.glyph = nil
+        self.steps = []
     }
 
     init(from decoder: Decoder) throws {
@@ -98,6 +113,9 @@ struct MessageMeta: Decodable, Hashable {
         starred = try values.decodeIfPresent(String.self, forKey: .starred)
         timer = try values.decodeIfPresent(MessageTimer.self, forKey: .timer)
         edited = try values.decodeIfPresent(Bool.self, forKey: .edited) ?? false
+        let nestedAct = try values.decodeIfPresent(ActMeta.self, forKey: .act)
+        glyph = try values.decodeIfPresent(String.self, forKey: .glyph) ?? nestedAct?.glyph
+        steps = try values.decodeIfPresent([ToolStep].self, forKey: .steps) ?? nestedAct?.steps ?? []
     }
 }
 

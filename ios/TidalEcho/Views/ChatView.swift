@@ -115,13 +115,6 @@ struct ChatView: View {
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(palette.aiBubble).frame(width: 38, height: 38)
-                Image(systemName: "sparkle")
-                    .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(palette.accent)
-            }
-
             Button { showingSessions = true } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
@@ -240,6 +233,7 @@ struct ChatView: View {
                             peerName: model.peerDisplayName,
                             showsTimestamp: shouldShowTimestamp(for: message),
                             isTail: isBubbleTail(message),
+                            isPaper: model.theme == .paper,
                             onToggleStar: {
                                 Task {
                                     do {
@@ -292,6 +286,8 @@ struct ChatView: View {
                             title: "Thought process",
                             text: model.streamingThinking,
                             palette: palette,
+                            isPaper: model.theme == .paper,
+                            showsAIAvatar: model.showsAIAvatar,
                             chatFont: model.chatFont,
                             fontScale: model.fontScale,
                             chatWeight: model.chatWeight

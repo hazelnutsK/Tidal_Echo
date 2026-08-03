@@ -324,7 +324,7 @@ private struct AppearanceSettingsView: View {
                         Text("\(Int((model.bubbleOpacity * 100).rounded()))%")
                             .foregroundStyle(palette.secondaryText)
                     }
-                    Slider(value: $model.bubbleOpacity, in: 0.25...1, step: 0.05)
+                    Slider(value: $model.bubbleOpacity, in: 0...1, step: 0.05)
                         .tint(palette.accent)
                 }
 

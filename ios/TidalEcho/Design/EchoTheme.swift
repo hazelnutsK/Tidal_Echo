@@ -96,7 +96,16 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
     }
 
     func font(size: Double, weight: Font.Weight = .regular) -> Font {
-        .system(size: CGFloat(size), weight: weight, design: design)
+        switch self {
+        case .system:
+            // Match the PWA's Chinese sans stack on iOS instead of relying on
+            // SwiftUI's locale-dependent generic fallback.
+            return .custom("PingFang SC", size: CGFloat(size)).weight(weight)
+        case .serif:
+            return .custom("Songti SC", size: CGFloat(size)).weight(weight)
+        case .rounded, .monospaced:
+            return .system(size: CGFloat(size), weight: weight, design: design)
+        }
     }
 }
 

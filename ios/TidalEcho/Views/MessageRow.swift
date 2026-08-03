@@ -110,7 +110,6 @@ struct MessageRow: View {
                 .foregroundStyle(palette.text)
                 .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : 14)
                 .padding(.vertical, 10)
-                .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
                 .background { bubbleBackground }
                 .overlay {
                     if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
@@ -118,6 +117,12 @@ struct MessageRow: View {
                             .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                     }
                 }
+                // Constrain wrapping without painting the background across the
+                // whole max-width frame. Short messages keep their intrinsic width.
+                .frame(
+                    maxWidth: CGFloat(280 * bubbleWidthScale),
+                    alignment: message.author == .human ? .trailing : .leading
+                )
 
                 if let reaction = displayedReaction, !reaction.isEmpty {
                     Text(reaction)
@@ -173,7 +178,9 @@ struct MessageRow: View {
             if bubbleStyle == .frosted {
                 shape
                     .fill(.ultraThinMaterial)
-                    .overlay(shape.fill(color.opacity(max(0.1, bubbleOpacity * 0.32))))
+                    // PWA uses a 55% tint over a 22px backdrop blur. SwiftUI's
+                    // material supplies the blur; this multiplier matches its tint.
+                    .overlay(shape.fill(color.opacity(bubbleOpacity * 0.55)))
             } else {
                 shape.fill(color.opacity(bubbleOpacity))
             }
@@ -244,9 +251,9 @@ struct MessageRow: View {
         if calendar.isDateInToday(date) {
             output.dateFormat = "HH:mm"
         } else if calendar.component(.year, from: date) == calendar.component(.year, from: Date()) {
-            output.dateFormat = "M月d日 HH:mm"
+            output.dateFormat = "M/d HH:mm"
         } else {
-            output.dateFormat = "yyyy年M月d日 HH:mm"
+            output.dateFormat = "yyyy/M/d HH:mm"
         }
         return output.string(from: date)
     }
@@ -399,14 +406,13 @@ struct StreamingReplyRow: View {
                 .foregroundStyle(palette.text)
                 .padding(.horizontal, showsAIBubble ? 14 : 2)
                 .padding(.vertical, 10)
-                .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
                 .background {
                     if showsAIBubble {
                         let shape = RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
                         if bubbleStyle == .frosted {
                             shape
                                 .fill(.ultraThinMaterial)
-                                .overlay(shape.fill(aiBubbleColor.opacity(max(0.1, bubbleOpacity * 0.32))))
+                                .overlay(shape.fill(aiBubbleColor.opacity(bubbleOpacity * 0.55)))
                         } else {
                             shape.fill(aiBubbleColor.opacity(bubbleOpacity))
                         }
@@ -418,6 +424,7 @@ struct StreamingReplyRow: View {
                             .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                     }
                 }
+                .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
             Spacer(minLength: showsAIAvatar ? 44 : 18)
         }
     }

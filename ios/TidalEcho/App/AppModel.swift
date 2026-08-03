@@ -260,7 +260,7 @@ final class AppModel: ObservableObject {
     }
 
     func sessionTitle(for message: ChatMessage) -> String {
-        guard let id = message.meta.apiSession, !id.isEmpty else { return "旧主线" }
+        guard let id = message.meta.apiSession, !id.isEmpty else { return "Claude Code" }
         return sessions.first(where: { $0.id == id })?.title ?? "API 对话"
     }
 
@@ -369,7 +369,7 @@ final class AppModel: ObservableObject {
     }
 
     var activeSessionTitle: String {
-        if activeSessionID == Self.legacySessionID { return "旧主线" }
+        if activeSessionID == Self.legacySessionID { return "Claude Code" }
         return sessions.first(where: { $0.id == activeSessionID })?.title ?? "API 对话"
     }
 

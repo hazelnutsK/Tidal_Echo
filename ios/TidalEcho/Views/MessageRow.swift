@@ -128,7 +128,9 @@ struct MessageRow: View {
                 // Constrain wrapping without painting the background across the
                 // whole max-width frame. Short messages keep their intrinsic width.
                 .frame(
-                    maxWidth: CGFloat(280 * bubbleWidthScale),
+                    maxWidth: message.author == .ai && !showsAIBubble
+                        ? .infinity
+                        : CGFloat(280 * bubbleWidthScale),
                     alignment: message.author == .human ? .trailing : .leading
                 )
 
@@ -172,7 +174,9 @@ struct MessageRow: View {
                 AvatarBadge(image: humanAvatarImage, fallback: "person.fill", palette: palette)
             }
 
-            if message.author == .ai { Spacer(minLength: showsAIAvatar ? 44 : 18) }
+            if message.author == .ai && showsAIBubble {
+                Spacer(minLength: showsAIAvatar ? 44 : 18)
+            }
         }
         .frame(maxWidth: .infinity)
         .contextMenu { messageActions }
@@ -502,8 +506,8 @@ private struct ProcessRow: View {
         Group {
             if isThinking {
                 Text(message.text)
-                    .font(chatFont.font(size: 13 * fontScale, weight: chatWeight.echoFontWeight))
-                    .lineSpacing(CGFloat(13 * fontScale * 0.52))
+                    .font(chatFont.font(size: 14 * fontScale, weight: chatWeight.echoFontWeight).italic())
+                    .lineSpacing(CGFloat(14 * fontScale * 0.50))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -594,10 +598,9 @@ struct StreamingProcessRow: View {
             }
 
             Text(text)
-                .font(chatFont.font(size: 13 * fontScale, weight: chatWeight.echoFontWeight))
+                .font(chatFont.font(size: 14 * fontScale, weight: chatWeight.echoFontWeight).italic())
                 .lineLimit(4)
-                .lineSpacing(CGFloat(13 * fontScale * 0.52))
-                .italic(isPaper)
+                .lineSpacing(CGFloat(14 * fontScale * 0.50))
                 .textSelection(.enabled)
                 .padding(.leading, isPaper ? 15 : 12)
                 .padding(.trailing, isPaper ? 2 : 12)
@@ -679,8 +682,11 @@ struct StreamingReplyRow: View {
                             .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                     }
                 }
-                .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
-            Spacer(minLength: showsAIAvatar ? 44 : 18)
+                .frame(
+                    maxWidth: showsAIBubble ? CGFloat(280 * bubbleWidthScale) : .infinity,
+                    alignment: .leading
+                )
+            if showsAIBubble { Spacer(minLength: showsAIAvatar ? 44 : 18) }
         }
     }
 }

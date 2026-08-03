@@ -4,83 +4,107 @@ import UIKit
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
+    let onSearch: () -> Void
+    let onCall: () -> Void
     @Environment(\.dismiss) private var dismiss
 
     private var palette: EchoPalette { model.theme.palette }
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    NavigationLink {
-                        AppearanceSettingsView(model: model)
-                    } label: {
-                        SettingsRouteLabel(
-                            icon: "paintpalette",
-                            title: "外观与聊天",
-                            subtitle: "主题、字体、头像与气泡",
-                            badge: model.theme.title,
-                            palette: palette
-                        )
+            ZStack {
+                palette.background.ignoresSafeArea()
+                if let image = model.backgroundImage {
+                    GeometryReader { geometry in
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geometry.size.width, height: geometry.size.height)
+                            .clipped()
+                            .opacity(model.backgroundOpacity * 0.46)
                     }
-
-                    NavigationLink {
-                        ModelSettingsView(model: model)
-                    } label: {
-                        SettingsRouteLabel(
-                            icon: "brain.head.profile",
-                            title: "模型与连接",
-                            subtitle: "身体、模型与 Relay",
-                            badge: nil,
-                            palette: palette
-                        )
-                    }
-
-                    NavigationLink {
-                        ContextSettingsView(model: model)
-                    } label: {
-                        SettingsRouteLabel(
-                            icon: "gauge.with.dots.needle.50percent",
-                            title: "会话与上下文",
-                            subtitle: "阈值、自动 Swap 与会话控制",
-                            badge: nil,
-                            palette: palette
-                        )
-                    }
-
-                    NavigationLink {
-                        NotificationSettingsView(model: model)
-                    } label: {
-                        SettingsRouteLabel(
-                            icon: "bell.badge",
-                            title: "通知与后台",
-                            subtitle: "锁屏提醒、后台音频与来电",
-                            badge: nil,
-                            palette: palette
-                        )
-                    }
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
                 }
-                .listRowBackground(palette.composer.opacity(0.72))
 
-                Section("连接") {
-                    LabeledContent("Relay", value: model.savedServerAddress)
-                        .font(.footnote)
-                        .foregroundStyle(palette.secondaryText)
-                    Button("重新加载聊天记录") { Task { await model.refresh() } }
-                }
-                .listRowBackground(palette.composer.opacity(0.72))
+                ScrollView {
+                    VStack(spacing: 18) {
+                        VStack(spacing: 3) {
+                            Text("星屿")
+                                .font(.system(size: 31, weight: .medium, design: .serif))
+                                .foregroundStyle(palette.text)
+                            Text("A PLACE FOR EVERY ECHO")
+                                .font(.system(size: 9, weight: .medium))
+                                .tracking(2.1)
+                                .foregroundStyle(palette.secondaryText)
+                        }
+                        .padding(.top, 5)
 
-                Section {
-                    Button("退出并清除密钥", role: .destructive) {
-                        dismiss()
-                        model.logout()
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            HubNavigationTile(icon: "paintpalette", title: "外观与聊天", subtitle: model.theme.title, palette: palette) {
+                                AppearanceSettingsView(model: model)
+                            }
+                            HubNavigationTile(icon: "brain.head.profile", title: "模型与连接", subtitle: "身体与 Relay", palette: palette) {
+                                ModelSettingsView(model: model)
+                            }
+                            HubNavigationTile(icon: "gauge.with.dots.needle.50percent", title: "会话与上下文", subtitle: "窗口与切换", palette: palette) {
+                                ContextSettingsView(model: model)
+                            }
+                            HubNavigationTile(icon: "bell.badge", title: "通知与后台", subtitle: "提醒与音频", palette: palette) {
+                                NotificationSettingsView(model: model)
+                            }
+                            Button { leaveHub(for: onSearch) } label: {
+                                HubTile(icon: "magnifyingglass", title: "搜索", subtitle: "全局消息", palette: palette)
+                            }
+                            Button { leaveHub(for: onCall) } label: {
+                                HubTile(icon: "phone", title: "打电话", subtitle: model.peerDisplayName, palette: palette)
+                            }
+                            HubNavigationTile(icon: "heart", title: "纪念日", subtitle: "日历与日程", palette: palette) {
+                                EchoCalendarView(model: model)
+                            }
+                            HubNavigationTile(icon: "chart.bar", title: "Claude 额度", subtitle: "限额与用量", palette: palette) {
+                                ClaudeQuotaView(model: model)
+                            }
+                        }
+                        .buttonStyle(.plain)
+
+                        VStack(spacing: 11) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Relay")
+                                        .font(.caption.weight(.semibold))
+                                    Text(model.savedServerAddress)
+                                        .font(.caption2)
+                                        .foregroundStyle(palette.secondaryText)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Circle()
+                                    .fill(model.isStreamConnected ? Color.green : palette.secondaryText)
+                                    .frame(width: 7, height: 7)
+                            }
+                            Divider().overlay(palette.hairline)
+                            HStack {
+                                Button("重新加载") { Task { await model.refresh() } }
+                                Spacer()
+                                Button("退出并清除密钥", role: .destructive) {
+                                    dismiss()
+                                    model.logout()
+                                }
+                            }
+                            .font(.caption.weight(.medium))
+                        }
+                        .foregroundStyle(palette.text)
+                        .padding(14)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(palette.hairline))
                     }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 24)
                 }
-                .listRowBackground(palette.composer.opacity(0.72))
             }
-            .scrollContentBackground(.hidden)
-            .background(palette.background.ignoresSafeArea())
-            .navigationTitle("设置")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -89,6 +113,68 @@ struct SettingsView: View {
             }
         }
         .preferredColorScheme(model.theme.preferredColorScheme)
+    }
+
+    private func leaveHub(for action: @escaping () -> Void) {
+        dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) { action() }
+    }
+}
+
+private struct HubNavigationTile<Destination: View>: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let palette: EchoPalette
+    let destination: Destination
+
+    init(
+        icon: String,
+        title: String,
+        subtitle: String,
+        palette: EchoPalette,
+        @ViewBuilder destination: () -> Destination
+    ) {
+        self.icon = icon
+        self.title = title
+        self.subtitle = subtitle
+        self.palette = palette
+        self.destination = destination()
+    }
+
+    var body: some View {
+        NavigationLink(destination: destination) {
+            HubTile(icon: icon, title: title, subtitle: subtitle, palette: palette)
+        }
+    }
+}
+
+private struct HubTile: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let palette: EchoPalette
+
+    var body: some View {
+        VStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(palette.accent)
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(palette.text)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+            Text(subtitle)
+                .font(.system(size: 9.5))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 104)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(palette.hairline))
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 }
 
@@ -249,6 +335,8 @@ private struct AppearanceSettingsView: View {
                 }
             }
 
+            bubbleSettingsSection
+
             Section("聊天背景") {
                 if let image = model.backgroundImage {
                     Image(uiImage: image)
@@ -297,88 +385,6 @@ private struct AppearanceSettingsView: View {
                 )
             }
 
-            Section("消息气泡") {
-                Toggle("显示 AI 气泡框", isOn: $model.showsAIBubble)
-
-                Picker("气泡样式", selection: $model.bubbleStyle) {
-                    ForEach(EchoBubbleStyle.allCases) { style in
-                        Text(style.title).tag(style)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                ColorPicker("AI 气泡颜色", selection: Binding(
-                    get: { model.resolvedAIBubbleColor(default: palette.aiBubble) },
-                    set: { model.setAIBubbleColor($0) }
-                ), supportsOpacity: false)
-
-                ColorPicker("我的气泡颜色", selection: Binding(
-                    get: { model.resolvedHumanBubbleColor(default: palette.humanBubble) },
-                    set: { model.setHumanBubbleColor($0) }
-                ), supportsOpacity: false)
-
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        Text("气泡透明度")
-                        Spacer()
-                        Text("\(Int((model.bubbleOpacity * 100).rounded()))%")
-                            .foregroundStyle(palette.secondaryText)
-                    }
-                    Slider(value: $model.bubbleOpacity, in: 0...1, step: 0.05)
-                        .tint(palette.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        Text("气泡圆角")
-                        Spacer()
-                        Text("\(Int(model.bubbleRadius.rounded()))")
-                            .foregroundStyle(palette.secondaryText)
-                    }
-                    Slider(value: $model.bubbleRadius, in: 4...26, step: 1)
-                        .tint(palette.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        Text("气泡宽度")
-                        Spacer()
-                        Text("\(Int(model.bubbleWidthScale * 100))%")
-                            .foregroundStyle(palette.secondaryText)
-                    }
-                    Slider(value: $model.bubbleWidthScale, in: 0.6...1.3, step: 0.05)
-                        .tint(palette.accent)
-                }
-
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        Text("边框粗细")
-                        Spacer()
-                        Text(String(format: "%.1f", model.bubbleBorderWidth))
-                            .foregroundStyle(palette.secondaryText)
-                    }
-                    Slider(value: $model.bubbleBorderWidth, in: 0...2, step: 0.25)
-                        .tint(palette.accent)
-                }
-
-                Button("恢复主题气泡颜色") { model.resetBubbleColors() }
-
-                Button("恢复外观默认值") {
-                    model.chatFont = .system
-                    model.fontScale = 1
-                    model.showsAIAvatar = true
-                    model.showsHumanAvatar = false
-                    model.showsAIBubble = true
-                    model.bubbleOpacity = 1
-                    model.bubbleRadius = 14
-                    model.bubbleWidthScale = 1
-                    model.bubbleBorderWidth = 0
-                    model.bubbleStyle = .classic
-                    model.chatWeight = 400
-                    model.backgroundOpacity = 1
-                    model.resetBubbleColors()
-                }
-            }
         }
         .tint(palette.accent)
         .scrollContentBackground(.hidden)
@@ -395,6 +401,94 @@ private struct AppearanceSettingsView: View {
         )) {
             Button("好", role: .cancel) { imageError = nil }
         } message: { Text(imageError ?? "") }
+    }
+
+    @ViewBuilder
+    private var bubbleSettingsSection: some View {
+        Section("消息气泡") {
+            Toggle("显示 AI 气泡框", isOn: $model.showsAIBubble)
+
+            Picker("气泡样式", selection: $model.bubbleStyle) {
+                ForEach(EchoBubbleStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            ColorPicker("AI 气泡颜色", selection: Binding(
+                get: { model.resolvedAIBubbleColor(default: palette.aiBubble) },
+                set: { model.setAIBubbleColor($0) }
+            ), supportsOpacity: false)
+
+            ColorPicker("我的气泡颜色", selection: Binding(
+                get: { model.resolvedHumanBubbleColor(default: palette.humanBubble) },
+                set: { model.setHumanBubbleColor($0) }
+            ), supportsOpacity: false)
+
+            settingSlider(
+                title: "气泡透明度",
+                valueText: "\(Int((model.bubbleOpacity * 100).rounded()))%",
+                value: $model.bubbleOpacity,
+                range: 0...1,
+                step: 0.05
+            )
+            settingSlider(
+                title: "气泡圆角",
+                valueText: "\(Int(model.bubbleRadius.rounded()))",
+                value: $model.bubbleRadius,
+                range: 4...26,
+                step: 1
+            )
+            settingSlider(
+                title: "气泡宽度",
+                valueText: "\(Int(model.bubbleWidthScale * 100))%",
+                value: $model.bubbleWidthScale,
+                range: 0.6...1.3,
+                step: 0.05
+            )
+            settingSlider(
+                title: "边框粗细",
+                valueText: String(format: "%.1f", model.bubbleBorderWidth),
+                value: $model.bubbleBorderWidth,
+                range: 0...2,
+                step: 0.25
+            )
+
+            Button("恢复主题气泡颜色") { model.resetBubbleColors() }
+            Button("恢复外观默认值") {
+                model.chatFont = .system
+                model.fontScale = 1
+                model.showsAIAvatar = true
+                model.showsHumanAvatar = false
+                model.showsAIBubble = true
+                model.bubbleOpacity = 1
+                model.bubbleRadius = 14
+                model.bubbleWidthScale = 1
+                model.bubbleBorderWidth = 0
+                model.bubbleStyle = .classic
+                model.chatWeight = 400
+                model.backgroundOpacity = 1
+                model.resetBubbleColors()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func settingSlider(
+        title: String,
+        valueText: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(valueText).foregroundStyle(palette.secondaryText)
+            }
+            Slider(value: value, in: range, step: step).tint(palette.accent)
+        }
     }
 
     @ViewBuilder

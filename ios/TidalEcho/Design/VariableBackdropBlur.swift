@@ -15,14 +15,18 @@ enum VariableBlurMask: Equatable {
 struct VariableBackdropBlur: UIViewRepresentable {
     var radius: CGFloat = 18
     var mask: VariableBlurMask = .blurredTopClearBottom
-    var startOffset: CGFloat = -0.08
+    /// Distance from the blurred physical edge, normalized to 0...1.
+    /// Blur is solid through `fadeFrom`, fades until `fadeTo`, and is fully
+    /// clear for the rest of the view. Both endpoints stay inside the frame.
+    var fadeFrom: CGFloat = 0
+    var fadeTo: CGFloat = 1
 
     func makeUIView(context: Context) -> VariableBackdropUIView {
-        VariableBackdropUIView(radius: radius, mask: mask, startOffset: startOffset)
+        VariableBackdropUIView(radius: radius, mask: mask, fadeFrom: fadeFrom, fadeTo: fadeTo)
     }
 
     func updateUIView(_ uiView: VariableBackdropUIView, context: Context) {
-        uiView.update(radius: radius, mask: mask, startOffset: startOffset)
+        uiView.update(radius: radius, mask: mask, fadeFrom: fadeFrom, fadeTo: fadeTo)
     }
 }
 
@@ -32,12 +36,14 @@ final class VariableBackdropUIView: UIVisualEffectView {
     private var variableBlurFilter: NSObject?
     private var blurRadius: CGFloat
     private var blurMask: VariableBlurMask
-    private var startOffset: CGFloat
+    private var fadeFrom: CGFloat
+    private var fadeTo: CGFloat
 
-    init(radius: CGFloat, mask: VariableBlurMask, startOffset: CGFloat) {
+    init(radius: CGFloat, mask: VariableBlurMask, fadeFrom: CGFloat, fadeTo: CGFloat) {
         blurRadius = radius
         blurMask = mask
-        self.startOffset = startOffset
+        self.fadeFrom = fadeFrom
+        self.fadeTo = fadeTo
         super.init(effect: UIBlurEffect(style: .regular))
         isUserInteractionEnabled = false
         installFilterIfPossible()
@@ -48,11 +54,12 @@ final class VariableBackdropUIView: UIVisualEffectView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(radius: CGFloat, mask: VariableBlurMask, startOffset: CGFloat) {
-        guard radius != blurRadius || mask != blurMask || startOffset != self.startOffset else { return }
+    func update(radius: CGFloat, mask: VariableBlurMask, fadeFrom: CGFloat, fadeTo: CGFloat) {
+        guard radius != blurRadius || mask != blurMask || fadeFrom != self.fadeFrom || fadeTo != self.fadeTo else { return }
         blurRadius = radius
         blurMask = mask
-        self.startOffset = startOffset
+        self.fadeFrom = fadeFrom
+        self.fadeTo = fadeTo
         applyFilterValues()
     }
 
@@ -120,12 +127,23 @@ final class VariableBackdropUIView: UIVisualEffectView {
         let gradient = CIFilter.linearGradient()
         gradient.color0 = CIColor.black
         gradient.color1 = CIColor.clear
-        gradient.point0 = CGPoint(x: 0, y: height)
-        gradient.point1 = CGPoint(x: 0, y: startOffset * height)
+        let solidEnd = min(max(fadeFrom, 0), 1)
+        let clearStart = min(max(fadeTo, solidEnd + 0.001), 1)
 
-        if blurMask == .clearTopBlurredBottom {
-            gradient.point0.y = 0
-            gradient.point1.y = height - gradient.point1.y
+        // Core Image's origin is bottom-left. For a top blur, the black
+        // (full-alpha) endpoint therefore has the larger y coordinate. For a
+        // bottom blur the mapping is mirrored. Outside these two points the
+        // gradient clamps to solid/clear, so the view boundary is already at
+        // zero blur instead of cutting a still-active filter.
+        switch blurMask {
+        case .blurredTopClearBottom:
+            gradient.point0 = CGPoint(x: 0, y: height * (1 - solidEnd))
+            gradient.point1 = CGPoint(x: 0, y: height * (1 - clearStart))
+        case .clearTopBlurredBottom:
+            gradient.point0 = CGPoint(x: 0, y: height * solidEnd)
+            gradient.point1 = CGPoint(x: 0, y: height * clearStart)
+        case .solid:
+            break
         }
 
         guard let output = gradient.outputImage else { return nil }

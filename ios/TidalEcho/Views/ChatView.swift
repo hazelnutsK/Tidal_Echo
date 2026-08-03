@@ -172,9 +172,17 @@ struct ChatView: View {
     private var topFog: some View {
         ZStack {
             VariableBackdropBlur(
-                radius: 18,
+                radius: 16,
                 mask: .blurredTopClearBottom,
-                startOffset: -0.08
+                fadeFrom: 0.25,
+                fadeTo: 0.65
+            )
+
+            VariableBackdropBlur(
+                radius: 3,
+                mask: .blurredTopClearBottom,
+                fadeFrom: 0.50,
+                fadeTo: 0.88
             )
 
             Rectangle()
@@ -199,7 +207,7 @@ struct ChatView: View {
     @ViewBuilder
     private func headerGlass<S: InsettableShape>(shape: S) -> some View {
         ZStack {
-            VariableBackdropBlur(radius: 18, mask: .solid, startOffset: 0)
+            VariableBackdropBlur(radius: 18, mask: .solid)
             shape.fill(headerGlassTint)
         }
         .clipShape(shape)
@@ -936,6 +944,18 @@ private struct ComposerView: View {
     @State private var draftText = ""
 
     private var palette: EchoPalette { model.theme.palette }
+    private var bottomSafeAreaInset: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)?
+            .safeAreaInsets.bottom ?? 0
+    }
+    private var bottomFogHeight: CGFloat { 96 + bottomSafeAreaInset }
+    private var bottomHeavySolidEnd: CGFloat {
+        guard bottomFogHeight > 0 else { return 0.25 }
+        return max(0.25, min(0.34, (bottomSafeAreaInset + 2) / bottomFogHeight))
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1051,12 +1071,24 @@ private struct ComposerView: View {
         .padding(.top, 9)
         .padding(.bottom, 8)
         .background(alignment: .bottom) {
-            VariableBackdropBlur(
-                radius: 18,
-                mask: .clearTopBlurredBottom,
-                startOffset: -0.08
-            )
-            .frame(height: 96)
+            ZStack {
+                VariableBackdropBlur(
+                    radius: 10,
+                    mask: .clearTopBlurredBottom,
+                    fadeFrom: bottomHeavySolidEnd,
+                    fadeTo: 0.65
+                )
+
+                VariableBackdropBlur(
+                    radius: 2,
+                    mask: .clearTopBlurredBottom,
+                    fadeFrom: 0.50,
+                    fadeTo: 0.88
+                )
+            }
+            .frame(height: bottomFogHeight)
+            .offset(y: bottomSafeAreaInset)
+            .ignoresSafeArea(edges: .bottom)
         }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in

@@ -125,7 +125,7 @@ struct ChatView: View {
             Button { showingSessions = true } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 4) {
-                        Text("小克")
+                        Text(model.peerDisplayName)
                             .font(.system(size: 17, weight: .semibold, design: .serif))
                         if model.activeSessionID != AppModel.legacySessionID {
                             Text("· \(model.activeSessionTitle)")
@@ -211,7 +211,7 @@ struct ChatView: View {
                         VStack(spacing: 10) {
                             Image(systemName: "water.waves")
                                 .font(.system(size: 28, weight: .light))
-                            Text("这里只有你和小克。\n说点什么吧。")
+                            Text("这里只有你和\(model.peerDisplayName)。\n说点什么吧。")
                                 .multilineTextAlignment(.center)
                         }
                         .foregroundStyle(palette.secondaryText)
@@ -235,7 +235,10 @@ struct ChatView: View {
                             bubbleRadius: model.bubbleRadius,
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
+                            bubbleStyle: model.bubbleStyle,
                             chatWeight: model.chatWeight,
+                            peerName: model.peerDisplayName,
+                            showsTimestamp: shouldShowTimestamp(for: message),
                             onToggleStar: {
                                 Task {
                                     do {
@@ -262,6 +265,18 @@ struct ChatView: View {
                             },
                             onHide: {
                                 pendingHide = message
+                            },
+                            onReact: { emoji in
+                                Task {
+                                    do { try await model.reactToMessage(messageID: message.id, emoji: emoji) }
+                                    catch { model.errorMessage = error.localizedDescription }
+                                }
+                            },
+                            onCompleteTimer: {
+                                Task {
+                                    do { try await model.completeTimer(messageID: message.id) }
+                                    catch { model.errorMessage = error.localizedDescription }
+                                }
                             },
                             onAnswerCall: {
                                 presentVoiceCallDirectly()
@@ -296,6 +311,7 @@ struct ChatView: View {
                             bubbleRadius: model.bubbleRadius,
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
+                            bubbleStyle: model.bubbleStyle,
                             chatWeight: model.chatWeight
                         )
                     } else if model.isTyping {
@@ -340,6 +356,18 @@ struct ChatView: View {
         guard !model.messages.isEmpty else { return }
         didPositionInitialHistory = true
         settleAtBottom(proxy)
+    }
+
+    private func shouldShowTimestamp(for message: ChatMessage) -> Bool {
+        if message.author == .human { return true }
+        if message.kind == "thinking" || message.kind == "act" { return false }
+        guard let index = model.messages.firstIndex(where: { $0.id == message.id }) else { return true }
+        for later in model.messages.indices where later > index {
+            let next = model.messages[later]
+            if next.kind == "thinking" || next.kind == "act" { continue }
+            return next.author != .ai
+        }
+        return true
     }
 
     private func settleAtBottom(_ proxy: ScrollViewProxy) {
@@ -428,7 +456,7 @@ private struct MessageSearchView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack(spacing: 7) {
-                                Text(message.author == .human ? "小雪" : "小克")
+                                Text(message.author == .human ? "小雪" : model.peerDisplayName)
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(message.author == .ai ? palette.accent : palette.text)
                                 Text(model.sessionTitle(for: message))
@@ -754,7 +782,7 @@ private struct NativeIncomingCallOverlay: View {
                 .shadow(color: palette.accent.opacity(0.25), radius: 28)
                 .scaleEffect(ringer.pulse ? 1.025 : 0.98)
 
-                Text("小克来电")
+                Text("\(model.peerDisplayName)来电")
                     .font(.system(size: 29, weight: .semibold, design: .serif))
                     .foregroundStyle(palette.text)
                     .padding(.top, 24)
@@ -821,7 +849,9 @@ private final class IncomingCallRinger: ObservableObject {
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = VoiceRecorder()
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var importingFiles = false
+    @State private var importingMusic = false
     @State private var draftText = ""
 
     private var palette: EchoPalette { model.theme.palette }
@@ -875,7 +905,7 @@ private struct ComposerView: View {
                     HStack(spacing: 8) {
                         ForEach(model.pendingAttachments) { attachment in
                             HStack(spacing: 7) {
-                                Image(systemName: "photo")
+                                Image(systemName: attachmentIcon(attachment))
                                 Text(attachment.name).lineLimit(1)
                                 Button { model.removePendingAttachment(attachment) } label: {
                                     Image(systemName: "xmark.circle.fill")
@@ -894,7 +924,17 @@ private struct ComposerView: View {
             }
 
             HStack(alignment: .bottom, spacing: 10) {
-                PhotosPicker(selection: $photoItem, matching: .images) {
+                Menu {
+                    PhotosPicker(selection: $photoItems, maxSelectionCount: 9, matching: .images) {
+                        Label("照片", systemImage: "photo.on.rectangle")
+                    }
+                    Button { importingFiles = true } label: {
+                        Label("文件", systemImage: "doc")
+                    }
+                    Button { importingMusic = true } label: {
+                        Label("音乐", systemImage: "music.note")
+                    }
+                } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(palette.accent)
@@ -941,27 +981,76 @@ private struct ComposerView: View {
         .padding(.bottom, 8)
         .background(.ultraThinMaterial)
         .onDisappear { recorder.cancel() }
-        .onChange(of: photoItem) { item in
-            guard let item else { return }
-            Task {
-                defer { photoItem = nil }
-                guard let data = try? await item.loadTransferable(type: Data.self) else {
-                    model.errorMessage = "没有读到这张图片"
-                    return
-                }
-                let type = item.supportedContentTypes.first ?? .jpeg
-                let ext = type.preferredFilenameExtension ?? "jpg"
-                await model.uploadImage(
-                    data: data,
-                    name: "photo-\(UUID().uuidString.prefix(8)).\(ext)",
-                    mime: type.preferredMIMEType ?? "image/jpeg"
-                )
-            }
+        .onChange(of: photoItems) { items in
+            guard !items.isEmpty else { return }
+            photoItems = []
+            Task { await uploadPhotos(items) }
+        }
+        .fileImporter(
+            isPresented: $importingFiles,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            importURLs(result)
+        }
+        .fileImporter(
+            isPresented: $importingMusic,
+            allowedContentTypes: [.audio],
+            allowsMultipleSelection: true
+        ) { result in
+            importURLs(result)
         }
     }
 
     private var canSend: Bool {
         !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pendingAttachments.isEmpty
+    }
+
+    private func attachmentIcon(_ attachment: Attachment) -> String {
+        if attachment.isImage { return "photo" }
+        if attachment.mime?.hasPrefix("audio/") == true || attachment.kind == "audio" { return "music.note" }
+        return "doc"
+    }
+
+    private func uploadPhotos(_ items: [PhotosPickerItem]) async {
+        for item in items.prefix(9) {
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                model.errorMessage = "有一张图片没有读出来"
+                continue
+            }
+            let type = item.supportedContentTypes.first ?? .jpeg
+            let ext = type.preferredFilenameExtension ?? "jpg"
+            await model.uploadAttachment(
+                data: data,
+                name: "photo-\(UUID().uuidString.prefix(8)).\(ext)",
+                mime: type.preferredMIMEType ?? "image/jpeg"
+            )
+        }
+    }
+
+    private func importURLs(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            model.errorMessage = "没有读到附件：\(error.localizedDescription)"
+        case .success(let urls):
+            Task {
+                for url in urls.prefix(9) {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    do {
+                        let values = try url.resourceValues(forKeys: [.contentTypeKey])
+                        let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                        await model.uploadAttachment(
+                            data: data,
+                            name: url.lastPathComponent,
+                            mime: values.contentType?.preferredMIMEType ?? "application/octet-stream"
+                        )
+                    } catch {
+                        model.errorMessage = "附件读取失败：\(url.lastPathComponent)"
+                    }
+                }
+            }
+        }
     }
 
     private func send() {

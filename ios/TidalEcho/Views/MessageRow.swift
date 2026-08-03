@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuickLook
 
 struct MessageRow: View {
     let message: ChatMessage
@@ -17,13 +18,18 @@ struct MessageRow: View {
     let bubbleRadius: Double
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
+    let bubbleStyle: EchoBubbleStyle
     let chatWeight: Double
+    let peerName: String
+    let showsTimestamp: Bool
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
     let onCopy: () -> Void
     let onEdit: () -> Void
     let onRegenerate: () -> Void
     let onHide: () -> Void
+    let onReact: (String) -> Void
+    let onCompleteTimer: () -> Void
     let onAnswerCall: () -> Void
     let attachmentRequest: (Attachment) -> URLRequest?
 
@@ -46,7 +52,7 @@ struct MessageRow: View {
                             .frame(width: 40, height: 40)
                             .background(Color.green, in: Circle())
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("小克来电").font(.subheadline.weight(.semibold))
+                            Text("\(peerName)来电").font(.subheadline.weight(.semibold))
                             Text(message.text).font(.caption).lineLimit(2)
                         }
                         .foregroundStyle(palette.text)
@@ -92,17 +98,20 @@ struct MessageRow: View {
                             .lineSpacing(4)
                             .textSelection(.enabled)
                     }
+
+                    if let timer = message.meta.timer {
+                        MessageTimerCard(
+                            timer: timer,
+                            palette: palette,
+                            onDone: onCompleteTimer
+                        )
+                    }
                 }
                 .foregroundStyle(palette.text)
                 .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : 14)
                 .padding(.vertical, 10)
                 .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
-                .background {
-                    if message.author == .human || showsAIBubble {
-                        RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
-                            .fill((message.author == .human ? humanBubbleColor : aiBubbleColor).opacity(bubbleOpacity))
-                    }
-                }
+                .background { bubbleBackground }
                 .overlay {
                     if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
                         RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
@@ -110,23 +119,40 @@ struct MessageRow: View {
                     }
                 }
 
-                HStack(spacing: 5) {
-                    if let reaction = message.meta.reactions[message.author == .human ? "ai" : "human"] {
-                        Text(reaction)
-                    }
-                    if message.author == .human {
-                        switch message.delivery {
-                        case .sending: Image(systemName: "clock")
-                        case .sent: Image(systemName: "checkmark.circle")
-                        case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(Color.red)
-                        }
-                    } else {
-                        Text(Self.formatTime(message.timestamp))
-                    }
+                if let reaction = displayedReaction, !reaction.isEmpty {
+                    Text(reaction)
+                        .font(.system(size: 17))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.thinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(palette.hairline))
+                        .padding(.top, -7)
+                        .transition(.scale.combined(with: .opacity))
                 }
-                .font(.system(size: 10))
-                .foregroundStyle(palette.secondaryText)
-                .padding(.horizontal, 3)
+
+                if shouldShowMetaLine {
+                    HStack(spacing: 5) {
+                        if message.meta.edited && message.delivery == .sent {
+                            Text("已编辑")
+                        }
+                        if message.author == .human {
+                            switch message.delivery {
+                            case .sending:
+                                Image(systemName: "clock")
+                            case .failed:
+                                Label("未送达", systemImage: "exclamationmark.circle.fill")
+                                    .foregroundStyle(Color.red)
+                            case .sent:
+                                Text(Self.formatTime(message.timestamp))
+                            }
+                        } else if showsTimestamp {
+                            Text(Self.formatTime(message.timestamp))
+                        }
+                    }
+                    .font(.system(size: 10))
+                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 3)
+                }
             }
 
             if message.author == .human && showsHumanAvatar {
@@ -136,38 +162,71 @@ struct MessageRow: View {
             if message.author == .ai { Spacer(minLength: showsAIAvatar ? 44 : 18) }
         }
         .frame(maxWidth: .infinity)
-        .contextMenu {
-            if !message.text.isEmpty {
-                Button(action: onCopy) {
-                    Label("复制", systemImage: "doc.on.doc")
-                }
+        .contextMenu { messageActions }
+    }
+
+    @ViewBuilder
+    private var bubbleBackground: some View {
+        if message.author == .human || showsAIBubble {
+            let shape = RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+            let color = message.author == .human ? humanBubbleColor : aiBubbleColor
+            if bubbleStyle == .frosted {
+                shape
+                    .fill(.ultraThinMaterial)
+                    .overlay(shape.fill(color.opacity(max(0.1, bubbleOpacity * 0.32))))
+            } else {
+                shape.fill(color.opacity(bubbleOpacity))
             }
-            if message.id > 0 {
-                Button {
-                    onToggleStar()
+        }
+    }
+
+    private var displayedReaction: String? {
+        message.meta.reactions[message.author == .human ? "ai" : "human"]
+    }
+
+    private var myReaction: String? {
+        message.meta.reactions["human"]
+    }
+
+    private var shouldShowMetaLine: Bool {
+        message.author == .human || showsTimestamp || message.meta.edited
+    }
+
+    @ViewBuilder
+    private var messageActions: some View {
+        if !message.text.isEmpty {
+            Button(action: onCopy) { Label("复制", systemImage: "doc.on.doc") }
+        }
+        if message.id > 0 {
+            if message.author == .ai {
+                Menu {
+                    ForEach(["❤️", "😘", "😂", "🥺", "🔥", "👀"], id: \.self) { emoji in
+                        Button(emoji) { onReact(emoji) }
+                    }
+                    if myReaction != nil {
+                        Divider()
+                        Button("收回回应", role: .destructive) { onReact("") }
+                    }
                 } label: {
-                    Label(message.meta.starred == nil ? "收藏" : "取消收藏",
-                          systemImage: message.meta.starred == nil ? "star" : "star.slash")
+                    Label("表情回应", systemImage: "face.smiling")
                 }
             }
-            if message.author == .ai && !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button(action: onSpeak) {
-                    Label("朗读", systemImage: "speaker.wave.2")
-                }
+            Button(action: onToggleStar) {
+                Label(message.meta.starred == nil ? "收藏" : "取消收藏",
+                      systemImage: message.meta.starred == nil ? "star" : "star.slash")
             }
-            if message.id > 0 && message.author == .human && (message.kind == "user" || message.kind == "voice") {
-                Button(action: onEdit) {
-                    Label("编辑", systemImage: "pencil")
-                }
-            }
-            if message.id > 0 && message.author == .ai && message.kind == "reply" {
-                Button(action: onRegenerate) {
-                    Label("重新生成", systemImage: "arrow.clockwise")
-                }
-            }
-            Button(role: .destructive, action: onHide) {
-                Label("在本机隐藏", systemImage: "eye.slash")
-            }
+        }
+        if message.author == .ai && !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Button(action: onSpeak) { Label("朗读", systemImage: "speaker.wave.2") }
+        }
+        if message.id > 0 && message.author == .human && (message.kind == "user" || message.kind == "voice") {
+            Button(action: onEdit) { Label("编辑", systemImage: "pencil") }
+        }
+        if message.id > 0 && message.author == .ai && message.kind == "reply" {
+            Button(action: onRegenerate) { Label("重新生成", systemImage: "arrow.clockwise") }
+        }
+        Button(role: .destructive, action: onHide) {
+            Label("在本机隐藏", systemImage: "eye.slash")
         }
     }
 
@@ -178,9 +237,79 @@ struct MessageRow: View {
         guard let date else { return "" }
         let output = DateFormatter()
         output.locale = Locale(identifier: "zh_CN")
-        output.timeZone = TimeZone(identifier: "Asia/Shanghai")
-        output.dateFormat = "HH:mm"
+        let zone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        output.timeZone = zone
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+        if calendar.isDateInToday(date) {
+            output.dateFormat = "HH:mm"
+        } else if calendar.component(.year, from: date) == calendar.component(.year, from: Date()) {
+            output.dateFormat = "M月d日 HH:mm"
+        } else {
+            output.dateFormat = "yyyy年M月d日 HH:mm"
+        }
         return output.string(from: date)
+    }
+}
+
+private struct MessageTimerCard: View {
+    let timer: MessageTimer
+    let palette: EchoPalette
+    let onDone: () -> Void
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let remaining = secondsRemaining(at: context.date)
+            HStack(spacing: 10) {
+                Image(systemName: timer.status == "done" ? "checkmark.circle.fill" : "timer")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(timer.status == "done" ? Color.green : palette.accent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(timer.label)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(2)
+                    if timer.status == "running" && remaining > 0 {
+                        Text(Self.durationText(remaining))
+                            .font(.caption.monospacedDigit().weight(.semibold))
+                            .foregroundStyle(palette.accent)
+                    } else if timer.status == "done" {
+                        Text("✓ 搞定").font(.caption).foregroundStyle(Color.green)
+                    } else {
+                        Text("时间到").font(.caption).foregroundStyle(Color.red.opacity(0.82))
+                    }
+                }
+                Spacer(minLength: 8)
+                if timer.status == "running" && remaining > 0 {
+                    Button("搞定了", action: onDone)
+                        .font(.caption.weight(.semibold))
+                        .buttonStyle(.borderedProminent)
+                        .tint(palette.accent)
+                }
+            }
+            .padding(11)
+            .background(palette.composer.opacity(0.62), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(palette.hairline))
+        }
+    }
+
+    private func secondsRemaining(at date: Date) -> Int {
+        guard let end = Self.parseDate(timer.endsAt) else { return 0 }
+        return max(0, Int(end.timeIntervalSince(date).rounded()))
+    }
+
+    private static func parseDate(_ raw: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return precise.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+    }
+
+    private static func durationText(_ total: Int) -> String {
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let seconds = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, seconds)
+            : String(format: "%d:%02d", minutes, seconds)
     }
 }
 
@@ -256,6 +385,7 @@ struct StreamingReplyRow: View {
     let bubbleRadius: Double
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
+    let bubbleStyle: EchoBubbleStyle
     let chatWeight: Double
 
     var body: some View {
@@ -272,8 +402,14 @@ struct StreamingReplyRow: View {
                 .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
                 .background {
                     if showsAIBubble {
-                        RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
-                            .fill(aiBubbleColor.opacity(bubbleOpacity))
+                        let shape = RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                        if bubbleStyle == .frosted {
+                            shape
+                                .fill(.ultraThinMaterial)
+                                .overlay(shape.fill(aiBubbleColor.opacity(max(0.1, bubbleOpacity * 0.32))))
+                        } else {
+                            shape.fill(aiBubbleColor.opacity(bubbleOpacity))
+                        }
                     }
                 }
                 .overlay {
@@ -354,11 +490,99 @@ private struct AttachmentView: View {
         } else if attachment.kind == "audio" || attachment.mime?.hasPrefix("audio/") == true {
             VoiceAttachmentView(attachment: attachment, request: request, palette: palette)
         } else {
-            Label(attachment.name, systemImage: "doc")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(palette.text)
-                .padding(10)
-                .background(palette.composer.opacity(0.72), in: RoundedRectangle(cornerRadius: 11))
+            AuthenticatedFileView(attachment: attachment, request: request, palette: palette)
+        }
+    }
+}
+
+private struct PreviewFile: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct AuthenticatedFileView: View {
+    let attachment: Attachment
+    let request: URLRequest?
+    let palette: EchoPalette
+    @State private var preview: PreviewFile?
+    @State private var isLoading = false
+
+    var body: some View {
+        Button {
+            guard !isLoading, let request else { return }
+            isLoading = true
+            Task {
+                defer { isLoading = false }
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                        throw URLError(.badServerResponse)
+                    }
+                    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TidalEchoPreviews", isDirectory: true)
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    let safeName = attachment.name.replacingOccurrences(of: "/", with: "-")
+                    let url = folder.appendingPathComponent("\(UUID().uuidString.prefix(8))-\(safeName)")
+                    try data.write(to: url, options: .atomic)
+                    preview = PreviewFile(url: url)
+                } catch {
+                    // The parent message remains readable even when this attachment cannot be downloaded.
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "doc.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(palette.accent)
+                    .frame(width: 34, height: 34)
+                    .background(palette.accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(attachment.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(2)
+                    if let size = attachment.size {
+                        Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                }
+                Spacer(minLength: 6)
+                if isLoading { ProgressView().controlSize(.small) }
+                else { Image(systemName: "eye").foregroundStyle(palette.secondaryText) }
+            }
+            .foregroundStyle(palette.text)
+            .padding(10)
+            .background(palette.composer.opacity(0.72), in: RoundedRectangle(cornerRadius: 11))
+        }
+        .buttonStyle(.plain)
+        .sheet(item: $preview) { item in
+            QuickLookPreview(url: item.url)
+                .ignoresSafeArea()
+        }
+    }
+}
+
+private struct QuickLookPreview: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeCoordinator() -> Coordinator { Coordinator(url: url) }
+
+    func makeUIViewController(context: Context) -> QLPreviewController {
+        let controller = QLPreviewController()
+        controller.dataSource = context.coordinator
+        return controller
+    }
+
+    func updateUIViewController(_ controller: QLPreviewController, context: Context) {
+        context.coordinator.url = url
+        controller.reloadData()
+    }
+
+    final class Coordinator: NSObject, QLPreviewControllerDataSource {
+        var url: URL
+        init(url: URL) { self.url = url }
+        func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+        func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem {
+            url as NSURL
         }
     }
 }
@@ -409,10 +633,11 @@ private struct VoiceAttachmentView: View {
                 }
                 .frame(width: 86, height: 24)
 
-                Text(isCurrent && playback.duration > 0 ? voiceTime(playback.duration) : "语音")
-                    .font(.caption.monospacedDigit())
+                Text(playbackLabel)
+                    .font(.caption)
                     .foregroundStyle(palette.secondaryText)
-                    .frame(minWidth: 30, alignment: .trailing)
+                    .lineLimit(1)
+                    .frame(minWidth: 30, maxWidth: 92, alignment: .trailing)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 7)
@@ -424,6 +649,12 @@ private struct VoiceAttachmentView: View {
     private func voiceTime(_ value: TimeInterval) -> String {
         let total = max(0, Int(value.rounded()))
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    private var playbackLabel: String {
+        if isCurrent && playback.duration > 0 { return voiceTime(playback.duration) }
+        if attachment.voice == true || attachment.name.lowercased().contains("voice") { return "语音" }
+        return attachment.name
     }
 }
 

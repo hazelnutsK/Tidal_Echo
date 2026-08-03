@@ -60,7 +60,7 @@ struct VoiceCallView: View {
                     .shadow(color: palette.accent.opacity(0.18), radius: 24)
                 }
 
-                Text("小克")
+                Text(model.peerDisplayName)
                     .font(.system(size: 27, weight: .semibold, design: .serif))
                     .padding(.top, 20)
                 Text(call.timerText)
@@ -72,7 +72,7 @@ struct VoiceCallView: View {
                     Circle()
                         .fill(call.phase.color)
                         .frame(width: 7, height: 7)
-                    Text(call.phase.title)
+                    Text(call.phase.title.replacingOccurrences(of: "小克", with: model.peerDisplayName))
                         .font(.caption.weight(.medium))
                         .foregroundStyle(palette.secondaryText)
                 }

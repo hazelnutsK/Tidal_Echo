@@ -65,6 +65,12 @@ final class AppModel: ObservableObject {
     @Published var bubbleBorderWidth: Double {
         didSet { UserDefaults.standard.set(bubbleBorderWidth, forKey: Keys.bubbleBorderWidth) }
     }
+    @Published var bubbleStyle: EchoBubbleStyle {
+        didSet { UserDefaults.standard.set(bubbleStyle.rawValue, forKey: Keys.bubbleStyle) }
+    }
+    @Published var peerRemark: String {
+        didSet { UserDefaults.standard.set(peerRemark, forKey: Keys.peerRemark) }
+    }
     @Published var aiBubbleColorHex: String {
         didSet { UserDefaults.standard.set(aiBubbleColorHex, forKey: Keys.aiBubbleColor) }
     }
@@ -104,6 +110,8 @@ final class AppModel: ObservableObject {
         static let showsHumanAvatar = "tidalEcho.showsHumanAvatar"
         static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
+        static let bubbleStyle = "tidalEcho.bubbleStyle"
+        static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
         static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
@@ -141,6 +149,8 @@ final class AppModel: ObservableObject {
         showsHumanAvatar = defaults.object(forKey: Keys.showsHumanAvatar) == nil ? false : defaults.bool(forKey: Keys.showsHumanAvatar)
         bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)
         bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
+        bubbleStyle = EchoBubbleStyle(rawValue: defaults.string(forKey: Keys.bubbleStyle) ?? "") ?? .classic
+        peerRemark = defaults.string(forKey: Keys.peerRemark) ?? ""
         aiBubbleColorHex = defaults.string(forKey: Keys.aiBubbleColor) ?? ""
         humanBubbleColorHex = defaults.string(forKey: Keys.humanBubbleColor) ?? ""
         activeSessionID = defaults.string(forKey: Keys.activeSessionID) ?? Self.legacySessionID
@@ -157,8 +167,13 @@ final class AppModel: ObservableObject {
     }
 
     var connectionText: String {
-        if isTyping { return "小克正在输入…" }
+        if isTyping { return "\(peerDisplayName)正在输入…" }
         return isStreamConnected ? "online" : "connecting…"
+    }
+
+    var peerDisplayName: String {
+        let value = peerRemark.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? "小克" : value
     }
 
     func bootstrap() async {
@@ -426,13 +441,17 @@ final class AppModel: ObservableObject {
     }
 
     func uploadImage(data: Data, name: String, mime: String) async {
+        await uploadAttachment(data: data, name: name, mime: mime)
+    }
+
+    func uploadAttachment(data: Data, name: String, mime: String) async {
         guard let client else { return }
         isUploading = true
         defer { isUploading = false }
         do {
             pendingAttachments.append(try await client.upload(data: data, name: name, mime: mime))
         } catch {
-            errorMessage = "图片上传失败：\(error.localizedDescription)"
+            errorMessage = "附件上传失败：\(error.localizedDescription)"
         }
     }
 
@@ -461,6 +480,16 @@ final class AppModel: ObservableObject {
         if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
             historyArchive[index].meta.starred = starred
         }
+    }
+
+    func reactToMessage(messageID: Int, emoji: String) async throws {
+        let reactions = try await requireClient().reactToMessage(id: messageID, emoji: emoji)
+        updateReactions(messageID: messageID, reactions: reactions)
+    }
+
+    func completeTimer(messageID: Int) async throws {
+        let timer = try await requireClient().completeTimer(messageID: messageID)
+        updateTimer(messageID: messageID, timer: timer)
     }
 
     func sendVoiceRecording(_ recording: VoiceRecordingResult) async -> Bool {
@@ -919,13 +948,13 @@ final class AppModel: ObservableObject {
                 isTyping = envelope.active ?? false
                 return
             case "reaction":
-                if let id = envelope.id,
-                   let index = messages.firstIndex(where: { $0.id == id }) {
-                    messages[index].meta.reactions = envelope.reactions ?? [:]
+                if let id = envelope.id {
+                    updateReactions(messageID: id, reactions: envelope.reactions ?? [:], haptic: true)
                 }
-                if let id = envelope.id,
-                   let index = historyArchive.firstIndex(where: { $0.id == id }) {
-                    historyArchive[index].meta.reactions = envelope.reactions ?? [:]
+                return
+            case "timer":
+                if let id = envelope.id, let timer = envelope.timer {
+                    updateTimer(messageID: id, timer: timer)
                 }
                 return
             case "star":
@@ -1003,6 +1032,31 @@ final class AppModel: ObservableObject {
             NativeNotificationCenter.shared.scheduleMessage(message)
         }
         markNativeNotificationCursor(message.id)
+    }
+
+    private func updateReactions(messageID: Int, reactions: [String: String], haptic: Bool = false) {
+        var shouldPulse = false
+        if let index = messages.firstIndex(where: { $0.id == messageID }) {
+            shouldPulse = haptic && messages[index].author == .human
+                && messages[index].meta.reactions["ai"] != reactions["ai"]
+                && reactions["ai"] != nil
+            messages[index].meta.reactions = reactions
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
+            historyArchive[index].meta.reactions = reactions
+        }
+        if shouldPulse {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
+    private func updateTimer(messageID: Int, timer: MessageTimer) {
+        if let index = messages.firstIndex(where: { $0.id == messageID }) {
+            messages[index].meta.timer = timer
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
+            historyArchive[index].meta.timer = timer
+        }
     }
 
     private func markNativeNotificationCursor(_ id: Int) {

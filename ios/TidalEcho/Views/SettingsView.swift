@@ -186,6 +186,14 @@ private struct AppearanceSettingsView: View {
 
     var body: some View {
         List {
+            Section("昵称备注") {
+                TextField("小克", text: $model.peerRemark)
+                    .textInputAutocapitalization(.never)
+                Text("只改变这台设备上的显示名称。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+            }
+
             Section("主题") {
                 ForEach(EchoTheme.allCases) { theme in
                     Button {
@@ -236,7 +244,7 @@ private struct AppearanceSettingsView: View {
                         Text("\(Int(model.chatWeight))")
                             .foregroundStyle(palette.secondaryText)
                     }
-                    Slider(value: $model.chatWeight, in: 300...800, step: 50)
+                    Slider(value: $model.chatWeight, in: 300...800, step: 20)
                         .tint(palette.accent)
                 }
             }
@@ -291,6 +299,13 @@ private struct AppearanceSettingsView: View {
 
             Section("消息气泡") {
                 Toggle("显示 AI 气泡框", isOn: $model.showsAIBubble)
+
+                Picker("气泡样式", selection: $model.bubbleStyle) {
+                    ForEach(EchoBubbleStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
 
                 ColorPicker("AI 气泡颜色", selection: Binding(
                     get: { model.resolvedAIBubbleColor(default: palette.aiBubble) },
@@ -358,6 +373,7 @@ private struct AppearanceSettingsView: View {
                     model.bubbleRadius = 18
                     model.bubbleWidthScale = 1
                     model.bubbleBorderWidth = 0
+                    model.bubbleStyle = .classic
                     model.chatWeight = 400
                     model.backgroundOpacity = 1
                     model.resetBubbleColors()

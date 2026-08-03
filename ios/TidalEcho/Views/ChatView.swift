@@ -850,8 +850,10 @@ private struct ComposerView: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = VoiceRecorder()
     @State private var photoItems: [PhotosPickerItem] = []
-    @State private var importingFiles = false
-    @State private var importingMusic = false
+    @State private var showingAttachmentMenu = false
+    @State private var showingPhotoPicker = false
+    @State private var importingAttachments = false
+    @State private var importedTypes: [UTType] = [.item]
     @State private var draftText = ""
 
     private var palette: EchoPalette { model.theme.palette }
@@ -924,17 +926,7 @@ private struct ComposerView: View {
             }
 
             HStack(alignment: .bottom, spacing: 10) {
-                Menu {
-                    PhotosPicker(selection: $photoItems, maxSelectionCount: 9, matching: .images) {
-                        Label("照片", systemImage: "photo.on.rectangle")
-                    }
-                    Button { importingFiles = true } label: {
-                        Label("文件", systemImage: "doc")
-                    }
-                    Button { importingMusic = true } label: {
-                        Label("音乐", systemImage: "music.note")
-                    }
-                } label: {
+                Button { showingAttachmentMenu = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(palette.accent)
@@ -986,16 +978,21 @@ private struct ComposerView: View {
             photoItems = []
             Task { await uploadPhotos(items) }
         }
-        .fileImporter(
-            isPresented: $importingFiles,
-            allowedContentTypes: [.item],
-            allowsMultipleSelection: true
-        ) { result in
-            importURLs(result)
+        .confirmationDialog("添加附件", isPresented: $showingAttachmentMenu, titleVisibility: .visible) {
+            Button("照片") { presentPhotoPicker() }
+            Button("文件") { presentFileImporter(types: [.item]) }
+            Button("音乐") { presentFileImporter(types: [.audio]) }
+            Button("取消", role: .cancel) {}
         }
+        .photosPicker(
+            isPresented: $showingPhotoPicker,
+            selection: $photoItems,
+            maxSelectionCount: 9,
+            matching: .images
+        )
         .fileImporter(
-            isPresented: $importingMusic,
-            allowedContentTypes: [.audio],
+            isPresented: $importingAttachments,
+            allowedContentTypes: importedTypes,
             allowsMultipleSelection: true
         ) { result in
             importURLs(result)
@@ -1004,6 +1001,22 @@ private struct ComposerView: View {
 
     private var canSend: Bool {
         !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pendingAttachments.isEmpty
+    }
+
+    private func presentPhotoPicker() {
+        // Let the confirmation dialog finish dismissing before presenting a
+        // second system controller. Presenting both in the same run-loop turn
+        // is silently ignored on some iOS 16/17 builds.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            showingPhotoPicker = true
+        }
+    }
+
+    private func presentFileImporter(types: [UTType]) {
+        importedTypes = types
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            importingAttachments = true
+        }
     }
 
     private func attachmentIcon(_ attachment: Attachment) -> String {

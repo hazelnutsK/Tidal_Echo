@@ -111,6 +111,7 @@ final class AppModel: ObservableObject {
         static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
+        static let pwaBubbleMetricsV1 = "tidalEcho.pwaBubbleMetricsV1"
         static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
@@ -142,7 +143,16 @@ final class AppModel: ObservableObject {
         fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
         showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
         bubbleOpacity = defaults.object(forKey: Keys.bubbleOpacity) == nil ? 1 : defaults.double(forKey: Keys.bubbleOpacity)
-        bubbleRadius = defaults.object(forKey: Keys.bubbleRadius) == nil ? 18 : defaults.double(forKey: Keys.bubbleRadius)
+        let savedBubbleRadius = defaults.object(forKey: Keys.bubbleRadius) == nil ? 14 : defaults.double(forKey: Keys.bubbleRadius)
+        if !defaults.bool(forKey: Keys.pwaBubbleMetricsV1), abs(savedBubbleRadius - 18) < 0.001 {
+            // v1.11 used 18 as its native default; PWA resolves clamp(14px, 2vw, 20px)
+            // to 14px on an iPhone. Migrate only the untouched old default once.
+            bubbleRadius = 14
+            defaults.set(14, forKey: Keys.bubbleRadius)
+        } else {
+            bubbleRadius = savedBubbleRadius
+        }
+        defaults.set(true, forKey: Keys.pwaBubbleMetricsV1)
         chatWeight = defaults.object(forKey: Keys.chatWeight) == nil ? 400 : defaults.double(forKey: Keys.chatWeight)
         backgroundOpacity = defaults.object(forKey: Keys.backgroundOpacity) == nil ? 1 : defaults.double(forKey: Keys.backgroundOpacity)
         showsAIBubble = defaults.object(forKey: Keys.showsAIBubble) == nil ? true : defaults.bool(forKey: Keys.showsAIBubble)

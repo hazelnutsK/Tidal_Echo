@@ -22,6 +22,7 @@ struct MessageRow: View {
     let chatWeight: Double
     let peerName: String
     let showsTimestamp: Bool
+    let isTail: Bool
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
     let onCopy: () -> Void
@@ -93,10 +94,13 @@ struct MessageRow: View {
                     }
 
                     if !message.text.isEmpty {
-                        Text(message.text)
-                            .font(chatFont.font(size: 16 * fontScale, weight: chatWeight.echoFontWeight))
-                            .lineSpacing(4)
-                            .textSelection(.enabled)
+                        MarkdownMessageText(
+                            source: message.text,
+                            palette: palette,
+                            chatFont: chatFont,
+                            fontScale: fontScale,
+                            chatWeight: chatWeight
+                        )
                     }
 
                     if let timer = message.meta.timer {
@@ -108,12 +112,12 @@ struct MessageRow: View {
                     }
                 }
                 .foregroundStyle(palette.text)
-                .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : 14)
-                .padding(.vertical, 10)
+                .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : 13)
+                .padding(.vertical, 9)
                 .background { bubbleBackground }
                 .overlay {
                     if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
-                        RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                        bubbleShape
                             .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                     }
                 }
@@ -173,18 +177,30 @@ struct MessageRow: View {
     @ViewBuilder
     private var bubbleBackground: some View {
         if message.author == .human || showsAIBubble {
-            let shape = RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+            let shape = bubbleShape
             let color = message.author == .human ? humanBubbleColor : aiBubbleColor
             if bubbleStyle == .frosted {
                 shape
                     .fill(.ultraThinMaterial)
-                    // PWA uses a 55% tint over a 22px backdrop blur. SwiftUI's
-                    // material supplies the blur; this multiplier matches its tint.
+                    // A Material includes its own milky system fill. Reduce that
+                    // layer explicitly so opacity=0 resembles PWA's blur-only glass.
+                    .opacity(0.10 + bubbleOpacity * 0.20)
                     .overlay(shape.fill(color.opacity(bubbleOpacity * 0.55)))
+                    .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
             } else {
-                shape.fill(color.opacity(bubbleOpacity))
+                shape
+                    .fill(color.opacity(bubbleOpacity))
+                    .shadow(color: Color.black.opacity(0.12 * bubbleOpacity), radius: 4.5, y: 2)
             }
         }
+    }
+
+    private var bubbleShape: PWAChatBubbleShape {
+        PWAChatBubbleShape(
+            radius: CGFloat(bubbleRadius),
+            bottomLeftRadius: message.author == .ai && isTail ? 5 : CGFloat(bubbleRadius),
+            bottomRightRadius: message.author == .human && isTail ? 5 : CGFloat(bubbleRadius)
+        )
     }
 
     private var displayedReaction: String? {
@@ -256,6 +272,98 @@ struct MessageRow: View {
             output.dateFormat = "yyyy/M/d HH:mm"
         }
         return output.string(from: date)
+    }
+}
+
+private struct MarkdownMessageText: View {
+    let source: String
+    let palette: EchoPalette
+    let chatFont: EchoChatFont
+    let fontScale: Double
+    let chatWeight: Double
+
+    var body: some View {
+        Text(attributedText)
+            // PingFang/Songti's native line box is about 1.2em; adding 0.38em
+            // matches the PWA bubble's CSS line-height: 1.58.
+            .lineSpacing(CGFloat(16 * fontScale * 0.38))
+            .textSelection(.enabled)
+    }
+
+    private var attributedText: AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        var value = (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
+        let size = 16 * fontScale
+        let baseWeight = chatWeight.echoFontWeight
+        value.font = chatFont.font(size: size, weight: baseWeight)
+        value.foregroundColor = palette.text
+
+        let runs = value.runs.map { ($0.range, $0.inlinePresentationIntent) }
+        for (range, intent) in runs {
+            guard let intent else { continue }
+            var font = chatFont.font(
+                size: size,
+                weight: intent.contains(.stronglyEmphasized) ? .bold : baseWeight
+            )
+            if intent.contains(.emphasized) { font = font.italic() }
+            if intent.contains(.code) {
+                font = .system(size: CGFloat(size * 0.92), weight: .regular, design: .monospaced)
+                value[range].backgroundColor = palette.composer.opacity(0.72)
+            }
+            value[range].font = font
+            if intent.contains(.strikethrough) {
+                value[range].strikethroughStyle = .single
+            }
+        }
+        return value
+    }
+}
+
+/// CSS-like independent corner radii. PWA gives the last bubble in a same-author
+/// five-minute group a 5px corner toward the avatar; the other corners use the
+/// user-selected radius (14px by default on iPhone).
+private struct PWAChatBubbleShape: Shape {
+    let radius: CGFloat
+    let bottomLeftRadius: CGFloat
+    let bottomRightRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let limit = min(rect.width, rect.height) / 2
+        let topLeft = min(max(0, radius), limit)
+        let topRight = topLeft
+        let bottomRight = min(max(0, bottomRightRadius), limit)
+        let bottomLeft = min(max(0, bottomLeftRadius), limit)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + topLeft, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - topRight, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - topRight, y: rect.minY + topRight),
+            radius: topRight,
+            startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - bottomRight))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - bottomRight, y: rect.maxY - bottomRight),
+            radius: bottomRight,
+            startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY))
+        path.addArc(
+            center: CGPoint(x: rect.minX + bottomLeft, y: rect.maxY - bottomLeft),
+            radius: bottomLeft,
+            startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
+        path.addArc(
+            center: CGPoint(x: rect.minX + topLeft, y: rect.minY + topLeft),
+            radius: topLeft,
+            startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
+        )
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -402,25 +510,37 @@ struct StreamingReplyRow: View {
             }
             Text(text)
                 .font(chatFont.font(size: 16 * fontScale, weight: chatWeight.echoFontWeight))
-                .lineSpacing(4)
+                .lineSpacing(CGFloat(16 * fontScale * 0.38))
                 .foregroundStyle(palette.text)
-                .padding(.horizontal, showsAIBubble ? 14 : 2)
-                .padding(.vertical, 10)
+                .padding(.horizontal, showsAIBubble ? 13 : 2)
+                .padding(.vertical, 9)
                 .background {
                     if showsAIBubble {
-                        let shape = RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                        let shape = PWAChatBubbleShape(
+                            radius: CGFloat(bubbleRadius),
+                            bottomLeftRadius: 5,
+                            bottomRightRadius: CGFloat(bubbleRadius)
+                        )
                         if bubbleStyle == .frosted {
                             shape
                                 .fill(.ultraThinMaterial)
+                                .opacity(0.10 + bubbleOpacity * 0.20)
                                 .overlay(shape.fill(aiBubbleColor.opacity(bubbleOpacity * 0.55)))
+                                .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
                         } else {
-                            shape.fill(aiBubbleColor.opacity(bubbleOpacity))
+                            shape
+                                .fill(aiBubbleColor.opacity(bubbleOpacity))
+                                .shadow(color: Color.black.opacity(0.12 * bubbleOpacity), radius: 4.5, y: 2)
                         }
                     }
                 }
                 .overlay {
                     if showsAIBubble && bubbleBorderWidth > 0 {
-                        RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                        PWAChatBubbleShape(
+                            radius: CGFloat(bubbleRadius),
+                            bottomLeftRadius: 5,
+                            bottomRightRadius: CGFloat(bubbleRadius)
+                        )
                             .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                     }
                 }

@@ -239,6 +239,7 @@ struct ChatView: View {
                             chatWeight: model.chatWeight,
                             peerName: model.peerDisplayName,
                             showsTimestamp: shouldShowTimestamp(for: message),
+                            isTail: isBubbleTail(message),
                             onToggleStar: {
                                 Task {
                                     do {
@@ -368,6 +369,26 @@ struct ChatView: View {
             return next.author != .ai
         }
         return true
+    }
+
+    private func isBubbleTail(_ message: ChatMessage) -> Bool {
+        guard message.kind != "thinking", message.kind != "act",
+              let index = model.messages.firstIndex(where: { $0.id == message.id }),
+              model.messages.indices.contains(index + 1) else { return true }
+        let next = model.messages[index + 1]
+        guard next.kind != "thinking", next.kind != "act", next.author == message.author,
+              let date = Self.messageDate(message.timestamp),
+              let nextDate = Self.messageDate(next.timestamp) else { return true }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        guard calendar.isDate(date, inSameDayAs: nextDate) else { return true }
+        return nextDate.timeIntervalSince(date) >= 5 * 60
+    }
+
+    private static func messageDate(_ raw: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return precise.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
     }
 
     private func settleAtBottom(_ proxy: ScrollViewProxy) {

@@ -18,6 +18,7 @@ struct ChatView: View {
     @State private var didPositionInitialHistory = false
     @State private var canTriggerOlderHistory = false
     @State private var isPrependingHistory = false
+    @State private var composerHeight: CGFloat = 70
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -37,13 +38,23 @@ struct ChatView: View {
                 .allowsHitTesting(false)
             }
 
-            VStack(spacing: 0) {
-                ZStack(alignment: .top) {
-                    messageList
-                    topFog
-                    topBar
+            ZStack(alignment: .top) {
+                messageList
+                topFog
+                topBar
+
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    ComposerView(model: model)
+                        .background {
+                            GeometryReader { geometry in
+                                Color.clear.preference(
+                                    key: ComposerHeightPreferenceKey.self,
+                                    value: geometry.size.height
+                                )
+                            }
+                        }
                 }
-                ComposerView(model: model)
             }
 
             if let invite = nativeCalls.ringingInvite {
@@ -81,6 +92,9 @@ struct ChatView: View {
             VoiceCallView(model: model)
         }
         .onAppear { openAcceptedCallIfNeeded() }
+        .onPreferenceChange(ComposerHeightPreferenceKey.self) { height in
+            if height > 0 { composerHeight = height }
+        }
         .onChange(of: nativeCalls.acceptedInvite?.id) { _ in openAcceptedCallIfNeeded() }
         .confirmationDialog(
             "重新生成这条回复？",
@@ -389,7 +403,10 @@ struct ChatView: View {
             .safeAreaInset(edge: .top, spacing: 0) {
                 Color.clear.frame(height: 76)
             }
-            .ignoresSafeArea(edges: .top)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: composerHeight)
+            }
+            .ignoresSafeArea(edges: [.top, .bottom])
             .scrollDismissesKeyboard(.interactively)
             .refreshable { await model.refresh() }
             .onAppear { positionInitialHistoryIfNeeded(proxy) }
@@ -933,6 +950,14 @@ private final class IncomingCallRinger: ObservableObject {
     }
 }
 
+private struct ComposerHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 70
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = VoiceRecorder()
@@ -944,18 +969,6 @@ private struct ComposerView: View {
     @State private var draftText = ""
 
     private var palette: EchoPalette { model.theme.palette }
-    private var bottomSafeAreaInset: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .flatMap(\.windows)
-            .first(where: \.isKeyWindow)?
-            .safeAreaInsets.bottom ?? 0
-    }
-    private var bottomFogHeight: CGFloat { 96 + bottomSafeAreaInset }
-    private var bottomHeavySolidEnd: CGFloat {
-        guard bottomFogHeight > 0 else { return 0.25 }
-        return max(0.25, min(0.34, (bottomSafeAreaInset + 2) / bottomFogHeight))
-    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -1070,26 +1083,6 @@ private struct ComposerView: View {
         }
         .padding(.top, 9)
         .padding(.bottom, 8)
-        .background(alignment: .bottom) {
-            ZStack {
-                VariableBackdropBlur(
-                    radius: 10,
-                    mask: .clearTopBlurredBottom,
-                    fadeFrom: bottomHeavySolidEnd,
-                    fadeTo: 0.65
-                )
-
-                VariableBackdropBlur(
-                    radius: 2,
-                    mask: .clearTopBlurredBottom,
-                    fadeFrom: 0.50,
-                    fadeTo: 0.88
-                )
-            }
-            .frame(height: bottomFogHeight)
-            .offset(y: bottomSafeAreaInset)
-            .ignoresSafeArea(edges: .bottom)
-        }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
             guard !items.isEmpty else { return }

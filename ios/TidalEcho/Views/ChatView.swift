@@ -19,13 +19,14 @@ struct ChatView: View {
     @State private var canTriggerOlderHistory = false
     @State private var isPrependingHistory = false
     @State private var composerHeight: CGFloat = 70
+    @State private var isAtBottom = true
 
     private var palette: EchoPalette { model.theme.palette }
 
     var body: some View {
         ZStack {
             palette.background.ignoresSafeArea()
-            if let background = model.backgroundImage {
+            if let background = model.visibleBackgroundImage {
                 GeometryReader { geometry in
                     Image(uiImage: background)
                         .resizable()
@@ -136,31 +137,44 @@ struct ChatView: View {
     private var topBar: some View {
         HStack(spacing: 12) {
             Button { showingSessions = true } label: {
-                VStack(spacing: 3) {
+                VStack(
+                    alignment: model.theme == .paper ? .leading : .center,
+                    spacing: 3
+                ) {
                     HStack(spacing: 4) {
                         Text(model.peerDisplayName)
-                            .font(.custom("AnthropicSerifWebVariable-TextRegular", size: 19).weight(.semibold))
+                            .font(headerNameFont)
                             .lineLimit(1)
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(palette.text)
 
-                    HStack(spacing: 5) {
-                        Circle()
-                            .fill(model.isStreamConnected ? Color.green.opacity(0.8) : palette.secondaryText)
-                            .frame(width: 6, height: 6)
-                        Text(model.connectionText)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(palette.secondaryText)
+                    Group {
+                        if model.isTyping {
+                            HeaderTypingStatus(palette: palette)
+                        } else {
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(model.isStreamConnected ? Color.green.opacity(0.8) : palette.secondaryText)
+                                    .frame(width: 6, height: 6)
+                                Text(model.connectionText)
+                                    .font(.system(size: 12, weight: .regular))
+                                    .foregroundStyle(palette.secondaryText)
+                            }
+                        }
                     }
-                    .offset(x: -4)
+                    .offset(x: model.theme == .paper ? 0 : -4)
                 }
-                .padding(.horizontal, 26)
-                .padding(.top, 5)
-                .padding(.bottom, 7)
-                .frame(minWidth: 150)
-                .background { headerGlass(shape: Capsule()) }
+                .padding(.horizontal, model.theme == .paper ? 0 : 26)
+                .padding(.top, model.theme == .paper ? 0 : 5)
+                .padding(.bottom, model.theme == .paper ? 0 : 7)
+                .frame(minWidth: model.theme == .paper ? nil : 150)
+                .background {
+                    if model.theme != .paper {
+                        headerGlass(shape: Capsule())
+                    }
+                }
             }
             .buttonStyle(.plain)
 
@@ -218,6 +232,28 @@ struct ChatView: View {
         .allowsHitTesting(false)
     }
 
+    private var headerNameFont: Font {
+        pwaHeaderFont(
+            for: model.peerDisplayName,
+            size: model.theme == .paper ? 18 : 19,
+            weight: .semibold
+        )
+    }
+
+    private func pwaHeaderFont(for text: String, size: CGFloat, weight: Font.Weight) -> Font {
+        let containsCJK = text.unicodeScalars.contains { scalar in
+            (0x3400...0x4DBF).contains(scalar.value)
+                || (0x4E00...0x9FFF).contains(scalar.value)
+                || (0xF900...0xFAFF).contains(scalar.value)
+        }
+        // Anthropic Serif does not contain CJK glyphs. The PWA falls through to
+        // Songti for Chinese text, so make that fallback explicit on iOS.
+        let anthropicName = "AnthropicSerifWebVariable-TextRegular"
+        let hasRegisteredAnthropic = UIFont(name: anthropicName, size: size) != nil
+        let name = containsCJK ? "Songti SC" : (hasRegisteredAnthropic ? anthropicName : "Georgia")
+        return .custom(name, fixedSize: size).weight(weight)
+    }
+
     @ViewBuilder
     private func headerGlass<S: InsettableShape>(shape: S) -> some View {
         ZStack {
@@ -266,8 +302,9 @@ struct ChatView: View {
 
     private var messageList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 9) {
+            GeometryReader { viewport in
+                ScrollView {
+                    LazyVStack(spacing: 9) {
                     if canTriggerOlderHistory && model.canLoadOlderHistory {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
@@ -395,43 +432,88 @@ struct ChatView: View {
                         TypingRow(palette: palette)
                     }
 
-                    Color.clear.frame(height: 2).id("chat-bottom")
+                        Color.clear
+                            .frame(height: 2)
+                            .id("chat-bottom")
+                            .background {
+                                GeometryReader { marker in
+                                    Color.clear.preference(
+                                        key: ChatBottomPositionPreferenceKey.self,
+                                        value: marker.frame(in: .named("chat-scroll")).maxY
+                                    )
+                                }
+                            }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 14)
-            }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                Color.clear.frame(height: 76)
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: composerHeight)
-            }
-            .ignoresSafeArea(edges: [.top, .bottom])
-            .scrollDismissesKeyboard(.interactively)
-            .refreshable { await model.refresh() }
-            .onAppear { positionInitialHistoryIfNeeded(proxy) }
-            .onChange(of: model.messages.count) { _ in
-                guard !isPrependingHistory else { return }
-                if didPositionInitialHistory && !model.isLoadingHistory {
-                    scrollToBottom(proxy, animated: true)
-                } else {
-                    scrollToBottom(proxy, animated: false)
+                .coordinateSpace(name: "chat-scroll")
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    Color.clear.frame(height: 76)
                 }
-            }
-            .onChange(of: model.isLoadingHistory) { loading in
-                guard !loading, !model.messages.isEmpty else { return }
-                didPositionInitialHistory = true
-                settleAtBottom(proxy)
-            }
-            .onChange(of: model.streamingReply) { _ in scrollToBottom(proxy, animated: false) }
-            .onChange(of: model.isTyping) { _ in scrollToBottom(proxy, animated: true) }
-            .onChange(of: model.navigationRequest) { request in
-                guard let request else { return }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        proxy.scrollTo(request.messageID, anchor: .center)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    Color.clear.frame(height: composerHeight)
+                }
+                .ignoresSafeArea(edges: [.top, .bottom])
+                .scrollDismissesKeyboard(.interactively)
+                .refreshable { await model.refresh() }
+                .onPreferenceChange(ChatBottomPositionPreferenceKey.self) { bottomY in
+                    let visibleBottom = viewport.size.height - composerHeight
+                    let nextValue = bottomY <= visibleBottom + 56
+                    if nextValue != isAtBottom { isAtBottom = nextValue }
+                }
+                .onAppear { positionInitialHistoryIfNeeded(proxy) }
+                .onChange(of: model.messages.count) { _ in
+                    guard !isPrependingHistory else { return }
+                    let sentByMe = model.messages.last?.author == .human
+                    guard isAtBottom || sentByMe || !didPositionInitialHistory else { return }
+                    if didPositionInitialHistory && !model.isLoadingHistory {
+                        scrollToBottom(proxy, animated: true)
+                    } else {
+                        scrollToBottom(proxy, animated: false)
                     }
                 }
+                .onChange(of: model.isLoadingHistory) { loading in
+                    guard !loading, !model.messages.isEmpty else { return }
+                    didPositionInitialHistory = true
+                    settleAtBottom(proxy)
+                }
+                .onChange(of: model.streamingReply) { _ in
+                    if isAtBottom { scrollToBottom(proxy, animated: false) }
+                }
+                .onChange(of: model.isTyping) { _ in
+                    if isAtBottom { scrollToBottom(proxy, animated: true) }
+                }
+                .onChange(of: model.navigationRequest) { request in
+                    guard let request else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            proxy.scrollTo(request.messageID, anchor: .center)
+                        }
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if !isAtBottom {
+                        Button {
+                            isAtBottom = true
+                            scrollToBottom(proxy, animated: true)
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(palette.text)
+                                .frame(width: 36, height: 36)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
+                                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.trailing, 16)
+                        .padding(.bottom, composerHeight + 12)
+                        .transition(.scale(scale: 0.88).combined(with: .opacity))
+                        .accessibilityLabel("回到最新消息")
+                    }
+                }
+                .animation(.easeOut(duration: 0.18), value: isAtBottom)
             }
         }
     }
@@ -958,6 +1040,51 @@ private struct ComposerHeightPreferenceKey: PreferenceKey {
     }
 }
 
+private struct ChatBottomPositionPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = .greatestFiniteMagnitude
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct HeaderTypingStatus: View {
+    let palette: EchoPalette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("typing")
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
+                HStack(spacing: 3) {
+                    ForEach(0..<3, id: \.self) { index in
+                        let lift = reduceMotion ? 0 : pulse(at: context.date, index: index)
+                        Circle()
+                            .fill(palette.secondaryText)
+                            .frame(width: 4, height: 4)
+                            .offset(y: -3 * CGFloat(lift))
+                            .opacity(0.4 + 0.6 * lift)
+                    }
+                }
+            }
+            .frame(width: 18, height: 10)
+        }
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(palette.secondaryText.opacity(0.58))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("typing")
+    }
+
+    private func pulse(at date: Date, index: Int) -> Double {
+        let duration = 1.25
+        let delayedTime = date.timeIntervalSinceReferenceDate - Double(index) * 0.16
+        let phase = ((delayedTime.truncatingRemainder(dividingBy: duration)) + duration)
+            .truncatingRemainder(dividingBy: duration) / duration
+        guard phase < 0.70 else { return 0 }
+        return max(0, 1 - abs(phase - 0.35) / 0.35)
+    }
+}
+
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
     @StateObject private var recorder = VoiceRecorder()
@@ -1053,8 +1180,7 @@ private struct ComposerView: View {
                     .foregroundStyle(palette.text)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 10)
-                    .background(palette.composer, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 19).stroke(palette.hairline))
+                    .background { composerFieldGlass }
 
                 Button {
                     toggleRecording()
@@ -1108,6 +1234,16 @@ private struct ComposerView: View {
         ) { result in
             importURLs(result)
         }
+    }
+
+    private var composerFieldGlass: some View {
+        let shape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+        return shape
+            .fill(.ultraThinMaterial)
+            .overlay(shape.fill(palette.composer.opacity(model.theme == .paper ? 0.44 : 0.30)))
+            .overlay(shape.stroke(Color.white.opacity(model.theme == .harbor ? 0.10 : 0.34), lineWidth: 0.6))
+            .overlay(shape.stroke(palette.hairline, lineWidth: 0.5))
+            .shadow(color: Color.black.opacity(0.035), radius: 8, y: 2)
     }
 
     private var canSend: Bool {

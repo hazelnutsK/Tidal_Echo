@@ -335,7 +335,7 @@ private struct AppearanceSettingsView: View {
             Section("主题") {
                 ForEach(EchoTheme.allCases) { theme in
                     Button {
-                        withAnimation(.easeInOut(duration: 0.2)) { model.theme = theme }
+                        withAnimation(.easeInOut(duration: 0.2)) { model.applyTheme(theme) }
                     } label: {
                         HStack(spacing: 12) {
                             Circle()

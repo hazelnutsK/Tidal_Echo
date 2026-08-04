@@ -112,6 +112,7 @@ final class AppModel: ObservableObject {
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
         static let pwaBubbleMetricsV1 = "tidalEcho.pwaBubbleMetricsV1"
+        static let paperPresetV2 = "tidalEcho.paperPresetV2"
         static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
@@ -137,7 +138,9 @@ final class AppModel: ObservableObject {
     init() {
         let defaults = UserDefaults.standard
         let rawTheme = defaults.string(forKey: Keys.theme) ?? EchoTheme.mist.rawValue
-        theme = EchoTheme(rawValue: rawTheme) ?? .mist
+        let initialTheme = EchoTheme(rawValue: rawTheme) ?? .mist
+        let shouldMigratePaperPreset = initialTheme == .paper && !defaults.bool(forKey: Keys.paperPresetV2)
+        theme = initialTheme
         let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
         chatFont = EchoChatFont(rawValue: rawFont) ?? .system
         fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
@@ -170,6 +173,10 @@ final class AppModel: ObservableObject {
         backgroundImage = Self.loadAppearanceImage(.background)
         aiAvatarImage = Self.loadAppearanceImage(.aiAvatar)
         humanAvatarImage = Self.loadAppearanceImage(.humanAvatar)
+        if shouldMigratePaperPreset {
+            applyPaperAppearancePreset()
+            defaults.set(true, forKey: Keys.paperPresetV2)
+        }
     }
 
     var savedServerAddress: String {
@@ -181,9 +188,53 @@ final class AppModel: ObservableObject {
         return isStreamConnected ? "online" : "connecting…"
     }
 
+    /// Paper is intentionally a flat-color preset. Keep a user's custom
+    /// wallpaper on disk so it comes back when they switch to another theme.
+    var visibleBackgroundImage: UIImage? {
+        theme == .paper ? nil : backgroundImage
+    }
+
     var peerDisplayName: String {
         let value = peerRemark.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? "小克" : value
+    }
+
+    func applyTheme(_ nextTheme: EchoTheme) {
+        theme = nextTheme
+        guard nextTheme == .paper else { return }
+        applyPaperAppearancePreset()
+        UserDefaults.standard.set(true, forKey: Keys.paperPresetV2)
+    }
+
+    private func applyPaperAppearancePreset() {
+        chatFont = .rounded
+        fontScale = 0.90
+        chatWeight = 340
+        showsAIBubble = true
+        bubbleStyle = .classic
+        aiBubbleColorHex = "#EEEBE4"
+        humanBubbleColorHex = "#E2C2C5"
+        bubbleOpacity = 0.60
+        bubbleRadius = 21
+        bubbleWidthScale = 1.20
+        bubbleBorderWidth = 0
+        backgroundOpacity = 1
+        showsAIAvatar = true
+        showsHumanAvatar = true
+        installPaperPresetAvatar(named: "paper-ai-avatar", kind: .aiAvatar)
+        installPaperPresetAvatar(named: "paper-human-avatar", kind: .humanAvatar)
+    }
+
+    private func installPaperPresetAvatar(named name: String, kind: AppearanceImageKind) {
+        let rootURL = Bundle.main.url(forResource: name, withExtension: "jpg")
+        let nestedURL = Bundle.main.url(
+            forResource: name,
+            withExtension: "jpg",
+            subdirectory: "ThemePresets"
+        )
+        guard let url = rootURL ?? nestedURL,
+              let data = try? Data(contentsOf: url) else { return }
+        try? saveAppearanceImage(data: data, kind: kind)
     }
 
     func bootstrap() async {

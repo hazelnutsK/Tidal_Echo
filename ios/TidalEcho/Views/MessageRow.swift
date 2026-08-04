@@ -153,7 +153,7 @@ struct MessageRow: View {
                         if message.author == .human {
                             switch message.delivery {
                             case .sending:
-                                Image(systemName: "clock")
+                                SendingClock()
                             case .failed:
                                 Label("未送达", systemImage: "exclamationmark.circle.fill")
                                     .foregroundStyle(Color.red)
@@ -291,9 +291,10 @@ private struct MarkdownMessageText: View {
 
     var body: some View {
         Text(attributedText)
-            // PingFang/Songti's native line box is about 1.2em; adding 0.38em
-            // matches the PWA bubble's CSS line-height: 1.58.
-            .lineSpacing(CGFloat(16 * fontScale * 0.38))
+            .lineSpacing(PWAChatMetrics.lineSpacing(
+                font: chatFont,
+                size: 16 * fontScale
+            ))
             .textSelection(.enabled)
     }
 
@@ -329,6 +330,25 @@ private struct MarkdownMessageText: View {
             }
         }
         return value
+    }
+}
+
+private struct SendingClock: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var rotation = 0.0
+
+    var body: some View {
+        Image(systemName: "clock")
+            .rotationEffect(.degrees(rotation))
+            .onAppear {
+                guard !reduceMotion else { return }
+                rotation = 360
+            }
+            .animation(
+                reduceMotion ? nil : .linear(duration: 1.15).repeatForever(autoreverses: false),
+                value: rotation
+            )
+            .accessibilityLabel("发送中")
     }
 }
 
@@ -647,7 +667,10 @@ struct StreamingReplyRow: View {
             }
             Text(text)
                 .font(chatFont.font(size: 16 * fontScale, weight: chatWeight.echoFontWeight))
-                .lineSpacing(CGFloat(16 * fontScale * 0.38))
+                .lineSpacing(PWAChatMetrics.lineSpacing(
+                    font: chatFont,
+                    size: 16 * fontScale
+                ))
                 .foregroundStyle(palette.text)
                 .padding(.horizontal, showsAIBubble ? 13 : 2)
                 .padding(.vertical, 9)
@@ -951,13 +974,21 @@ private struct AuthenticatedImageView: View {
     let request: URLRequest?
     let palette: EchoPalette
     @StateObject private var loader = AuthenticatedImageLoader()
+    @State private var previewImage: ImagePreviewItem?
 
     var body: some View {
         Group {
             if let image = loader.image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
+                Button {
+                    previewImage = ImagePreviewItem(image: image)
+                } label: {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("打开图片预览")
             } else if loader.failed {
                 Label("图片加载失败", systemImage: "photo.badge.exclamationmark")
                     .font(.caption)
@@ -971,6 +1002,62 @@ private struct AuthenticatedImageView: View {
         }
         .background(palette.composer.opacity(0.45))
         .task(id: request?.url?.absoluteString) { await loader.load(request) }
+        .fullScreenCover(item: $previewImage) { item in
+            FullScreenImagePreview(image: item.image)
+        }
+    }
+}
+
+private struct ImagePreviewItem: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
+private struct FullScreenImagePreview: View {
+    let image: UIImage
+    @Environment(\.dismiss) private var dismiss
+    @State private var scale = 1.0
+    @State private var settledScale = 1.0
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color.black.ignoresSafeArea()
+
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .scaleEffect(scale)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    MagnificationGesture()
+                        .onChanged { value in
+                            scale = min(max(settledScale * value, 1), 5)
+                        }
+                        .onEnded { _ in
+                            settledScale = scale
+                        }
+                )
+                .onTapGesture(count: 2) {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        scale = scale > 1 ? 1 : 2
+                        settledScale = scale
+                    }
+                }
+
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.black.opacity(0.58), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 12)
+            .padding(.trailing, 14)
+            .accessibilityLabel("关闭图片预览")
+        }
+        .statusBarHidden()
     }
 }
 

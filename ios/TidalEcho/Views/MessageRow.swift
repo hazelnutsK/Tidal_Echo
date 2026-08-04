@@ -744,6 +744,7 @@ struct StreamingReplyRow: View {
                                 bottomRightRadius: CGFloat(bubbleRadius)
                             )
                                 .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                        }
                     }
                 }
                 .frame(

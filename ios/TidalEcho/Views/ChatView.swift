@@ -354,6 +354,7 @@ struct ChatView: View {
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,
+                            liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight,
                             peerName: model.peerDisplayName,
                             showsTimestamp: shouldShowTimestamp(for: message),
@@ -434,10 +435,15 @@ struct ChatView: View {
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,
+                            liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight
                         )
                     } else if model.isTyping {
-                        TypingRow(palette: palette)
+                        TypingRow(
+                            palette: palette,
+                            showsAIAvatar: model.showsAIAvatar,
+                            aiAvatarImage: model.aiAvatarImage
+                        )
                     }
 
                         Color.clear
@@ -462,7 +468,10 @@ struct ChatView: View {
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear.frame(height: composerHeight)
                 }
-                .ignoresSafeArea(edges: [.top, .bottom])
+                // Extend under the device chrome, but keep the keyboard safe area.
+                // Ignoring all bottom safe areas made the last bubble scroll behind
+                // the raised composer with no reachable space below it.
+                .ignoresSafeArea(.container, edges: [.top, .bottom])
                 .scrollDismissesKeyboard(.interactively)
                 .refreshable { await model.refresh() }
                 .onPreferenceChange(ChatBottomPositionPreferenceKey.self) { bottomY in
@@ -491,6 +500,22 @@ struct ChatView: View {
                 }
                 .onChange(of: model.isTyping) { _ in
                     if isAtBottom { scrollToBottom(proxy, animated: true) }
+                }
+                .onChange(of: viewport.size.height) { _ in
+                    guard isAtBottom else { return }
+                    scrollToBottom(proxy, animated: false)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                        proxy.scrollTo("chat-bottom", anchor: .bottom)
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                    // Match the PWA: focusing the composer opens enough scrollable
+                    // room and settles the latest bubble above the keyboard.
+                    isAtBottom = true
+                    scrollToBottom(proxy, animated: true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                        proxy.scrollTo("chat-bottom", anchor: .bottom)
+                    }
                 }
                 .onChange(of: model.navigationRequest) { request in
                     guard let request else { return }
@@ -1184,7 +1209,10 @@ private struct ComposerView: View {
 
                 TextField("写点什么…", text: $draftText, axis: .vertical)
                     .lineLimit(1...5)
-                    .font(model.chatFont.font(size: 16 * model.fontScale, weight: model.chatWeight.echoFontWeight))
+                    .font(model.chatFont.font(
+                        size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
+                        numericWeight: model.chatWeight
+                    ))
                     .foregroundStyle(palette.text)
                     .padding(.horizontal, 15)
                     .padding(.vertical, 10)

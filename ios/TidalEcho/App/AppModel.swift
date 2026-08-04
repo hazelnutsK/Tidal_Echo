@@ -70,6 +70,24 @@ final class AppModel: ObservableObject {
     @Published var bubbleStyle: EchoBubbleStyle {
         didSet { UserDefaults.standard.set(bubbleStyle.rawValue, forKey: Keys.bubbleStyle) }
     }
+    @Published var liquidGlassStrength: Double {
+        didSet { UserDefaults.standard.set(liquidGlassStrength, forKey: Keys.liquidGlassStrength) }
+    }
+    @Published var liquidGlassDispersion: Double {
+        didSet { UserDefaults.standard.set(liquidGlassDispersion, forKey: Keys.liquidGlassDispersion) }
+    }
+    @Published var liquidGlassRimWidth: Double {
+        didSet { UserDefaults.standard.set(liquidGlassRimWidth, forKey: Keys.liquidGlassRimWidth) }
+    }
+    @Published var liquidGlassMagnify: Double {
+        didSet { UserDefaults.standard.set(liquidGlassMagnify, forKey: Keys.liquidGlassMagnify) }
+    }
+    @Published var liquidGlassBlur: Double {
+        didSet { UserDefaults.standard.set(liquidGlassBlur, forKey: Keys.liquidGlassBlur) }
+    }
+    @Published var liquidGlassSize: Double {
+        didSet { UserDefaults.standard.set(liquidGlassSize, forKey: Keys.liquidGlassSize) }
+    }
     @Published var peerRemark: String {
         didSet { UserDefaults.standard.set(peerRemark, forKey: Keys.peerRemark) }
     }
@@ -88,6 +106,7 @@ final class AppModel: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var incrementalSyncTask: Task<Void, Never>?
     private var typingTimeoutTask: Task<Void, Never>?
+    private var typingSuppressedUntil = Date.distantPast
     private var isCatchingUp = false
     private var temporaryID = -1
     private var didBootstrap = false
@@ -116,6 +135,12 @@ final class AppModel: ObservableObject {
         static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
+        static let liquidGlassStrength = "tidalEcho.liquidGlassStrength"
+        static let liquidGlassDispersion = "tidalEcho.liquidGlassDispersion"
+        static let liquidGlassRimWidth = "tidalEcho.liquidGlassRimWidth"
+        static let liquidGlassMagnify = "tidalEcho.liquidGlassMagnify"
+        static let liquidGlassBlur = "tidalEcho.liquidGlassBlur"
+        static let liquidGlassSize = "tidalEcho.liquidGlassSize"
         static let pwaBubbleMetricsV1 = "tidalEcho.pwaBubbleMetricsV1"
         static let paperPresetV3 = "tidalEcho.paperPresetV3"
         static let peerRemark = "tidalEcho.peerRemark"
@@ -171,6 +196,12 @@ final class AppModel: ObservableObject {
         bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)
         bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
         bubbleStyle = EchoBubbleStyle(rawValue: defaults.string(forKey: Keys.bubbleStyle) ?? "") ?? .classic
+        liquidGlassStrength = defaults.object(forKey: Keys.liquidGlassStrength) == nil ? 56.8 : defaults.double(forKey: Keys.liquidGlassStrength)
+        liquidGlassDispersion = defaults.object(forKey: Keys.liquidGlassDispersion) == nil ? 0.39 : defaults.double(forKey: Keys.liquidGlassDispersion)
+        liquidGlassRimWidth = defaults.object(forKey: Keys.liquidGlassRimWidth) == nil ? 0.28 : defaults.double(forKey: Keys.liquidGlassRimWidth)
+        liquidGlassMagnify = defaults.object(forKey: Keys.liquidGlassMagnify) == nil ? 0 : defaults.double(forKey: Keys.liquidGlassMagnify)
+        liquidGlassBlur = defaults.object(forKey: Keys.liquidGlassBlur) == nil ? 0.94 : defaults.double(forKey: Keys.liquidGlassBlur)
+        liquidGlassSize = defaults.object(forKey: Keys.liquidGlassSize) == nil ? 174 : defaults.double(forKey: Keys.liquidGlassSize)
         peerRemark = defaults.string(forKey: Keys.peerRemark) ?? ""
         aiBubbleColorHex = defaults.string(forKey: Keys.aiBubbleColor) ?? ""
         humanBubbleColorHex = defaults.string(forKey: Keys.humanBubbleColor) ?? ""
@@ -205,6 +236,17 @@ final class AppModel: ObservableObject {
     var peerDisplayName: String {
         let value = peerRemark.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? "小克" : value
+    }
+
+    var liquidGlassSettings: LiquidGlassSettings {
+        LiquidGlassSettings(
+            strength: liquidGlassStrength,
+            dispersion: liquidGlassDispersion,
+            rimWidth: liquidGlassRimWidth,
+            magnify: liquidGlassMagnify,
+            blur: liquidGlassBlur,
+            size: liquidGlassSize
+        )
     }
 
     func applyTheme(_ nextTheme: EchoTheme) {
@@ -414,6 +456,7 @@ final class AppModel: ObservableObject {
 
     func regenerateMessage(id: Int) async throws {
         try await requireClient().regenerateMessage(id: id)
+        typingSuppressedUntil = .distantPast
         updateTypingState(true)
     }
 
@@ -488,6 +531,7 @@ final class AppModel: ObservableObject {
         pendingAttachments = []
         // Show feedback immediately. The relay also broadcasts a typing event,
         // but that frame can arrive before the POST response on some iOS stacks.
+        typingSuppressedUntil = .distantPast
         updateTypingState(true)
 
         do {
@@ -1096,6 +1140,7 @@ final class AppModel: ObservableObject {
     }
 
     private func updateTypingState(_ active: Bool) {
+        guard !active || Date() >= typingSuppressedUntil else { return }
         isTyping = active
         typingTimeoutTask?.cancel()
         typingTimeoutTask = nil
@@ -1112,6 +1157,13 @@ final class AppModel: ObservableObject {
             self?.isTyping = false
             self?.typingTimeoutTask = nil
         }
+    }
+
+    private func finishTypingAfterAIActivity() {
+        // A queued `typing: true` frame can arrive just after the final reply.
+        // Briefly reject that stale frame instead of flashing typing again.
+        typingSuppressedUntil = Date().addingTimeInterval(2)
+        updateTypingState(false)
     }
 
     private func receiveStreamEvent(_ data: Data) {
@@ -1132,6 +1184,7 @@ final class AppModel: ObservableObject {
                 }
                 return
             case "reaction":
+                finishTypingAfterAIActivity()
                 if let id = envelope.id {
                     updateReactions(messageID: id, reactions: envelope.reactions ?? [:], haptic: true)
                 }
@@ -1176,10 +1229,10 @@ final class AppModel: ObservableObject {
               !message.meta.hidden else { return }
         upsert(message)
         if message.author == .ai && messageBelongsToActiveSession(message) {
+            finishTypingAfterAIActivity()
             if message.kind == "thinking" { streamingThinking = "" }
             if message.kind == "reply" {
                 streamingReply = ""
-                updateTypingState(false)
             }
         }
     }

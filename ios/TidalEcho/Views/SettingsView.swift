@@ -480,6 +480,48 @@ private struct AppearanceSettingsView: View {
             }
             .pickerStyle(.segmented)
 
+            if model.bubbleStyle == .liquid {
+                VStack(spacing: 12) {
+                    HStack {
+                        Text("好，就在这里慢慢调")
+                            .font(model.chatFont.font(
+                                size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
+                                numericWeight: model.chatWeight
+                            ))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 10)
+                            .background {
+                                LiquidGlassBubbleBackground(
+                                    tint: model.resolvedAIBubbleColor(default: palette.aiBubble),
+                                    tintOpacity: model.bubbleOpacity,
+                                    radius: CGFloat(model.bubbleRadius),
+                                    settings: model.liquidGlassSettings
+                                )
+                            }
+                        Spacer(minLength: 24)
+                    }
+                    HStack {
+                        Spacer(minLength: 24)
+                        Text("气泡再透一点")
+                            .font(model.chatFont.font(
+                                size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
+                                numericWeight: model.chatWeight
+                            ))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 10)
+                            .background {
+                                LiquidGlassBubbleBackground(
+                                    tint: model.resolvedHumanBubbleColor(default: palette.humanBubble),
+                                    tintOpacity: model.bubbleOpacity,
+                                    radius: CGFloat(model.bubbleRadius),
+                                    settings: model.liquidGlassSettings
+                                )
+                            }
+                    }
+                }
+                .padding(.vertical, 7)
+            }
+
             ColorPicker("AI 气泡颜色", selection: Binding(
                 get: { model.resolvedAIBubbleColor(default: palette.aiBubble) },
                 set: { model.setAIBubbleColor($0) }
@@ -519,6 +561,51 @@ private struct AppearanceSettingsView: View {
                 step: 0.25
             )
 
+            if model.bubbleStyle == .liquid {
+                settingSlider(
+                    title: "扭曲 strength",
+                    valueText: String(format: "%.1f", model.liquidGlassStrength),
+                    value: $model.liquidGlassStrength,
+                    range: 0...100,
+                    step: 1
+                )
+                settingSlider(
+                    title: "色散 dispersion",
+                    valueText: String(format: "%.2f", model.liquidGlassDispersion),
+                    value: $model.liquidGlassDispersion,
+                    range: 0...1,
+                    step: 0.01
+                )
+                settingSlider(
+                    title: "过渡 rimWidth",
+                    valueText: String(format: "%.2f", model.liquidGlassRimWidth),
+                    value: $model.liquidGlassRimWidth,
+                    range: 0...1,
+                    step: 0.01
+                )
+                settingSlider(
+                    title: "放大 magnify",
+                    valueText: String(format: "%.2f", model.liquidGlassMagnify),
+                    value: $model.liquidGlassMagnify,
+                    range: 0...1,
+                    step: 0.01
+                )
+                settingSlider(
+                    title: "背景模糊 blur",
+                    valueText: String(format: "%.2f", model.liquidGlassBlur),
+                    value: $model.liquidGlassBlur,
+                    range: 0...1,
+                    step: 0.01
+                )
+                settingSlider(
+                    title: "光斑尺寸 size",
+                    valueText: String(format: "%.0f", model.liquidGlassSize),
+                    value: $model.liquidGlassSize,
+                    range: 80...260,
+                    step: 1
+                )
+            }
+
             Button("恢复主题气泡颜色") { model.resetBubbleColors() }
             Button("恢复外观默认值") {
                 model.chatFont = .system
@@ -531,6 +618,12 @@ private struct AppearanceSettingsView: View {
                 model.bubbleWidthScale = 1
                 model.bubbleBorderWidth = 0
                 model.bubbleStyle = .classic
+                model.liquidGlassStrength = 56.8
+                model.liquidGlassDispersion = 0.39
+                model.liquidGlassRimWidth = 0.28
+                model.liquidGlassMagnify = 0
+                model.liquidGlassBlur = 0.94
+                model.liquidGlassSize = 174
                 model.chatWeight = 400
                 model.backgroundOpacity = 1
                 model.resetBubbleColors()

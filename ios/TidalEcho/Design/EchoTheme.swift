@@ -109,6 +109,23 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
+    func font(size: Double, numericWeight: Double) -> Font {
+        guard self == .system else {
+            return font(size: size, weight: numericWeight.echoFontWeight)
+        }
+        // Safari resolves the PWA's PingFang CSS stack to concrete PingFangSC
+        // faces. Address those faces directly so SwiftUI does not embolden a
+        // generic custom-family font synthetically.
+        let face: String
+        switch numericWeight {
+        case ..<350: face = "PingFangSC-Light"
+        case ..<450: face = "PingFangSC-Regular"
+        case ..<550: face = "PingFangSC-Medium"
+        default: face = "PingFangSC-Semibold"
+        }
+        return .custom(face, fixedSize: CGFloat(size))
+    }
+
     /// SwiftUI's `lineSpacing` is added on top of the font's native line box.
     /// Exposing that native height lets chat rows match the PWA's CSS line-height
     /// instead of approximating it with a fixed extra amount.
@@ -132,18 +149,32 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
 }
 
 enum PWAChatMetrics {
-    // A touch more open than the last build's PWA-exact 1.58 rhythm, while
-    // remaining clearly tighter than the original native 16pt × 1.58 layout.
+    // Keep the requested slightly-open rhythm. Only 黑体 adopts the PWA's
+    // resolved iPhone sizes; the App's existing 宋体/圆体/等宽 sizing stays put.
     static let lineHeightRatio = 1.64
     static let mobileBubbleFontSize = 14.0
     static let nativeBubbleFontSize = 16.0
 
+    static func bubbleFontSize(for font: EchoChatFont) -> Double {
+        font == .system ? mobileBubbleFontSize : nativeBubbleFontSize
+    }
+
+    static func thinkingFontSize(for font: EchoChatFont) -> Double {
+        font == .system ? 12 : 14
+    }
+
+    static func composerFontSize(for font: EchoChatFont) -> Double {
+        font == .system ? 15 : 16
+    }
+
     static func lineSpacing(font: EchoChatFont, size: Double) -> CGFloat {
-        // On an iPhone the PWA's clamp resolves to 14px. Keep the App's chosen
-        // 16pt text size, but derive baseline distance from the PWA's 14px mobile
-        // size so the requested font size does not silently change.
-        let scale = size / nativeBubbleFontSize
-        let targetLineHeight = CGFloat(mobileBubbleFontSize * scale * lineHeightRatio)
+        let targetLineHeight: CGFloat
+        if font == .system {
+            targetLineHeight = CGFloat(size * lineHeightRatio)
+        } else {
+            let scale = size / nativeBubbleFontSize
+            targetLineHeight = CGFloat(mobileBubbleFontSize * scale * lineHeightRatio)
+        }
         return max(0, targetLineHeight - font.nativeLineHeight(size: size))
     }
 }

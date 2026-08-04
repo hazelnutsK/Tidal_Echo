@@ -14,9 +14,25 @@ enum DeliveryState: Hashable {
 enum EchoBubbleStyle: String, Codable, CaseIterable, Identifiable {
     case classic
     case frosted
+    case liquid
 
     var id: String { rawValue }
-    var title: String { self == .classic ? "经典" : "磨砂" }
+    var title: String {
+        switch self {
+        case .classic: return "经典"
+        case .frosted: return "磨砂"
+        case .liquid: return "液态玻璃"
+        }
+    }
+}
+
+struct LiquidGlassSettings: Hashable {
+    let strength: Double
+    let dispersion: Double
+    let rimWidth: Double
+    let magnify: Double
+    let blur: Double
+    let size: Double
 }
 
 struct MessageTimer: Codable, Hashable {

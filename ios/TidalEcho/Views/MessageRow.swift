@@ -19,6 +19,7 @@ struct MessageRow: View {
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
+    let liquidGlass: LiquidGlassSettings
     let chatWeight: Double
     let peerName: String
     let showsTimestamp: Bool
@@ -121,8 +122,13 @@ struct MessageRow: View {
                 .background { bubbleBackground }
                 .overlay {
                     if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
-                        bubbleShape
-                            .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                        if bubbleStyle == .liquid {
+                            RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                        } else {
+                            bubbleShape
+                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                        }
                     }
                 }
                 // Constrain wrapping without painting the background across the
@@ -185,19 +191,28 @@ struct MessageRow: View {
     @ViewBuilder
     private var bubbleBackground: some View {
         if message.author == .human || showsAIBubble {
-            let shape = bubbleShape
             let color = message.author == .human ? humanBubbleColor : aiBubbleColor
-            if bubbleStyle == .frosted {
-                shape
-                    .fill(.ultraThinMaterial)
-                    // Keep backdrop sampling at full strength. The slider controls
-                    // only the color wash, so zero still looks like real glass.
-                    .overlay(shape.fill(color.opacity(bubbleOpacity * 0.55)))
-                    .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
+            if bubbleStyle == .liquid {
+                LiquidGlassBubbleBackground(
+                    tint: color,
+                    tintOpacity: bubbleOpacity,
+                    radius: CGFloat(bubbleRadius),
+                    settings: liquidGlass
+                )
             } else {
-                shape
-                    .fill(color.opacity(bubbleOpacity))
-                    .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
+                let shape = bubbleShape
+                if bubbleStyle == .frosted {
+                    shape
+                        .fill(.ultraThinMaterial)
+                        // Keep backdrop sampling at full strength. The slider controls
+                        // only the color wash, so zero still looks like real glass.
+                        .overlay(shape.fill(color.opacity(bubbleOpacity * 0.55)))
+                        .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
+                } else {
+                    shape
+                        .fill(color.opacity(bubbleOpacity))
+                        .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
+                }
             }
         }
     }
@@ -293,7 +308,7 @@ private struct MarkdownMessageText: View {
         Text(attributedText)
             .lineSpacing(PWAChatMetrics.lineSpacing(
                 font: chatFont,
-                size: 16 * fontScale
+                size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
             ))
             .textSelection(.enabled)
     }
@@ -307,9 +322,8 @@ private struct MarkdownMessageText: View {
             failurePolicy: .returnPartiallyParsedIfPossible
         )
         var value = (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
-        let size = 16 * fontScale
-        let baseWeight = chatWeight.echoFontWeight
-        value.font = chatFont.font(size: size, weight: baseWeight)
+        let size = PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
+        value.font = chatFont.font(size: size, numericWeight: chatWeight)
         value.foregroundColor = palette.text
 
         let runs = value.runs.map { ($0.range, $0.inlinePresentationIntent) }
@@ -317,7 +331,7 @@ private struct MarkdownMessageText: View {
             guard let intent else { continue }
             var font = chatFont.font(
                 size: size,
-                weight: intent.contains(.stronglyEmphasized) ? .bold : baseWeight
+                numericWeight: intent.contains(.stronglyEmphasized) ? 700 : chatWeight
             )
             if intent.contains(.emphasized) { font = font.italic() }
             if intent.contains(.code) {
@@ -525,10 +539,13 @@ private struct ProcessRow: View {
         Group {
             if isThinking {
                 Text(message.text)
-                    .font(chatFont.font(size: 14 * fontScale, weight: chatWeight.echoFontWeight).italic())
+                    .font(chatFont.font(
+                        size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
+                        numericWeight: chatWeight
+                    ).italic())
                     .lineSpacing(PWAChatMetrics.lineSpacing(
                         font: chatFont,
-                        size: 14 * fontScale
+                        size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale
                     ))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -620,11 +637,14 @@ struct StreamingProcessRow: View {
             }
 
             Text(text)
-                .font(chatFont.font(size: 14 * fontScale, weight: chatWeight.echoFontWeight).italic())
+                .font(chatFont.font(
+                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
+                    numericWeight: chatWeight
+                ).italic())
                 .lineLimit(4)
                 .lineSpacing(PWAChatMetrics.lineSpacing(
                     font: chatFont,
-                    size: 14 * fontScale
+                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale
                 ))
                 .textSelection(.enabled)
                 .padding(.leading, isPaper ? 15 : 12)
@@ -664,6 +684,7 @@ struct StreamingReplyRow: View {
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
+    let liquidGlass: LiquidGlassSettings
     let chatWeight: Double
 
     var body: some View {
@@ -672,41 +693,57 @@ struct StreamingReplyRow: View {
                 AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
             }
             Text(text)
-                .font(chatFont.font(size: 16 * fontScale, weight: chatWeight.echoFontWeight))
+                .font(chatFont.font(
+                    size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale,
+                    numericWeight: chatWeight
+                ))
                 .lineSpacing(PWAChatMetrics.lineSpacing(
                     font: chatFont,
-                    size: 16 * fontScale
+                    size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
                 ))
                 .foregroundStyle(palette.text)
                 .padding(.horizontal, showsAIBubble ? 13 : 2)
                 .padding(.vertical, 9)
                 .background {
                     if showsAIBubble {
-                        let shape = PWAChatBubbleShape(
-                            radius: CGFloat(bubbleRadius),
-                            bottomLeftRadius: 5,
-                            bottomRightRadius: CGFloat(bubbleRadius)
-                        )
-                        if bubbleStyle == .frosted {
-                            shape
-                                .fill(.ultraThinMaterial)
-                                .overlay(shape.fill(aiBubbleColor.opacity(bubbleOpacity * 0.55)))
-                                .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
+                        if bubbleStyle == .liquid {
+                            LiquidGlassBubbleBackground(
+                                tint: aiBubbleColor,
+                                tintOpacity: bubbleOpacity,
+                                radius: CGFloat(bubbleRadius),
+                                settings: liquidGlass
+                            )
                         } else {
-                            shape
-                                .fill(aiBubbleColor.opacity(bubbleOpacity))
-                                .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
+                            let shape = PWAChatBubbleShape(
+                                radius: CGFloat(bubbleRadius),
+                                bottomLeftRadius: 5,
+                                bottomRightRadius: CGFloat(bubbleRadius)
+                            )
+                            if bubbleStyle == .frosted {
+                                shape
+                                    .fill(.ultraThinMaterial)
+                                    .overlay(shape.fill(aiBubbleColor.opacity(bubbleOpacity * 0.55)))
+                                    .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
+                            } else {
+                                shape
+                                    .fill(aiBubbleColor.opacity(bubbleOpacity))
+                                    .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
+                            }
                         }
                     }
                 }
                 .overlay {
                     if showsAIBubble && bubbleBorderWidth > 0 {
-                        PWAChatBubbleShape(
-                            radius: CGFloat(bubbleRadius),
-                            bottomLeftRadius: 5,
-                            bottomRightRadius: CGFloat(bubbleRadius)
-                        )
-                            .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                        if bubbleStyle == .liquid {
+                            RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                        } else {
+                            PWAChatBubbleShape(
+                                radius: CGFloat(bubbleRadius),
+                                bottomLeftRadius: 5,
+                                bottomRightRadius: CGFloat(bubbleRadius)
+                            )
+                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                     }
                 }
                 .frame(
@@ -744,15 +781,15 @@ private struct AvatarBadge: View {
 
 struct TypingRow: View {
     let palette: EchoPalette
+    let showsAIAvatar: Bool
+    let aiAvatarImage: UIImage?
     @State private var pulse = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "sparkle")
-                .font(.system(size: 13, weight: .light))
-                .foregroundStyle(palette.accent)
-                .frame(width: 25, height: 25)
-                .background(palette.aiBubble, in: Circle())
+            if showsAIAvatar {
+                AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
+            }
             HStack(spacing: 5) {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
@@ -1011,6 +1048,121 @@ private struct AuthenticatedImageView: View {
         .fullScreenCover(item: $previewImage) { item in
             FullScreenImagePreview(image: item.image)
         }
+    }
+}
+
+struct LiquidGlassBubbleBackground: View {
+    let tint: Color
+    let tintOpacity: Double
+    let radius: CGFloat
+    let settings: LiquidGlassSettings
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        GeometryReader { geometry in
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            let strength = clamped(settings.strength / 100)
+            let dispersion = clamped(settings.dispersion)
+            let rim = clamped(settings.rimWidth)
+            let magnify = clamped(settings.magnify)
+            let blur = clamped(settings.blur)
+            let lens = CGFloat(max(60, settings.size))
+            let rimLine = CGFloat(0.55 + rim * 3.6)
+
+            ZStack {
+                if reduceTransparency {
+                    shape.fill(tint.opacity(0.42 + tintOpacity * 0.38))
+                } else {
+                    shape.fill(.ultraThinMaterial)
+                }
+
+                shape.fill(tint.opacity((0.05 + (1 - blur) * 0.18) * tintOpacity))
+
+                Ellipse()
+                    .fill(RadialGradient(
+                        colors: [
+                            Color.white.opacity(0.30 + strength * 0.24),
+                            Color.white.opacity(0.07 + magnify * 0.10),
+                            .clear
+                        ],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: lens * 0.46
+                    ))
+                    .frame(width: lens * CGFloat(1 + magnify * 0.18), height: lens * 0.62)
+                    .position(
+                        x: geometry.size.width * CGFloat(0.22 + strength * 0.16),
+                        y: geometry.size.height * CGFloat(0.08 + magnify * 0.16)
+                    )
+                    .blur(radius: CGFloat(1 + blur * 5))
+                    .blendMode(.screen)
+
+                Ellipse()
+                    .fill(LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.22 * strength),
+                            tint.opacity(0.07),
+                            .clear
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+                    .frame(width: lens * 0.82, height: lens * 0.34)
+                    .rotationEffect(.degrees(-16 + strength * 12))
+                    .position(x: geometry.size.width * 0.78, y: geometry.size.height * 0.88)
+                    .blur(radius: CGFloat(2 + blur * 7))
+                    .blendMode(.plusLighter)
+
+                shape
+                    .stroke(
+                        AngularGradient(
+                            colors: [
+                                Color.cyan.opacity(0.78),
+                                Color.white.opacity(0.92),
+                                Color.pink.opacity(0.72),
+                                Color.yellow.opacity(0.54),
+                                Color.cyan.opacity(0.78)
+                            ],
+                            center: .center
+                        ),
+                        lineWidth: rimLine * CGFloat(1.1 + dispersion)
+                    )
+                    .blur(radius: CGFloat(0.25 + dispersion * 1.15))
+                    .opacity(0.08 + dispersion * 0.46)
+                    .offset(x: CGFloat(dispersion * 0.7), y: CGFloat(dispersion * 0.35))
+            }
+            .clipShape(shape)
+            .overlay(
+                shape.stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.82),
+                            Color.white.opacity(0.24),
+                            Color.white.opacity(0.58),
+                            Color.black.opacity(0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: rimLine
+                )
+            )
+            .overlay(
+                shape
+                    .inset(by: max(1, rimLine))
+                    .stroke(Color.white.opacity(0.10 + strength * 0.18), lineWidth: 0.7)
+            )
+            .scaleEffect(CGFloat(1 + magnify * 0.012))
+            .shadow(
+                color: Color.black.opacity(0.05 + strength * 0.035),
+                radius: CGFloat(7 + blur * 7),
+                y: 3
+            )
+        }
+    }
+
+    private func clamped(_ value: Double) -> Double {
+        max(0, min(1, value))
     }
 }
 

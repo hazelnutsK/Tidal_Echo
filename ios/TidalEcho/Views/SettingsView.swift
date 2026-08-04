@@ -7,6 +7,7 @@ struct SettingsView: View {
     let onSearch: () -> Void
     let onCall: () -> Void
     @State private var anniversary: AnniversarySummary?
+    @State private var greeting: String?
     @Environment(\.dismiss) private var dismiss
 
     private var palette: EchoPalette { model.theme.palette }
@@ -31,10 +32,21 @@ struct SettingsView: View {
 
                 ScrollView {
                     VStack(spacing: 18) {
-                        Text("A PLACE FOR EVERY ECHO")
-                            .font(.system(size: 11.5, weight: .medium))
-                            .tracking(2.1)
-                            .foregroundStyle(palette.secondaryText)
+                        VStack(spacing: 7) {
+                            if let greeting, !greeting.isEmpty {
+                                Text(greeting)
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(palette.text.opacity(0.82))
+                                    .multilineTextAlignment(.center)
+                                    .lineSpacing(3)
+                                    .transition(.opacity)
+                            }
+                            Text("A PLACE FOR EVERY ECHO")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .tracking(2.1)
+                                .foregroundStyle(palette.secondaryText)
+                        }
+                        .frame(maxWidth: .infinity)
                         .padding(.top, 5)
 
                         GeometryReader { geometry in
@@ -123,6 +135,7 @@ struct SettingsView: View {
         }
         .preferredColorScheme(model.theme.preferredColorScheme)
         .task { anniversary = try? await model.relationshipAnniversary() }
+        .task { greeting = await model.greetingForCurrentTime() }
     }
 
     private func leaveHub(for action: @escaping () -> Void) {

@@ -219,6 +219,25 @@ struct APIClient {
         return try decoder.decode(GiftPagesResponse.self, from: responseData).pages
     }
 
+    func greetings() async throws -> GreetingPool {
+        let responseData = try await data(for: request(url: endpoint("app/greetings")))
+        return try decoder.decode(GreetingPool.self, from: responseData)
+    }
+
+    func desire() async throws -> DesireState {
+        let responseData = try await data(for: request(url: endpoint("app/desire")))
+        return try decoder.decode(DesireState.self, from: responseData)
+    }
+
+    func updateDesire(enabled: Bool? = nil, libidoMultiplier: Double? = nil) async throws {
+        var req = request(url: endpoint("app/desire/config"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(
+            DesireConfigPayload(actEnabled: enabled, libidoMultiplier: libidoMultiplier)
+        )
+        _ = try await data(for: req)
+    }
+
     func giftPageURL(file: String) -> URL? {
         guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
         components.path = "/chat/pages/\(file)"
@@ -383,6 +402,16 @@ private struct SendPayload: Encodable {
     enum CodingKeys: String, CodingKey {
         case text, attachments
         case apiSession = "api_session"
+    }
+}
+
+private struct DesireConfigPayload: Encodable {
+    let actEnabled: Bool?
+    let libidoMultiplier: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case actEnabled = "act_enabled"
+        case libidoMultiplier = "libido_mult"
     }
 }
 

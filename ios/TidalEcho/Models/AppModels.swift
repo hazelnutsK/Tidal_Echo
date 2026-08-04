@@ -241,9 +241,10 @@ struct StreamEnvelope: Decodable {
     let starred: String?
     let apiSession: String?
     let timer: MessageTimer?
+    let post: MomentPost?
 
     enum CodingKeys: String, CodingKey {
-        case type, active, id, reactions, text, done, starred, timer
+        case type, active, id, reactions, text, done, starred, timer, post
         case streamID = "stream_id"
         case timestamp = "ts"
         case apiSession = "api_session"
@@ -441,6 +442,69 @@ struct GiftPage: Decodable, Identifiable {
 }
 
 struct GiftPagesResponse: Decodable { let pages: [GiftPage] }
+
+struct GreetingPool: Codable {
+    let slots: [String: [String]]
+}
+
+struct DesireThought: Decodable, Identifiable {
+    let text: String
+    let drive: String
+    let kind: String
+    let strength: Double
+    let bornAt: Double?
+
+    var id: String { "\(kind)#\(drive)#\(text)" }
+
+    enum CodingKeys: String, CodingKey {
+        case text, drive, kind, strength
+        case bornAt = "born_at"
+    }
+}
+
+struct DesireIntent: Decodable {
+    let wantAction: String?
+    let driveKey: String?
+    let reason: String
+    let score: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case reason, score
+        case wantAction = "want_action"
+        case driveKey = "drive_key"
+    }
+}
+
+struct DesireActivity: Decodable {
+    let enabled: Bool
+    let libidoMultiplier: Double
+    let cooldownLeftSeconds: Int
+    let today: Int
+    let dailyCap: Int
+    let bodyTarget: String
+    let bodyOnline: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case enabled, today
+        case libidoMultiplier = "libido_mult"
+        case cooldownLeftSeconds = "cooldown_left_sec"
+        case dailyCap = "daily_cap"
+        case bodyTarget = "body_target"
+        case bodyOnline = "body_online"
+    }
+}
+
+struct DesireState: Decodable {
+    let drive: [String: Double]
+    let intent: DesireIntent
+    let thoughts: [DesireThought]
+    let activity: DesireActivity
+
+    enum CodingKeys: String, CodingKey {
+        case drive, intent, thoughts
+        case activity = "act"
+    }
+}
 
 enum MomentKind: String, Codable, CaseIterable, Identifiable {
     case moment

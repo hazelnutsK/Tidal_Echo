@@ -50,9 +50,9 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
                 secondaryText: Color(hex: 0x77746B),
                 aiBubble: Color(hex: 0xEEEBE4),
                 humanBubble: Color(hex: 0xE2C2C5),
-                composer: Color(hex: 0xFFFEFB).opacity(0.90),
-                accent: Color(hex: 0x6C7065),
-                hairline: Color(hex: 0x8A877E).opacity(0.16)
+                composer: Color(hex: 0xF0EEE6).opacity(0.84),
+                accent: Color(hex: 0x8C7466),
+                hairline: Color(hex: 0xBDA896).opacity(0.28)
             )
         case .harbor:
             return EchoPalette(
@@ -104,9 +104,7 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
             return .custom("PingFang SC", size: CGFloat(size)).weight(weight)
         case .serif:
             return .custom("Songti SC", size: CGFloat(size)).weight(weight)
-        case .rounded:
-            return .custom("Yuanti SC", size: CGFloat(size)).weight(weight)
-        case .monospaced:
+        case .rounded, .monospaced:
             return .system(size: CGFloat(size), weight: weight, design: design)
         }
     }
@@ -124,7 +122,8 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
             return UIFont(name: "Songti SC", size: pointSize)?.lineHeight
                 ?? UIFont.systemFont(ofSize: pointSize).lineHeight
         case .rounded:
-            return UIFont(name: "Yuanti SC", size: pointSize)?.lineHeight
+            let descriptor = UIFont.systemFont(ofSize: pointSize).fontDescriptor.withDesign(.rounded)
+            return descriptor.map { UIFont(descriptor: $0, size: pointSize).lineHeight }
                 ?? UIFont.systemFont(ofSize: pointSize).lineHeight
         case .monospaced:
             return UIFont.monospacedSystemFont(ofSize: pointSize, weight: .regular).lineHeight
@@ -133,14 +132,16 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
 }
 
 enum PWAChatMetrics {
-    static let lineHeightRatio = 1.58
+    // A touch more open than the last build's PWA-exact 1.58 rhythm, while
+    // remaining clearly tighter than the original native 16pt × 1.58 layout.
+    static let lineHeightRatio = 1.64
     static let mobileBubbleFontSize = 14.0
     static let nativeBubbleFontSize = 16.0
 
     static func lineSpacing(font: EchoChatFont, size: Double) -> CGFloat {
         // On an iPhone the PWA's clamp resolves to 14px. Keep the App's chosen
-        // 16pt text size, but use the PWA's 14px × 1.58 baseline distance so the
-        // requested font size does not silently change while the rhythm matches.
+        // 16pt text size, but derive baseline distance from the PWA's 14px mobile
+        // size so the requested font size does not silently change.
         let scale = size / nativeBubbleFontSize
         let targetLineHeight = CGFloat(mobileBubbleFontSize * scale * lineHeightRatio)
         return max(0, targetLineHeight - font.nativeLineHeight(size: size))

@@ -29,6 +29,8 @@ final class AppModel: ObservableObject {
     @Published var isUploadingVoice = false
     @Published var isSynthesizingMessageID: Int?
     @Published var errorMessage: String?
+    @Published private(set) var giftUnreadCount = 0
+    @Published private(set) var momentsUnreadCount = 0
     @Published var theme: EchoTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: Keys.theme) }
     }
@@ -85,11 +87,14 @@ final class AppModel: ObservableObject {
     private let stream = SSEClient()
     private var heartbeatTask: Task<Void, Never>?
     private var incrementalSyncTask: Task<Void, Never>?
+    private var typingTimeoutTask: Task<Void, Never>?
     private var isCatchingUp = false
     private var temporaryID = -1
     private var didBootstrap = false
     private var historyArchive: [ChatMessage] = []
     private var locallyHiddenMessageIDs: Set<Int> = []
+    private var currentGiftTokens: Set<String> = []
+    private var currentAIPostIDs: Set<Int> = []
 
     private static let initialHistoryWindow = 120
     private static let olderHistoryPageSize = 80
@@ -112,13 +117,16 @@ final class AppModel: ObservableObject {
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
         static let pwaBubbleMetricsV1 = "tidalEcho.pwaBubbleMetricsV1"
-        static let paperPresetV2 = "tidalEcho.paperPresetV2"
+        static let paperPresetV3 = "tidalEcho.paperPresetV3"
         static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
         static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
         static let activeSessionID = "tidalEcho.activeSessionID"
         static let locallyHiddenMessageIDs = "tidalEcho.locallyHiddenMessageIDs"
+        static let seenGiftTokens = "tidalEcho.seenGiftTokens"
+        static let seenAIPostIDs = "tidalEcho.seenAIPostIDs"
+        static let greetingCache = "tidalEcho.greetingCache"
     }
 
     enum AppearanceImageKind: Equatable {
@@ -139,7 +147,7 @@ final class AppModel: ObservableObject {
         let defaults = UserDefaults.standard
         let rawTheme = defaults.string(forKey: Keys.theme) ?? EchoTheme.mist.rawValue
         let initialTheme = EchoTheme(rawValue: rawTheme) ?? .mist
-        let shouldMigratePaperPreset = initialTheme == .paper && !defaults.bool(forKey: Keys.paperPresetV2)
+        let shouldMigratePaperPreset = initialTheme == .paper && !defaults.bool(forKey: Keys.paperPresetV3)
         theme = initialTheme
         let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
         chatFont = EchoChatFont(rawValue: rawFont) ?? .system
@@ -175,7 +183,7 @@ final class AppModel: ObservableObject {
         humanAvatarImage = Self.loadAppearanceImage(.humanAvatar)
         if shouldMigratePaperPreset {
             applyPaperAppearancePreset()
-            defaults.set(true, forKey: Keys.paperPresetV2)
+            defaults.set(true, forKey: Keys.paperPresetV3)
         }
     }
 
@@ -203,12 +211,12 @@ final class AppModel: ObservableObject {
         theme = nextTheme
         guard nextTheme == .paper else { return }
         applyPaperAppearancePreset()
-        UserDefaults.standard.set(true, forKey: Keys.paperPresetV2)
+        UserDefaults.standard.set(true, forKey: Keys.paperPresetV3)
     }
 
     private func applyPaperAppearancePreset() {
         chatFont = .rounded
-        fontScale = 0.90
+        fontScale = 0.95
         chatWeight = 340
         showsAIBubble = true
         bubbleStyle = .classic
@@ -275,6 +283,7 @@ final class AppModel: ObservableObject {
         pendingAttachments = []
         streamingThinking = ""
         streamingReply = ""
+        updateTypingState(false)
         isStreamConnected = false
         KeychainStore.delete(account: Keys.relaySecret)
         phase = .signedOut
@@ -356,7 +365,7 @@ final class AppModel: ObservableObject {
             UserDefaults.standard.set(next, forKey: Keys.activeSessionID)
             streamingThinking = ""
             streamingReply = ""
-            isTyping = false
+            updateTypingState(false)
             await loadHistory(showLoadingState: false)
         } catch {
             errorMessage = "切换对话失败：\(error.localizedDescription)"
@@ -405,7 +414,7 @@ final class AppModel: ObservableObject {
 
     func regenerateMessage(id: Int) async throws {
         try await requireClient().regenerateMessage(id: id)
-        isTyping = true
+        updateTypingState(true)
     }
 
     func hideMessageLocally(id: Int) {
@@ -477,6 +486,9 @@ final class AppModel: ObservableObject {
         )
         messages.append(optimistic)
         pendingAttachments = []
+        // Show feedback immediately. The relay also broadcasts a typing event,
+        // but that frame can arrive before the POST response on some iOS stacks.
+        updateTypingState(true)
 
         do {
             let response = try await client.send(
@@ -494,6 +506,7 @@ final class AppModel: ObservableObject {
                 historyArchive.sort(by: Self.messageComesBefore)
             }
         } catch {
+            updateTypingState(false)
             if let index = messages.firstIndex(where: { $0.id == tempID }) {
                 messages[index].delivery = .failed
             }
@@ -532,6 +545,84 @@ final class AppModel: ObservableObject {
     func spaceAlbum() async throws -> [AlbumPhoto] { try await requireClient().album() }
     func spaceGiftPages() async throws -> [GiftPage] { try await requireClient().giftPages() }
     func giftPageURL(file: String) -> URL? { client?.giftPageURL(file: file) }
+
+    func greetingForCurrentTime() async -> String? {
+        let defaults = UserDefaults.standard
+        let pool: GreetingPool?
+        do {
+            let fresh = try await requireClient().greetings()
+            if let data = try? JSONEncoder().encode(fresh) {
+                defaults.set(data, forKey: Keys.greetingCache)
+            }
+            pool = fresh
+        } catch {
+            pool = defaults.data(forKey: Keys.greetingCache)
+                .flatMap { try? JSONDecoder().decode(GreetingPool.self, from: $0) }
+        }
+        guard let lines = pool?.slots[Self.greetingSlot(for: Date())], !lines.isEmpty else { return nil }
+        return lines.randomElement()
+    }
+
+    func desireState() async throws -> DesireState {
+        try await requireClient().desire()
+    }
+
+    func updateDesire(enabled: Bool? = nil, libidoMultiplier: Double? = nil) async throws -> DesireState {
+        let client = try requireClient()
+        try await client.updateDesire(enabled: enabled, libidoMultiplier: libidoMultiplier)
+        return try await client.desire()
+    }
+
+    func refreshSpaceUnreadCounts() async {
+        do {
+            updateGiftUnread(with: try await requireClient().giftPages())
+        } catch {
+            // Keep the last trustworthy count when the room is temporarily offline.
+        }
+
+        do {
+            let client = try requireClient()
+            let moments = try await client.moments(kind: .moment, limit: 100).posts
+            let journals = try await client.moments(kind: .journal, limit: 100).posts
+            updateMomentUnread(with: moments + journals)
+        } catch {
+            // The two badges are independent; one failed endpoint should not erase either count.
+        }
+    }
+
+    func markGiftPagesRead(_ pages: [GiftPage]) {
+        currentGiftTokens.formUnion(pages.map(Self.giftToken))
+        let defaults = UserDefaults.standard
+        var seen = Set(defaults.stringArray(forKey: Keys.seenGiftTokens) ?? [])
+        seen.formUnion(currentGiftTokens)
+        defaults.set(Array(seen), forKey: Keys.seenGiftTokens)
+        giftUnreadCount = 0
+    }
+
+    func markCurrentMomentsRead() {
+        let defaults = UserDefaults.standard
+        var seen = Set((defaults.array(forKey: Keys.seenAIPostIDs) as? [Int]) ?? [])
+        seen.formUnion(currentAIPostIDs)
+        defaults.set(Array(seen), forKey: Keys.seenAIPostIDs)
+        momentsUnreadCount = 0
+    }
+
+    func markAllMomentsRead() async {
+        do {
+            let client = try requireClient()
+            let moments = try await client.moments(kind: .moment, limit: 100).posts
+            let journals = try await client.moments(kind: .journal, limit: 100).posts
+            currentAIPostIDs.formUnion((moments + journals).filter { $0.author == .ai }.map(\.id))
+        } catch {
+            // The snapshot already loaded by the space home is still safe to mark.
+        }
+        markCurrentMomentsRead()
+    }
+
+    func markMomentPostsRead(_ posts: [MomentPost]) {
+        currentAIPostIDs.formUnion(posts.filter { $0.author == .ai }.map(\.id))
+        markCurrentMomentsRead()
+    }
 
     func setStar(messageID: Int, on: Bool) async throws {
         let starred = try await requireClient().setStar(messageID: messageID, on: on)
@@ -618,8 +709,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func spaceMoments(kind: MomentKind, before: Int? = nil) async throws -> MomentsResponse {
-        try await requireClient().moments(kind: kind, before: before)
+    func spaceMoments(kind: MomentKind, before: Int? = nil, limit: Int = 20) async throws -> MomentsResponse {
+        try await requireClient().moments(kind: kind, before: before, limit: limit)
     }
 
     func uploadMomentImage(data: Data, name: String, mime: String) async throws -> Attachment {
@@ -1004,13 +1095,41 @@ final class AppModel: ObservableObject {
         isStreamConnected = connected
     }
 
+    private func updateTypingState(_ active: Bool) {
+        isTyping = active
+        typingTimeoutTask?.cancel()
+        typingTimeoutTask = nil
+        guard active else { return }
+        // Match the PWA safeguard: a dropped "typing: false" frame must not
+        // leave the header stuck indefinitely.
+        typingTimeoutTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 120_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.isTyping = false
+            self?.typingTimeoutTask = nil
+        }
+    }
+
     private func receiveStreamEvent(_ data: Data) {
         let decoder = JSONDecoder()
         if let envelope = try? decoder.decode(StreamEnvelope.self, from: data),
            let type = envelope.type {
             switch type {
             case "typing":
-                isTyping = envelope.active ?? false
+                updateTypingState(envelope.active ?? false)
+                return
+            case "post":
+                if let post = envelope.post, post.author == .ai {
+                    currentAIPostIDs.insert(post.id)
+                    if UserDefaults.standard.object(forKey: Keys.seenAIPostIDs) != nil {
+                        let seen = Set((UserDefaults.standard.array(forKey: Keys.seenAIPostIDs) as? [Int]) ?? [])
+                        momentsUnreadCount = currentAIPostIDs.subtracting(seen).count
+                    }
+                }
                 return
             case "reaction":
                 if let id = envelope.id {
@@ -1041,11 +1160,12 @@ final class AppModel: ObservableObject {
             case "thinking_delta":
                 guard normalizedSessionID(envelope.apiSession) == activeSessionID else { return }
                 streamingThinking += envelope.text ?? ""
+                updateTypingState(false)
                 return
             case "reply_delta":
                 guard normalizedSessionID(envelope.apiSession) == activeSessionID else { return }
                 streamingReply += envelope.text ?? ""
-                isTyping = true
+                updateTypingState(false)
                 return
             default:
                 break
@@ -1059,8 +1179,48 @@ final class AppModel: ObservableObject {
             if message.kind == "thinking" { streamingThinking = "" }
             if message.kind == "reply" {
                 streamingReply = ""
-                isTyping = false
+                updateTypingState(false)
             }
+        }
+    }
+
+    private func updateGiftUnread(with pages: [GiftPage]) {
+        let defaults = UserDefaults.standard
+        currentGiftTokens = Set(pages.map(Self.giftToken))
+        guard defaults.object(forKey: Keys.seenGiftTokens) != nil else {
+            defaults.set(Array(currentGiftTokens), forKey: Keys.seenGiftTokens)
+            giftUnreadCount = 0
+            return
+        }
+        let seen = Set(defaults.stringArray(forKey: Keys.seenGiftTokens) ?? [])
+        giftUnreadCount = currentGiftTokens.subtracting(seen).count
+    }
+
+    private func updateMomentUnread(with posts: [MomentPost]) {
+        let defaults = UserDefaults.standard
+        currentAIPostIDs = Set(posts.filter { $0.author == .ai }.map(\.id))
+        guard defaults.object(forKey: Keys.seenAIPostIDs) != nil else {
+            defaults.set(Array(currentAIPostIDs), forKey: Keys.seenAIPostIDs)
+            momentsUnreadCount = 0
+            return
+        }
+        let seen = Set((defaults.array(forKey: Keys.seenAIPostIDs) as? [Int]) ?? [])
+        momentsUnreadCount = currentAIPostIDs.subtracting(seen).count
+    }
+
+    private static func giftToken(_ page: GiftPage) -> String {
+        "\(page.file)#\(page.modified)"
+    }
+
+    private static func greetingSlot(for date: Date) -> String {
+        switch Calendar.current.component(.hour, from: date) {
+        case 0..<5: return "smallhours"
+        case 5..<8: return "dawn"
+        case 8..<11: return "morning"
+        case 11..<14: return "noon"
+        case 14..<18: return "afternoon"
+        case 18..<21: return "evening"
+        default: return "night"
         }
     }
 

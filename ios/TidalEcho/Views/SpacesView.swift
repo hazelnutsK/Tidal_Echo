@@ -6,6 +6,12 @@ import WebKit
 struct SpacesView: View {
     @ObservedObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @State private var desire: DesireState?
+    @State private var desireEnabled = false
+    @State private var libidoMultiplier = 1.0
+    @State private var isLoadingDesire = true
+    @State private var desireError: String?
+    @State private var isSavingDesire = false
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -23,21 +29,44 @@ struct SpacesView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        SpaceLink(title: "收藏", subtitle: "舍不得丢的对话", icon: "star.fill", color: .orange) {
+                        SpaceLink(title: "收藏", subtitle: "舍不得丢的对话", icon: "star.fill", color: .orange, unreadCount: 0) {
                             StarsView(model: model)
                         }
-                        SpaceLink(title: "相册", subtitle: "聊天里的照片", icon: "photo.on.rectangle.angled", color: .cyan) {
+                        SpaceLink(title: "相册", subtitle: "聊天里的照片", icon: "photo.on.rectangle.angled", color: .cyan, unreadCount: 0) {
                             AlbumView(model: model)
                         }
-                        SpaceLink(title: "礼物室", subtitle: "小克做的页面", icon: "gift.fill", color: .pink) {
+                        SpaceLink(title: "礼物室", subtitle: "小克做的页面", icon: "gift.fill", color: .pink, unreadCount: model.giftUnreadCount) {
                             GiftsView(model: model)
                         }
-                        SpaceLink(title: "Moments", subtitle: "动态与日志", icon: "sparkles", color: .purple) {
+                        SpaceLink(title: "Moments", subtitle: "动态与日志", icon: "sparkles", color: .purple, unreadCount: model.momentsUnreadCount) {
                             MomentsView(model: model)
                         }
-                        SpaceLink(title: "日历", subtitle: "日程与纪念日", icon: "calendar", color: .green) {
+                        SpaceLink(title: "日历", subtitle: "日程与纪念日", icon: "calendar", color: .green, unreadCount: 0) {
                             EchoCalendarView(model: model)
                         }
+                    }
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("他的内心")
+                            .font(.caption.weight(.semibold))
+                            .tracking(1.2)
+                            .foregroundStyle(palette.secondaryText)
+
+                        DesireCard(
+                            state: desire,
+                            enabled: $desireEnabled,
+                            libidoMultiplier: $libidoMultiplier,
+                            isLoading: isLoadingDesire,
+                            isSaving: isSavingDesire,
+                            errorText: desireError,
+                            palette: palette,
+                            onToggle: { enabled in
+                                Task { await saveDesire(enabled: enabled) }
+                            },
+                            onLibidoCommit: {
+                                Task { await saveDesire(libidoMultiplier: libidoMultiplier) }
+                            }
+                        )
                     }
                 }
                 .padding(18)
@@ -50,8 +79,47 @@ struct SpacesView: View {
                         .foregroundStyle(palette.accent)
                 }
             }
+            .refreshable { await refreshSpace() }
+            .task { await refreshSpace() }
         }
         .tint(palette.accent)
+    }
+
+    @MainActor
+    private func refreshSpace() async {
+        await model.refreshSpaceUnreadCounts()
+        await loadDesire()
+    }
+
+    @MainActor
+    private func loadDesire() async {
+        isLoadingDesire = true
+        defer { isLoadingDesire = false }
+        do {
+            applyDesire(try await model.desireState())
+            desireError = nil
+        } catch {
+            desireError = "内心读取失败"
+        }
+    }
+
+    @MainActor
+    private func saveDesire(enabled: Bool? = nil, libidoMultiplier: Double? = nil) async {
+        isSavingDesire = true
+        defer { isSavingDesire = false }
+        do {
+            applyDesire(try await model.updateDesire(enabled: enabled, libidoMultiplier: libidoMultiplier))
+            desireError = nil
+        } catch {
+            desireError = "这次没有保存成功"
+            await loadDesire()
+        }
+    }
+
+    private func applyDesire(_ state: DesireState) {
+        desire = state
+        desireEnabled = state.activity.enabled
+        libidoMultiplier = state.activity.libidoMultiplier
     }
 }
 
@@ -60,6 +128,7 @@ private struct SpaceLink<Destination: View>: View {
     let subtitle: String
     let icon: String
     let color: Color
+    let unreadCount: Int
     let destination: () -> Destination
 
     var body: some View {
@@ -81,8 +150,179 @@ private struct SpaceLink<Destination: View>: View {
             .frame(maxWidth: .infinity, minHeight: 142, alignment: .leading)
             .padding(15)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                if unreadCount > 0 {
+                    Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, unreadCount > 9 ? 6 : 0)
+                        .frame(minWidth: 20, minHeight: 20)
+                        .background(Color.red, in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.85), lineWidth: 1.5))
+                        .shadow(color: Color.red.opacity(0.24), radius: 4, y: 2)
+                        .padding(10)
+                        .accessibilityLabel("\(unreadCount) 条未读")
+                }
+            }
         }
         .buttonStyle(.plain)
+    }
+}
+
+private struct DesireCard: View {
+    let state: DesireState?
+    @Binding var enabled: Bool
+    @Binding var libidoMultiplier: Double
+    let isLoading: Bool
+    let isSaving: Bool
+    let errorText: String?
+    let palette: EchoPalette
+    let onToggle: (Bool) -> Void
+    let onLibidoCommit: () -> Void
+
+    private let order = ["attachment", "libido", "reflection", "curiosity", "social", "duty", "stress", "fatigue"]
+    private let names = [
+        "attachment": "想她", "curiosity": "好奇", "reflection": "沉淀", "duty": "记挂",
+        "social": "看人群", "libido": "贴贴", "stress": "压力", "fatigue": "疲惫"
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            if let state {
+                (Text("此刻最想：") + Text(state.intent.reason.isEmpty ? "…" : state.intent.reason).fontWeight(.medium))
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.aiBubble.opacity(0.64), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                VStack(spacing: 8) {
+                    ForEach(order, id: \.self) { key in
+                        DesireDriveRow(
+                            name: names[key] ?? key,
+                            value: state.drive[key] ?? 0,
+                            isGate: key == "stress" || key == "fatigue",
+                            isLeading: key == state.intent.driveKey,
+                            palette: palette
+                        )
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    if state.thoughts.isEmpty {
+                        Label("念头池还空着，等他自己长", systemImage: "sparkle")
+                            .foregroundStyle(palette.secondaryText)
+                    } else {
+                        ForEach(Array(state.thoughts.prefix(8))) { thought in
+                            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                Text(thought.kind == "fixation" ? "✦" : "✧")
+                                    .foregroundStyle(palette.accent)
+                                Text(thought.text)
+                                    .foregroundStyle(palette.text)
+                                Spacer(minLength: 4)
+                                Text(String(format: "%.2f · %@", thought.strength, names[thought.drive] ?? thought.drive))
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(palette.secondaryText)
+                            }
+                            .font(.system(size: 12.5))
+                        }
+                    }
+                }
+
+                Divider().overlay(palette.hairline)
+
+                Toggle("主动找她", isOn: Binding(
+                    get: { enabled },
+                    set: { value in
+                        enabled = value
+                        onToggle(value)
+                    }
+                ))
+                .font(.system(size: 12.5, weight: .medium))
+                .disabled(isSaving)
+
+                HStack(spacing: 10) {
+                    Text("贴贴权重")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(palette.secondaryText)
+                    Slider(value: $libidoMultiplier, in: 0...1.5, step: 0.1) { editing in
+                        if !editing { onLibidoCommit() }
+                    }
+                    .disabled(isSaving)
+                    Text(libidoMultiplier, format: .number.precision(.fractionLength(1)))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(palette.secondaryText)
+                        .frame(width: 24)
+                }
+
+                HStack(spacing: 7) {
+                    if isSaving { ProgressView().controlSize(.mini) }
+                    Text(activityStatus(state.activity))
+                        .font(.caption2)
+                        .foregroundStyle(palette.secondaryText)
+                }
+            } else if isLoading {
+                HStack(spacing: 9) {
+                    ProgressView().controlSize(.small)
+                    Text("正在听一听…")
+                }
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText)
+                .frame(maxWidth: .infinity, minHeight: 80)
+            }
+
+            if let errorText {
+                Text(errorText)
+                    .font(.caption2)
+                    .foregroundStyle(.red.opacity(0.82))
+            }
+        }
+        .tint(palette.accent)
+        .padding(16)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(palette.hairline))
+    }
+
+    private func activityStatus(_ activity: DesireActivity) -> String {
+        let delivery: String
+        if activity.bodyTarget == "loop" {
+            delivery = "API 身体接管中"
+        } else {
+            delivery = activity.bodyOnline ? "桌面身体在线" : "等待桌面身体上线"
+        }
+        let cooldown = activity.cooldownLeftSeconds > 0 ? " · 冷却 \((activity.cooldownLeftSeconds + 59) / 60)min" : ""
+        return "今日 \(activity.today)/\(activity.dailyCap)\(cooldown) · \(delivery)"
+    }
+}
+
+private struct DesireDriveRow: View {
+    let name: String
+    let value: Double
+    let isGate: Bool
+    let isLeading: Bool
+    let palette: EchoPalette
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Text(name)
+                .font(.system(size: 11.5, weight: isLeading ? .semibold : .regular))
+                .foregroundStyle(isLeading ? palette.text : palette.secondaryText)
+                .frame(width: 48, alignment: .trailing)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(palette.hairline.opacity(0.72))
+                    Capsule()
+                        .fill(isGate ? Color(hex: 0xA37E66) : palette.accent)
+                        .frame(width: geometry.size.width * max(0, min(1, value)))
+                }
+            }
+            .frame(height: 6)
+            Text(value, format: .number.precision(.fractionLength(2)))
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(palette.secondaryText)
+                .frame(width: 30, alignment: .trailing)
+        }
     }
 }
 
@@ -339,6 +579,7 @@ private struct GiftsView: View {
         defer { isLoading = false }
         do {
             pages = try await model.spaceGiftPages()
+            model.markGiftPagesRead(pages)
             errorText = nil
         } catch {
             errorText = error.localizedDescription
@@ -433,6 +674,7 @@ private struct MomentsView: View {
         }
         .navigationTitle("Moments")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await model.markAllMomentsRead() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingComposer = true } label: { Image(systemName: "plus") }
@@ -460,6 +702,7 @@ private struct MomentsView: View {
             posts = reset ? response.posts : posts + response.posts.filter { newPost in
                 !posts.contains(where: { $0.id == newPost.id })
             }
+            if reset { model.markMomentPostsRead(response.posts) }
             hasMore = response.hasMore
             errorText = nil
         } catch {
@@ -748,6 +991,7 @@ struct EchoCalendarView: View {
     private var selectedKey: String { dateKey(selectedDate) }
     private var dayEvents: [CalendarEvent] { response?.events.filter { $0.date == selectedKey } ?? [] }
     private var holiday: String? { response?.holidays[selectedKey] }
+    private var palette: EchoPalette { model.theme.palette }
 
     var body: some View {
         ScrollView {
@@ -761,7 +1005,7 @@ struct EchoCalendarView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(dayTitle(selectedDate)).font(.title3.bold())
-                            if let holiday { Text(holiday).font(.subheadline).foregroundStyle(.pink) }
+                            if let holiday { Text(holiday).font(.subheadline).foregroundStyle(palette.accent) }
                         }
                         Spacer()
                         Button { showingCreate = true } label: {
@@ -778,7 +1022,7 @@ struct EchoCalendarView: View {
                             .padding(.vertical, 18)
                     } else {
                         ForEach(dayEvents) { event in
-                            CalendarEventRow(event: event) {
+                            CalendarEventRow(event: event, palette: palette) {
                                 Task { await delete(event) }
                             }
                             if event.id != dayEvents.last?.id { Divider() }
@@ -792,6 +1036,7 @@ struct EchoCalendarView: View {
         }
         .navigationTitle("日历")
         .navigationBarTitleDisplayMode(.inline)
+        .tint(palette.accent)
         .task { await loadMonth() }
         .onChange(of: monthKey(selectedDate)) { _ in Task { await loadMonth() } }
         .refreshable { await loadMonth() }
@@ -831,14 +1076,15 @@ struct EchoCalendarView: View {
 
 private struct CalendarEventRow: View {
     let event: CalendarEvent
+    let palette: EchoPalette
     let onDelete: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: event.kind == "anniversary" ? "heart.fill" : "calendar.badge.clock")
-                .foregroundStyle(event.kind == "anniversary" ? .pink : .green)
+                .foregroundStyle(palette.accent)
                 .frame(width: 30, height: 30)
-                .background((event.kind == "anniversary" ? Color.pink : Color.green).opacity(0.12), in: Circle())
+                .background(palette.accent.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 4) {
                 Text(event.title).font(.headline)
                 HStack(spacing: 7) {
@@ -916,6 +1162,7 @@ private struct CalendarComposer: View {
                 }
             }
         }
+        .tint(model.theme.palette.accent)
     }
 
     @MainActor

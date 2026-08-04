@@ -261,8 +261,8 @@ struct ChatView: View {
             shape.fill(headerGlassTint)
         }
         .clipShape(shape)
-        .overlay(shape.stroke(headerGlassRing, lineWidth: 0.5))
-        .shadow(color: Color.black.opacity(model.theme == .mist ? 0.10 : 0.06), radius: 11, y: 3)
+        .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
+        .shadow(color: headerShadowColor, radius: model.theme == .paper ? 10 : 11, y: 3.5)
     }
 
     private func headerButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
@@ -279,7 +279,7 @@ struct ChatView: View {
     private var headerGlassTint: Color {
         switch model.theme {
         case .mist: return Color(hex: 0xF7FAFC).opacity(0.52)
-        case .paper: return Color.white.opacity(0.90)
+        case .paper: return Color(hex: 0xF0EEE6).opacity(0.62)
         case .harbor: return Color(hex: 0x1C2A35).opacity(0.56)
         }
     }
@@ -287,8 +287,16 @@ struct ChatView: View {
     private var headerGlassRing: Color {
         switch model.theme {
         case .mist: return Color.white.opacity(0.48)
-        case .paper: return Color(hex: 0xDEDDD8)
+        case .paper: return Color.white.opacity(0.48)
         case .harbor: return Color.white.opacity(0.12)
+        }
+    }
+
+    private var headerShadowColor: Color {
+        switch model.theme {
+        case .mist: return Color.black.opacity(0.10)
+        case .paper: return Color(hex: 0x8C7466).opacity(0.16)
+        case .harbor: return Color.black.opacity(0.18)
         }
     }
 
@@ -1168,9 +1176,9 @@ private struct ComposerView: View {
                 Button { showingAttachmentMenu = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(palette.accent)
+                        .foregroundStyle(composerAuxiliaryForeground)
                         .frame(width: 38, height: 38)
-                        .background(palette.aiBubble, in: Circle())
+                        .background(composerAuxiliaryBackground, in: Circle())
                 }
                 .disabled(model.isUploading)
 
@@ -1187,9 +1195,12 @@ private struct ComposerView: View {
                 } label: {
                     Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(recorder.isRecording ? Color.white : palette.accent)
+                        .foregroundStyle(recorder.isRecording ? Color.white : composerAuxiliaryForeground)
                         .frame(width: 38, height: 38)
-                        .background(recorder.isRecording ? Color.red.opacity(0.82) : palette.aiBubble, in: Circle())
+                        .background(
+                            recorder.isRecording ? Color.red.opacity(0.82) : composerAuxiliaryBackground,
+                            in: Circle()
+                        )
                 }
                 .disabled(model.isUploadingVoice)
 
@@ -1198,12 +1209,11 @@ private struct ComposerView: View {
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(Color.white.opacity(canSend ? 1 : 0.72))
                         .frame(width: 39, height: 39)
-                        .background(palette.accent, in: Circle())
+                        .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
                 }
                 .disabled(!canSend)
-                .opacity(canSend ? 1 : 0.45)
             }
             .padding(.horizontal, 14)
         }
@@ -1244,6 +1254,18 @@ private struct ComposerView: View {
             .overlay(shape.stroke(Color.white.opacity(model.theme == .harbor ? 0.10 : 0.34), lineWidth: 0.6))
             .overlay(shape.stroke(palette.hairline, lineWidth: 0.5))
             .shadow(color: Color.black.opacity(0.035), radius: 8, y: 2)
+    }
+
+    private var composerAuxiliaryBackground: Color {
+        model.theme == .paper ? Color(hex: 0xF0EEE6) : palette.aiBubble
+    }
+
+    private var composerAuxiliaryForeground: Color {
+        model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
+    }
+
+    private var composerSendBackground: Color {
+        model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
     }
 
     private var canSend: Bool {

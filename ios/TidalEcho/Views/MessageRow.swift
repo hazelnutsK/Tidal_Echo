@@ -526,7 +526,10 @@ private struct ProcessRow: View {
             if isThinking {
                 Text(message.text)
                     .font(chatFont.font(size: 14 * fontScale, weight: chatWeight.echoFontWeight).italic())
-                    .lineSpacing(CGFloat(14 * fontScale * 0.50))
+                    .lineSpacing(PWAChatMetrics.lineSpacing(
+                        font: chatFont,
+                        size: 14 * fontScale
+                    ))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -619,7 +622,10 @@ struct StreamingProcessRow: View {
             Text(text)
                 .font(chatFont.font(size: 14 * fontScale, weight: chatWeight.echoFontWeight).italic())
                 .lineLimit(4)
-                .lineSpacing(CGFloat(14 * fontScale * 0.50))
+                .lineSpacing(PWAChatMetrics.lineSpacing(
+                    font: chatFont,
+                    size: 14 * fontScale
+                ))
                 .textSelection(.enabled)
                 .padding(.leading, isPaper ? 15 : 12)
                 .padding(.trailing, isPaper ? 2 : 12)

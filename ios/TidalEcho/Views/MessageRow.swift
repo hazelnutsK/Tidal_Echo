@@ -485,26 +485,33 @@ private struct ProcessRow: View {
     let showsAIAvatar: Bool
     let bubbleWidthScale: Double
     @State private var expanded = false
+    @State private var showingMistSheet = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 guard canExpand else { return }
-                withAnimation(isMist ? .spring(response: 0.34, dampingFraction: 0.86) : .easeOut(duration: 0.16)) {
-                    expanded.toggle()
+                if isMist {
+                    showingMistSheet = true
+                } else {
+                    withAnimation(isHarbor ? .spring(response: 0.34, dampingFraction: 0.86) : .easeOut(duration: 0.16)) {
+                        expanded.toggle()
+                    }
                 }
             } label: {
                 if isMist {
                     mistTrigger
+                } else if isHarbor {
+                    harborTrigger
                 } else {
                     legacyTrigger
                 }
             }
             .buttonStyle(.plain)
 
-            if expanded {
-                if isMist {
-                    mistProcessCard
+            if expanded && !isMist {
+                if isHarbor {
+                    harborProcessCard
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 } else {
                     processDetail
@@ -515,16 +522,33 @@ private struct ProcessRow: View {
         .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
         .padding(.leading, showsAIAvatar ? 35 : 0)
         .padding(.trailing, 44)
+        .sheet(isPresented: $showingMistSheet) {
+            mistProcessSheet
+        }
     }
 
     private var isThinking: Bool { message.kind == "thinking" }
     private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
+    private var isHarbor: Bool { !isPaper && !isMist }
 
     private var mistTrigger: some View {
         HStack(spacing: 6) {
             Image(systemName: isThinking ? "sparkles" : "wrench")
                 .font(.system(size: isThinking ? 12 : 11, weight: .medium))
             if !isThinking { Text("Action") }
+            Image(systemName: "chevron.up")
+                .font(.system(size: 8, weight: .semibold))
+        }
+        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+        .foregroundStyle(palette.secondaryText)
+        .padding(.vertical, 2)
+    }
+
+    private var harborTrigger: some View {
+        HStack(spacing: 6) {
+            Image(systemName: isThinking ? "heart.fill" : "wrench")
+                .font(.system(size: isThinking ? 11.5 : 11, weight: .medium))
+            Text(isThinking ? "Thinking" : "Action")
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .semibold))
                 .rotationEffect(.degrees(expanded ? 180 : 0))
@@ -583,14 +607,14 @@ private struct ProcessRow: View {
         }
     }
 
-    private var mistProcessCard: some View {
+    private var harborProcessCard: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Text(isThinking ? "Thought process" : "Action")
                     .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
                     .foregroundStyle(palette.text.opacity(0.88))
                 Spacer(minLength: 12)
-                Image(systemName: isThinking ? "sparkles" : "wrench")
+                Image(systemName: isThinking ? "heart.fill" : "wrench")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(palette.secondaryText)
             }
@@ -605,6 +629,28 @@ private struct ProcessRow: View {
                 .stroke(palette.hairline, lineWidth: 0.6)
         )
         .shadow(color: Color.black.opacity(0.055), radius: 10, y: 5)
+    }
+
+    private var mistProcessSheet: some View {
+        NavigationStack {
+            ScrollView {
+                processContent
+                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(palette.background.ignoresSafeArea())
+            .navigationTitle(isThinking ? "Thought process" : "Action")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showingMistSheet = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 
     @ViewBuilder
@@ -673,13 +719,13 @@ struct StreamingProcessRow: View {
     let chatWeight: Double
 
     var body: some View {
-        if isMist {
+        if isHarbor {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
                     Text(title)
                         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
                     Spacer(minLength: 12)
-                    Image(systemName: "sparkles")
+                    Image(systemName: "heart.fill")
                         .font(.system(size: 11, weight: .medium))
                 }
                 Divider().overlay(palette.hairline)
@@ -697,6 +743,21 @@ struct StreamingProcessRow: View {
             .padding(.leading, showsAIAvatar ? 35 : 0)
             .padding(.trailing, 44)
             .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else if isMist {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 7) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Thinking…")
+                        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                }
+                streamingText
+                    .lineLimit(2)
+            }
+            .foregroundStyle(palette.secondaryText)
+            .frame(maxWidth: 280, alignment: .leading)
+            .padding(.leading, showsAIAvatar ? 35 : 0)
+            .padding(.trailing, 44)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 7) {
@@ -752,6 +813,8 @@ struct StreamingProcessRow: View {
             ))
             .textSelection(.enabled)
     }
+
+    private var isHarbor: Bool { !isPaper && !isMist }
 }
 
 struct StreamingReplyRow: View {
@@ -1154,7 +1217,7 @@ struct LiquidGlassBubbleBackground: View {
             let washOpacity = clamped(tintOpacity * (0.012 + strength * 0.04 + visualThickness * 0.018))
             let rimLine = CGFloat(0.32 + rim * 1.45 + visualThickness * 0.24)
             let dispersionShift = CGFloat(dispersion * 1.35)
-            let usesStableLongBubble = geometry.size.height > 520
+            let usesStableLongBubble = geometry.size.height > 1500
 
             if reduceTransparency || usesStableLongBubble {
                 // Very tall native Glass surfaces are tiled by the compositor

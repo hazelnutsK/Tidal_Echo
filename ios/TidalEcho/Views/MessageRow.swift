@@ -533,10 +533,10 @@ private struct ProcessRow: View {
 
     private var mistTrigger: some View {
         HStack(spacing: 6) {
-            Image(systemName: isThinking ? "sparkles" : "wrench")
+            Image(systemName: isThinking ? "clock" : "wrench")
                 .font(.system(size: isThinking ? 12 : 11, weight: .medium))
-            if !isThinking { Text("Action") }
-            Image(systemName: "chevron.up")
+            Text(isThinking ? "Thinking" : "Action")
+            Image(systemName: "chevron.right")
                 .font(.system(size: 8, weight: .semibold))
         }
         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
@@ -589,7 +589,7 @@ private struct ProcessRow: View {
         if isThinking {
             Text(message.text)
                 .font(chatFont.font(
-                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
+                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.07 : 1),
                     numericWeight: chatWeight
                 ).italic())
                 .lineSpacing(PWAChatMetrics.lineSpacing(
@@ -644,8 +644,11 @@ private struct ProcessRow: View {
             .navigationTitle(isThinking ? "Thought process" : "Action")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { showingMistSheet = false }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { showingMistSheet = false } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel("Close")
                 }
             }
         }
@@ -746,7 +749,7 @@ struct StreamingProcessRow: View {
         } else if isMist {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 7) {
-                    Image(systemName: "sparkles")
+                    Image(systemName: "clock")
                         .font(.system(size: 11, weight: .medium))
                     Text("Thinking…")
                         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
@@ -803,7 +806,7 @@ struct StreamingProcessRow: View {
     private var streamingText: some View {
         Text(text)
             .font(chatFont.font(
-                size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
+                size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.07 : 1),
                 numericWeight: chatWeight
             ).italic())
             .lineLimit(4)
@@ -1217,7 +1220,7 @@ struct LiquidGlassBubbleBackground: View {
             let washOpacity = clamped(tintOpacity * (0.012 + strength * 0.04 + visualThickness * 0.018))
             let rimLine = CGFloat(0.32 + rim * 1.45 + visualThickness * 0.24)
             let dispersionShift = CGFloat(dispersion * 1.35)
-            let usesStableLongBubble = geometry.size.height > 1500
+            let usesStableLongBubble = geometry.size.height > 1700
 
             if reduceTransparency || usesStableLongBubble {
                 // Very tall native Glass surfaces are tiled by the compositor

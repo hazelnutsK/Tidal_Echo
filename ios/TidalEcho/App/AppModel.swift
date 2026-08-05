@@ -227,10 +227,11 @@ final class AppModel: ObservableObject {
         return isStreamConnected ? "online" : "connecting…"
     }
 
-    /// Paper is intentionally a flat-color preset. Keep a user's custom
-    /// wallpaper on disk so it comes back when they switch to another theme.
+    /// Every theme respects the wallpaper selected by the user. Paper used to
+    /// suppress it here, which made the picker preview update while chat stayed
+    /// pinned to the preset background.
     var visibleBackgroundImage: UIImage? {
-        theme == .paper ? nil : backgroundImage
+        backgroundImage
     }
 
     var peerDisplayName: String {

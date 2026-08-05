@@ -598,7 +598,7 @@ private struct AppearanceSettingsView: View {
                     step: 0.01
                 )
                 settingSlider(
-                    title: "光斑尺寸 size",
+                    title: "光学尺度 size",
                     valueText: String(format: "%.0f", model.liquidGlassSize),
                     value: $model.liquidGlassSize,
                     range: 80...260,

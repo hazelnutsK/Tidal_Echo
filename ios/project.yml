@@ -3,7 +3,7 @@ name: TidalEcho
 options:
   minimumXcodeGenVersion: 2.40.0
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "26.0"
   createIntermediateGroups: true
 
 settings:

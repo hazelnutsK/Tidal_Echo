@@ -1067,98 +1067,56 @@ struct LiquidGlassBubbleBackground: View {
             let rim = clamped(settings.rimWidth)
             let magnify = clamped(settings.magnify)
             let blur = clamped(settings.blur)
-            let lens = CGFloat(max(60, settings.size))
-            let rimLine = CGFloat(0.55 + rim * 3.6)
+            let opticalSize = CGFloat(max(60, settings.size))
+            let glassTintOpacity = clamped(0.035 + tintOpacity * 0.20)
 
-            ZStack {
-                if reduceTransparency {
-                    shape.fill(tint.opacity(0.42 + tintOpacity * 0.38))
-                } else {
-                    shape.fill(.ultraThinMaterial)
-                }
-
-                shape.fill(tint.opacity((0.05 + (1 - blur) * 0.18) * tintOpacity))
-
-                Ellipse()
-                    .fill(RadialGradient(
-                        colors: [
-                            Color.white.opacity(0.30 + strength * 0.24),
-                            Color.white.opacity(0.07 + magnify * 0.10),
-                            .clear
-                        ],
-                        center: .center,
-                        startRadius: 0,
-                        endRadius: lens * 0.46
-                    ))
-                    .frame(width: lens * CGFloat(1 + magnify * 0.18), height: lens * 0.62)
-                    .position(
-                        x: geometry.size.width * CGFloat(0.22 + strength * 0.16),
-                        y: geometry.size.height * CGFloat(0.08 + magnify * 0.16)
-                    )
-                    .blur(radius: CGFloat(1 + blur * 5))
-                    .blendMode(.screen)
-
-                Ellipse()
-                    .fill(LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.22 * strength),
-                            tint.opacity(0.07),
-                            .clear
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-                    .frame(width: lens * 0.82, height: lens * 0.34)
-                    .rotationEffect(.degrees(-16 + strength * 12))
-                    .position(x: geometry.size.width * 0.78, y: geometry.size.height * 0.88)
-                    .blur(radius: CGFloat(2 + blur * 7))
-                    .blendMode(.plusLighter)
-
+            if reduceTransparency {
                 shape
-                    .stroke(
-                        AngularGradient(
-                            colors: [
-                                Color.cyan.opacity(0.78),
-                                Color.white.opacity(0.92),
-                                Color.pink.opacity(0.72),
-                                Color.yellow.opacity(0.54),
-                                Color.cyan.opacity(0.78)
-                            ],
-                            center: .center
+                    .fill(tint.opacity(0.48 + tintOpacity * 0.34))
+                    .overlay(shape.stroke(Color.white.opacity(0.28), lineWidth: 0.7))
+            } else {
+                shape
+                    .fill(Color.clear)
+                    .glassEffect(
+                        .clear
+                            .tint(tint.opacity(glassTintOpacity))
+                            .interactive(true),
+                        in: shape
+                    )
+                    .layerEffect(
+                        ShaderLibrary.tidalLiquidGlassOptics(
+                            .float2(geometry.size),
+                            .float(Float(radius)),
+                            .float(Float(strength)),
+                            .float(Float(dispersion)),
+                            .float(Float(rim)),
+                            .float(Float(magnify)),
+                            .float(Float(blur)),
+                            .float(Float(opticalSize))
                         ),
-                        lineWidth: rimLine * CGFloat(1.1 + dispersion)
+                        maxSampleOffset: CGSize(width: 18, height: 18)
                     )
-                    .blur(radius: CGFloat(0.25 + dispersion * 1.15))
-                    .opacity(0.08 + dispersion * 0.46)
-                    .offset(x: CGFloat(dispersion * 0.7), y: CGFloat(dispersion * 0.35))
+                    .clipShape(shape)
+                    .overlay {
+                        shape.stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.30 + rim * 0.28),
+                                    Color.white.opacity(0.06),
+                                    Color.black.opacity(0.035 + strength * 0.035)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: CGFloat(0.45 + rim * 0.9)
+                        )
+                    }
+                    .shadow(
+                        color: Color.black.opacity(0.035 + strength * 0.025),
+                        radius: CGFloat(5 + blur * 4),
+                        y: 2.5
+                    )
             }
-            .clipShape(shape)
-            .overlay(
-                shape.stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.82),
-                            Color.white.opacity(0.24),
-                            Color.white.opacity(0.58),
-                            Color.black.opacity(0.08)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: rimLine
-                )
-            )
-            .overlay(
-                shape
-                    .inset(by: max(1, rimLine))
-                    .stroke(Color.white.opacity(0.10 + strength * 0.18), lineWidth: 0.7)
-            )
-            .scaleEffect(CGFloat(1 + magnify * 0.012))
-            .shadow(
-                color: Color.black.opacity(0.05 + strength * 0.035),
-                radius: CGFloat(7 + blur * 7),
-                y: 3
-            )
         }
     }
 

@@ -25,6 +25,7 @@ struct MessageRow: View {
     let showsTimestamp: Bool
     let isTail: Bool
     let isPaper: Bool
+    let isMist: Bool
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
     let onCopy: () -> Void
@@ -45,6 +46,7 @@ struct MessageRow: View {
                 fontScale: fontScale,
                 chatWeight: chatWeight,
                 isPaper: isPaper,
+                isMist: isMist,
                 showsAIAvatar: showsAIAvatar,
                 bubbleWidthScale: bubbleWidthScale
             )
@@ -479,6 +481,7 @@ private struct ProcessRow: View {
     let fontScale: Double
     let chatWeight: Double
     let isPaper: Bool
+    let isMist: Bool
     let showsAIAvatar: Bool
     let bubbleWidthScale: Double
     @State private var expanded = false
@@ -487,37 +490,26 @@ private struct ProcessRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 guard canExpand else { return }
-                withAnimation(.easeOut(duration: 0.16)) { expanded.toggle() }
-            } label: {
-                HStack(spacing: 7) {
-                    if isThinking {
-                        Text("THINKING")
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 7.5, weight: .bold))
-                            .rotationEffect(.degrees(expanded ? 90 : 0))
-                    } else {
-                        Image(systemName: "wrench")
-                            .font(.system(size: 11, weight: .medium))
-                        Text(toolTitle)
-                    }
+                withAnimation(isMist ? .spring(response: 0.34, dampingFraction: 0.86) : .easeOut(duration: 0.16)) {
+                    expanded.toggle()
                 }
-                .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
-                .foregroundStyle(palette.secondaryText)
-                .padding(.horizontal, isPaper ? 0 : 11)
-                .padding(.vertical, isPaper ? 2 : 4)
-                .background {
-                    if !isPaper {
-                        Capsule()
-                            .fill(.ultraThinMaterial)
-                            .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
-                    }
+            } label: {
+                if isMist {
+                    mistTrigger
+                } else {
+                    legacyTrigger
                 }
             }
             .buttonStyle(.plain)
 
             if expanded {
-                processDetail
-                    .transition(.opacity)
+                if isMist {
+                    mistProcessCard
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else {
+                    processDetail
+                        .transition(.opacity)
+                }
             }
         }
         .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
@@ -528,54 +520,115 @@ private struct ProcessRow: View {
     private var isThinking: Bool { message.kind == "thinking" }
     private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
 
-    private var toolTitle: String {
-        let title = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if title.isEmpty { return "他做了点什么" }
-        return title.hasPrefix("他") ? title : "他(title)"
+    private var mistTrigger: some View {
+        HStack(spacing: 6) {
+            Image(systemName: isThinking ? "sparkles" : "wrench")
+                .font(.system(size: isThinking ? 12 : 11, weight: .medium))
+            if !isThinking { Text("Action") }
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .semibold))
+                .rotationEffect(.degrees(expanded ? 180 : 0))
+        }
+        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+        .foregroundStyle(palette.secondaryText)
+        .padding(.vertical, 2)
+    }
+
+    private var legacyTrigger: some View {
+        HStack(spacing: 7) {
+            if isThinking {
+                Text("THINKING")
+                Image(systemName: "play.fill")
+                    .font(.system(size: 7.5, weight: .bold))
+                    .rotationEffect(.degrees(expanded ? 90 : 0))
+            } else {
+                Image(systemName: "wrench")
+                    .font(.system(size: 11, weight: .medium))
+                Text("Action")
+            }
+        }
+        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+        .foregroundStyle(palette.secondaryText)
+        .padding(.horizontal, isPaper ? 0 : 11)
+        .padding(.vertical, isPaper ? 2 : 4)
+        .background {
+            if !isPaper {
+                Capsule()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var processContent: some View {
+        if isThinking {
+            Text(message.text)
+                .font(chatFont.font(
+                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
+                    numericWeight: chatWeight
+                ).italic())
+                .lineSpacing(PWAChatMetrics.lineSpacing(
+                    font: chatFont,
+                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale
+                ))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(message.meta.steps.enumerated()), id: \.offset) { _, step in
+                    ToolStepPreview(step: step, palette: palette)
+                }
+            }
+        }
+    }
+
+    private var mistProcessCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Text(isThinking ? "Thought process" : "Action")
+                    .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                    .foregroundStyle(palette.text.opacity(0.88))
+                Spacer(minLength: 12)
+                Image(systemName: isThinking ? "sparkles" : "wrench")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            Divider().overlay(palette.hairline)
+            processContent
+                .foregroundStyle(palette.secondaryText)
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(palette.hairline, lineWidth: 0.6)
+        )
+        .shadow(color: Color.black.opacity(0.055), radius: 10, y: 5)
     }
 
     @ViewBuilder
     private var processDetail: some View {
-        Group {
-            if isThinking {
-                Text(message.text)
-                    .font(chatFont.font(
-                        size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
-                        numericWeight: chatWeight
-                    ).italic())
-                    .lineSpacing(PWAChatMetrics.lineSpacing(
-                        font: chatFont,
-                        size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale
-                    ))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(message.meta.steps.enumerated()), id: \.offset) { _, step in
-                        ToolStepPreview(step: step, palette: palette)
-                    }
+        processContent
+            .foregroundStyle(palette.secondaryText)
+            .italic(isPaper)
+            .padding(.leading, isPaper ? 15 : 12)
+            .padding(.trailing, isPaper ? 2 : 12)
+            .padding(.vertical, isPaper ? 2 : 10)
+            .background {
+                if !isPaper {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.hairline))
                 }
             }
-        }
-        .foregroundStyle(palette.secondaryText)
-        .italic(isPaper)
-        .padding(.leading, isPaper ? 15 : 12)
-        .padding(.trailing, isPaper ? 2 : 12)
-        .padding(.vertical, isPaper ? 2 : 10)
-        .background {
-            if !isPaper {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.hairline))
+            .overlay(alignment: .leading) {
+                if isPaper {
+                    Rectangle()
+                        .fill(Color(hex: 0xD6D4CE))
+                        .frame(width: 1.5)
+                }
             }
-        }
-        .overlay(alignment: .leading) {
-            if isPaper {
-                Rectangle()
-                    .fill(Color(hex: 0xD6D4CE))
-                    .frame(width: 1.5)
-            }
-        }
     }
 }
 
@@ -613,60 +666,91 @@ struct StreamingProcessRow: View {
     let text: String
     let palette: EchoPalette
     let isPaper: Bool
+    let isMist: Bool
     let showsAIAvatar: Bool
     let chatFont: EchoChatFont
     let fontScale: Double
     let chatWeight: Double
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                Text("THINKING")
-                Image(systemName: "play.fill")
-                    .font(.system(size: 7.5, weight: .bold))
-                    .rotationEffect(.degrees(90))
-            }
-            .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
-            .padding(.horizontal, isPaper ? 0 : 11)
-            .padding(.vertical, isPaper ? 2 : 4)
-            .background {
-                if !isPaper {
-                    Capsule().fill(.ultraThinMaterial)
-                        .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
+        if isMist {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                    Spacer(minLength: 12)
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 11, weight: .medium))
                 }
+                Divider().overlay(palette.hairline)
+                streamingText
             }
-
-            Text(text)
-                .font(chatFont.font(
-                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
-                    numericWeight: chatWeight
-                ).italic())
-                .lineLimit(4)
-                .lineSpacing(PWAChatMetrics.lineSpacing(
-                    font: chatFont,
-                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale
-                ))
-                .textSelection(.enabled)
-                .padding(.leading, isPaper ? 15 : 12)
-                .padding(.trailing, isPaper ? 2 : 12)
-                .padding(.vertical, isPaper ? 2 : 10)
+            .foregroundStyle(palette.secondaryText)
+            .padding(12)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(palette.hairline, lineWidth: 0.6)
+            )
+            .shadow(color: Color.black.opacity(0.055), radius: 10, y: 5)
+            .frame(maxWidth: 280, alignment: .leading)
+            .padding(.leading, showsAIAvatar ? 35 : 0)
+            .padding(.trailing, 44)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 7) {
+                    Text("THINKING")
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 7.5, weight: .bold))
+                        .rotationEffect(.degrees(90))
+                }
+                .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                .padding(.horizontal, isPaper ? 0 : 11)
+                .padding(.vertical, isPaper ? 2 : 4)
                 .background {
                     if !isPaper {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(.ultraThinMaterial)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.hairline))
+                        Capsule().fill(.ultraThinMaterial)
+                            .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
                     }
                 }
-                .overlay(alignment: .leading) {
-                    if isPaper {
-                        Rectangle().fill(Color(hex: 0xD6D4CE)).frame(width: 1.5)
+
+                streamingText
+                    .padding(.leading, isPaper ? 15 : 12)
+                    .padding(.trailing, isPaper ? 2 : 12)
+                    .padding(.vertical, isPaper ? 2 : 10)
+                    .background {
+                        if !isPaper {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.hairline))
+                        }
                     }
-                }
+                    .overlay(alignment: .leading) {
+                        if isPaper {
+                            Rectangle().fill(Color(hex: 0xD6D4CE)).frame(width: 1.5)
+                        }
+                    }
+            }
+            .foregroundStyle(palette.secondaryText)
+            .frame(maxWidth: 280, alignment: .leading)
+            .padding(.leading, showsAIAvatar ? 35 : 0)
+            .padding(.trailing, 44)
         }
-        .foregroundStyle(palette.secondaryText)
-        .frame(maxWidth: 280, alignment: .leading)
-        .padding(.leading, showsAIAvatar ? 35 : 0)
-        .padding(.trailing, 44)
+    }
+
+    private var streamingText: some View {
+        Text(text)
+            .font(chatFont.font(
+                size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale,
+                numericWeight: chatWeight
+            ).italic())
+            .lineLimit(4)
+            .lineSpacing(PWAChatMetrics.lineSpacing(
+                font: chatFont,
+                size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale
+            ))
+            .textSelection(.enabled)
     }
 }
 
@@ -1060,7 +1144,7 @@ struct LiquidGlassBubbleBackground: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        GeometryReader { _ in
+        GeometryReader { geometry in
             let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
             let strength = clamped(settings.strength / 100)
             let dispersion = clamped(settings.dispersion)
@@ -1070,11 +1154,30 @@ struct LiquidGlassBubbleBackground: View {
             let washOpacity = clamped(tintOpacity * (0.012 + strength * 0.04 + visualThickness * 0.018))
             let rimLine = CGFloat(0.32 + rim * 1.45 + visualThickness * 0.24)
             let dispersionShift = CGFloat(dispersion * 1.35)
+            let usesStableLongBubble = geometry.size.height > 520
 
-            if reduceTransparency {
-                shape
-                    .fill(tint.opacity(0.48 + tintOpacity * 0.34))
-                    .overlay(shape.stroke(Color.white.opacity(0.28), lineWidth: 0.7))
+            if reduceTransparency || usesStableLongBubble {
+                // Very tall native Glass surfaces are tiled by the compositor
+                // and can flash gray blocks while scrolling. A static translucent
+                // surface is more important than live refraction for long essays.
+                ZStack {
+                    shape.fill(tint.opacity(clamped(0.13 + tintOpacity * 0.24)))
+                    shape.fill(Color.white.opacity(reduceTransparency ? 0.17 : 0.065))
+                }
+                .overlay {
+                    shape.stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.16 + rim * 0.10),
+                                Color.white.opacity(0.035),
+                                Color.black.opacity(0.025)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: rimLine
+                    )
+                }
             } else {
                 ZStack {
                     // One native glass surface per bubble. The system owns all

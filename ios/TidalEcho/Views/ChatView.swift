@@ -360,6 +360,7 @@ struct ChatView: View {
                             showsTimestamp: shouldShowTimestamp(for: message),
                             isTail: isBubbleTail(message),
                             isPaper: model.theme == .paper,
+                            isMist: model.theme == .mist,
                             onToggleStar: {
                                 Task {
                                     do {
@@ -413,6 +414,7 @@ struct ChatView: View {
                             text: model.streamingThinking,
                             palette: palette,
                             isPaper: model.theme == .paper,
+                            isMist: model.theme == .mist,
                             showsAIAvatar: model.showsAIAvatar,
                             chatFont: model.chatFont,
                             fontScale: model.fontScale,
@@ -449,19 +451,10 @@ struct ChatView: View {
                         Color.clear
                             .frame(height: 2)
                             .id("chat-bottom")
-                            .background {
-                                GeometryReader { marker in
-                                    Color.clear.preference(
-                                        key: ChatBottomPositionPreferenceKey.self,
-                                        value: marker.frame(in: .named("chat-scroll")).maxY
-                                    )
-                                }
-                            }
                     }
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
                 }
-                .coordinateSpace(name: "chat-scroll")
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Color.clear.frame(height: 76)
                 }
@@ -474,24 +467,29 @@ struct ChatView: View {
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
                 .scrollDismissesKeyboard(.interactively)
                 .refreshable { await model.refresh() }
-                .onPreferenceChange(ChatBottomPositionPreferenceKey.self) { bottomY in
-                    let visibleBottom = viewport.size.height - composerHeight
-                    let nextValue = bottomY <= visibleBottom + 56
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentSize.height <= geometry.containerSize.height
+                        || geometry.visibleRect.maxY >= geometry.contentSize.height - 56
+                } action: { _, nextValue in
                     if nextValue != isAtBottom { isAtBottom = nextValue }
                 }
                 .onAppear { positionInitialHistoryIfNeeded(proxy) }
                 .onChange(of: model.messages.count) { _ in
                     guard !isPrependingHistory else { return }
-                    let sentByMe = model.messages.last?.author == .human
-                    guard isAtBottom || sentByMe || !didPositionInitialHistory else { return }
-                    if didPositionInitialHistory && !model.isLoadingHistory {
-                        scrollToBottom(proxy, animated: true)
-                    } else {
-                        scrollToBottom(proxy, animated: false)
+                    guard didPositionInitialHistory else {
+                        guard !model.isLoadingHistory, !model.messages.isEmpty else { return }
+                        didPositionInitialHistory = true
+                        settleAtBottom(proxy)
+                        return
                     }
+                    guard !model.isLoadingHistory else { return }
+                    let sentByMe = model.messages.last?.author == .human
+                    guard isAtBottom || sentByMe else { return }
+                    scrollToBottom(proxy, animated: true)
                 }
                 .onChange(of: model.isLoadingHistory) { loading in
                     guard !loading, !model.messages.isEmpty else { return }
+                    guard !didPositionInitialHistory else { return }
                     didPositionInitialHistory = true
                     settleAtBottom(proxy)
                 }
@@ -552,7 +550,7 @@ struct ChatView: View {
     }
 
     private func positionInitialHistoryIfNeeded(_ proxy: ScrollViewProxy) {
-        guard !model.messages.isEmpty else { return }
+        guard !model.isLoadingHistory, !model.messages.isEmpty else { return }
         didPositionInitialHistory = true
         settleAtBottom(proxy)
     }
@@ -1070,14 +1068,6 @@ private struct ComposerHeightPreferenceKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
-    }
-}
-
-private struct ChatBottomPositionPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = .greatestFiniteMagnitude
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
     }
 }
 

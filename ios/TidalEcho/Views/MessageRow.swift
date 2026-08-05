@@ -1060,18 +1060,16 @@ struct LiquidGlassBubbleBackground: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
-        GeometryReader { geometry in
+        GeometryReader { _ in
             let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
             let strength = clamped(settings.strength / 100)
             let dispersion = clamped(settings.dispersion)
             let rim = clamped(settings.rimWidth)
-            let magnify = clamped(settings.magnify)
-            let blur = clamped(settings.blur)
-            let opticalSize = CGFloat(max(60, settings.size))
-            let glassTintOpacity = clamped(0.035 + tintOpacity * 0.20)
-            let regularGlassOpacity = clamped(0.08 + blur * 0.64 + strength * 0.18)
-            let rimLine = CGFloat(0.55 + rim * 2.45)
-            let dispersionShift = CGFloat(dispersion * 2.4)
+            let visualThickness = clamped((settings.size - 80) / 180)
+            let glassTintOpacity = clamped(0.018 + tintOpacity * (0.065 + strength * 0.045))
+            let washOpacity = clamped(tintOpacity * (0.012 + strength * 0.04 + visualThickness * 0.018))
+            let rimLine = CGFloat(0.32 + rim * 1.45 + visualThickness * 0.24)
+            let dispersionShift = CGFloat(dispersion * 1.35)
 
             if reduceTransparency {
                 shape
@@ -1079,90 +1077,58 @@ struct LiquidGlassBubbleBackground: View {
                     .overlay(shape.stroke(Color.white.opacity(0.28), lineWidth: 0.7))
             } else {
                 ZStack {
-                    // Keep Apple's backdrop material in the system composition
-                    // tree. Applying layerEffect here rasterized only the clear
-                    // source and discarded the late-composited glass backdrop.
+                    // One native glass surface per bubble. The system owns all
+                    // backdrop refraction, blur, lighting and motion response.
                     shape
                         .fill(Color.white.opacity(0.001))
                         .glassEffect(
                             .clear
                                 .tint(tint.opacity(glassTintOpacity))
-                                .interactive(true),
+                                .interactive(false),
                             in: shape
                         )
 
-                    // The regular material adds continuous blur/weight over the
-                    // clear lens. Strength and blur now change the actual system
-                    // glass rather than a decorative gradient.
-                    shape
-                        .fill(Color.white.opacity(0.001))
-                        .glassEffect(
-                            .regular.tint(tint.opacity(glassTintOpacity * 0.72)),
-                            in: shape
-                        )
-                        .opacity(regularGlassOpacity)
-                        .scaleEffect(CGFloat(1 + magnify * 0.018))
+                    // A flat tint wash changes visual thickness without asking
+                    // the compositor to sample or blur the backdrop a second time.
+                    shape.fill(tint.opacity(washOpacity))
 
-                    // A restrained optical caustic makes the lens curvature
-                    // readable on flat wallpapers while preserving the native
-                    // glass underneath.
-                    Ellipse()
-                        .fill(RadialGradient(
-                            colors: [
-                                Color.white.opacity(0.17 + strength * 0.28),
-                                Color.white.opacity(0.035 + rim * 0.08),
-                                .clear
-                            ],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: opticalSize * 0.48
-                        ))
-                        .frame(
-                            width: opticalSize * CGFloat(0.72 + magnify * 0.34),
-                            height: opticalSize * CGFloat(0.25 + rim * 0.18)
-                        )
-                        .position(
-                            x: geometry.size.width * CGFloat(0.23 + magnify * 0.12),
-                            y: geometry.size.height * CGFloat(0.06 + rim * 0.12)
-                        )
-                        .blur(radius: CGFloat(0.8 + blur * 3.4))
-                        .blendMode(.plusLighter)
+                    if dispersion > 0.001 {
+                        // Lightweight rim-only approximation. True RGB backdrop
+                        // displacement remains reserved for an explicit enhanced
+                        // renderer with a captured background texture.
+                        shape
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.clear, Color.red.opacity(0.26), Color.pink.opacity(0.10), .clear],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: rimLine
+                            )
+                            .offset(x: dispersionShift, y: dispersionShift * 0.28)
+                            .opacity(dispersion * 0.46)
 
-                    // Chromatic separation is deliberately confined to the rim.
-                    // Opposing offsets make the dispersion slider immediately
-                    // visible without painting a full rainbow outline.
-                    shape
-                        .stroke(
-                            LinearGradient(
-                                colors: [.clear, Color.red.opacity(0.48), Color.pink.opacity(0.20), .clear],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: rimLine
-                        )
-                        .offset(x: dispersionShift, y: dispersionShift * 0.35)
-                        .opacity(dispersion * 0.72)
-
-                    shape
-                        .stroke(
-                            LinearGradient(
-                                colors: [.clear, Color.cyan.opacity(0.50), Color.blue.opacity(0.18), .clear],
-                                startPoint: .bottomTrailing,
-                                endPoint: .topLeading
-                            ),
-                            lineWidth: rimLine
-                        )
-                        .offset(x: -dispersionShift, y: -dispersionShift * 0.35)
-                        .opacity(dispersion * 0.72)
+                        shape
+                            .stroke(
+                                LinearGradient(
+                                    colors: [.clear, Color.cyan.opacity(0.28), Color.blue.opacity(0.09), .clear],
+                                    startPoint: .bottomTrailing,
+                                    endPoint: .topLeading
+                                ),
+                                lineWidth: rimLine
+                            )
+                            .offset(x: -dispersionShift, y: -dispersionShift * 0.28)
+                            .opacity(dispersion * 0.46)
+                    }
                 }
                 .clipShape(shape)
                 .overlay {
                     shape.stroke(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(0.34 + rim * 0.32),
-                                Color.white.opacity(0.07),
-                                Color.black.opacity(0.025 + strength * 0.035)
+                                Color.white.opacity(0.10 + rim * 0.13 + visualThickness * 0.04),
+                                Color.white.opacity(0.025),
+                                Color.black.opacity(0.018 + strength * 0.018)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -1171,9 +1137,9 @@ struct LiquidGlassBubbleBackground: View {
                     )
                 }
                 .shadow(
-                    color: Color.black.opacity(0.035 + strength * 0.035),
-                    radius: CGFloat(5 + blur * 5),
-                    y: 2.5
+                    color: Color.black.opacity(0.018 + strength * 0.018),
+                    radius: 2.2,
+                    y: 1.2
                 )
             }
         }

@@ -562,47 +562,65 @@ private struct AppearanceSettingsView: View {
             )
 
             if model.bubbleStyle == .liquid {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("原生 Glass：背景折射、模糊、光照与动态反馈", systemImage: "checkmark.circle")
+                    Label("SwiftUI 轻量层：边缘色散、Fresnel 宽度与视觉厚度", systemImage: "slider.horizontal.3")
+                    Label("需背景纹理 + Metal：真实扭曲、RGB 位移、放大与手动模糊", systemImage: "cpu")
+                    Text("当前未启用 CABackdropLayer；每个消息气泡只创建一个原生 Glass。")
+                        .padding(.top, 2)
+                }
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText)
+
                 settingSlider(
                     title: "扭曲 strength",
                     valueText: String(format: "%.1f", model.liquidGlassStrength),
                     value: $model.liquidGlassStrength,
                     range: 0...100,
-                    step: 1
+                    step: 1,
+                    note: "原生模式下调节颜色厚度；真实折射强度需要背景纹理。"
                 )
                 settingSlider(
                     title: "色散 dispersion",
                     valueText: String(format: "%.2f", model.liquidGlassDispersion),
                     value: $model.liquidGlassDispersion,
                     range: 0...1,
-                    step: 0.01
+                    step: 0.01,
+                    note: "当前是轻量边缘色散；真实 RGB 位移需要 Metal 与背景纹理。"
                 )
                 settingSlider(
                     title: "过渡 rimWidth",
                     valueText: String(format: "%.2f", model.liquidGlassRimWidth),
                     value: $model.liquidGlassRimWidth,
                     range: 0...1,
-                    step: 0.01
+                    step: 0.01,
+                    note: "SwiftUI 调节 Fresnel 边缘宽度，不重复采样背景。"
                 )
                 settingSlider(
                     title: "放大 magnify",
-                    valueText: String(format: "%.2f", model.liquidGlassMagnify),
+                    valueText: "需增强玻璃",
                     value: $model.liquidGlassMagnify,
                     range: 0...1,
-                    step: 0.01
+                    step: 0.01,
+                    note: "必须取得气泡后方纹理；纯原生模式暂不执行。",
+                    isEnabled: false
                 )
                 settingSlider(
                     title: "背景模糊 blur",
-                    valueText: String(format: "%.2f", model.liquidGlassBlur),
+                    valueText: "原生接管",
                     value: $model.liquidGlassBlur,
                     range: 0...1,
-                    step: 0.01
+                    step: 0.01,
+                    note: "由 iOS 26 Glass 自动处理；连续手动模糊需要背景纹理。",
+                    isEnabled: false
                 )
                 settingSlider(
                     title: "光学尺度 size",
                     valueText: String(format: "%.0f", model.liquidGlassSize),
                     value: $model.liquidGlassSize,
                     range: 80...260,
-                    step: 1
+                    step: 1,
+                    note: "SwiftUI 调节视觉厚度与边缘尺度。"
                 )
             }
 
@@ -637,15 +655,24 @@ private struct AppearanceSettingsView: View {
         valueText: String,
         value: Binding<Double>,
         range: ClosedRange<Double>,
-        step: Double
+        step: Double,
+        note: String? = nil,
+        isEnabled: Bool = true
     ) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text(title)
                 Spacer()
                 Text(valueText).foregroundStyle(palette.secondaryText)
             }
-            Slider(value: value, in: range, step: step).tint(palette.accent)
+            Slider(value: value, in: range, step: step)
+                .tint(palette.accent)
+                .disabled(!isEnabled)
+            if let note {
+                Text(note)
+                    .font(.caption2)
+                    .foregroundStyle(palette.secondaryText)
+            }
         }
     }
 

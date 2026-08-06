@@ -530,10 +530,13 @@ private struct ProcessRow: View {
     private var isThinking: Bool { message.kind == "thinking" }
     private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
     private var isHarbor: Bool { !isPaper && !isMist }
+    private var processFontSize: Double {
+        PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.07 : 1)
+    }
 
     private var mistTrigger: some View {
         HStack(spacing: 6) {
-            Image(systemName: isThinking ? "clock" : "wrench")
+            Image(systemName: isThinking ? "cloud" : "wrench")
                 .font(.system(size: isThinking ? 12 : 11, weight: .medium))
             Text(isThinking ? "Thinking" : "Action")
             Image(systemName: "chevron.right")
@@ -589,7 +592,7 @@ private struct ProcessRow: View {
         if isThinking {
             Text(message.text)
                 .font(chatFont.font(
-                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.07 : 1),
+                    size: processFontSize,
                     numericWeight: chatWeight
                 ).italic())
                 .lineSpacing(PWAChatMetrics.lineSpacing(
@@ -601,7 +604,13 @@ private struct ProcessRow: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(message.meta.steps.enumerated()), id: \.offset) { _, step in
-                    ToolStepPreview(step: step, palette: palette)
+                    ToolStepPreview(
+                        step: step,
+                        palette: palette,
+                        chatFont: chatFont,
+                        fontSize: processFontSize,
+                        chatWeight: chatWeight
+                    )
                 }
             }
         }
@@ -684,6 +693,9 @@ private struct ProcessRow: View {
 private struct ToolStepPreview: View {
     let step: ToolStep
     let palette: EchoPalette
+    let chatFont: EchoChatFont
+    let fontSize: Double
+    let chatWeight: Double
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -691,7 +703,7 @@ private struct ToolStepPreview: View {
             previewLine("cmd", step.cmd, monospaced: true, limit: 5)
             previewLine("result", step.result, monospaced: true, limit: 4)
         }
-        .font(.system(size: 12))
+        .font(chatFont.font(size: fontSize, numericWeight: chatWeight))
     }
 
     @ViewBuilder
@@ -701,7 +713,11 @@ private struct ToolStepPreview: View {
                 Text("\(key):")
                     .foregroundStyle(palette.secondaryText.opacity(0.76))
                 Text(value)
-                    .font(monospaced ? .system(size: 11.5, design: .monospaced) : .system(size: 12))
+                    .font(
+                        monospaced
+                            ? .system(size: CGFloat(fontSize), design: .monospaced)
+                            : chatFont.font(size: fontSize, numericWeight: chatWeight)
+                    )
                     .foregroundStyle(palette.text.opacity(0.78))
                     .lineLimit(limit)
                     .textSelection(.enabled)
@@ -749,7 +765,7 @@ struct StreamingProcessRow: View {
         } else if isMist {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 7) {
-                    Image(systemName: "clock")
+                    Image(systemName: "cloud")
                         .font(.system(size: 11, weight: .medium))
                     Text("Thinking…")
                         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
@@ -1220,7 +1236,7 @@ struct LiquidGlassBubbleBackground: View {
             let washOpacity = clamped(tintOpacity * (0.012 + strength * 0.04 + visualThickness * 0.018))
             let rimLine = CGFloat(0.32 + rim * 1.45 + visualThickness * 0.24)
             let dispersionShift = CGFloat(dispersion * 1.35)
-            let usesStableLongBubble = geometry.size.height > 1700
+            let usesStableLongBubble = geometry.size.height > 2000
 
             if reduceTransparency || usesStableLongBubble {
                 // Very tall native Glass surfaces are tiled by the compositor

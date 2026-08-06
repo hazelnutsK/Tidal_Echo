@@ -20,7 +20,7 @@ struct ChatView: View {
     @State private var isPrependingHistory = false
     @State private var composerHeight: CGFloat = 70
     @State private var isAtBottom = true
-    @State private var scrollPosition = ScrollPosition(edge: .bottom)
+    @State private var chatScrollView: UIScrollView?
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -44,11 +44,6 @@ struct ChatView: View {
                 messageList
                 topFog
                 topBar
-
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    bottomFog
-                }
 
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
@@ -235,41 +230,6 @@ struct ChatView: View {
         }
         .frame(height: 120)
         .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-    }
-
-    private var bottomFog: some View {
-        ZStack {
-            VariableBackdropBlur(
-                radius: 16,
-                mask: .clearTopBlurredBottom,
-                fadeFrom: 0.18,
-                fadeTo: 0.72
-            )
-
-            VariableBackdropBlur(
-                radius: 3,
-                mask: .clearTopBlurredBottom,
-                fadeFrom: 0.46,
-                fadeTo: 0.90
-            )
-
-            Rectangle()
-                .fill(topFogTint)
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0.02),
-                            .init(color: .black.opacity(0.78), location: 0.58),
-                            .init(color: .black, location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-        }
-        .frame(height: composerHeight + 54)
-        .ignoresSafeArea(edges: .bottom)
         .allowsHitTesting(false)
     }
 
@@ -491,9 +451,16 @@ struct ChatView: View {
 
                         Color.clear
                             .frame(height: 2)
+                            .id("chat-bottom")
                     }
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
+                    .background {
+                        ScrollViewResolver { resolved in
+                            if chatScrollView !== resolved { chatScrollView = resolved }
+                        }
+                        .frame(width: 0, height: 0)
+                    }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Color.clear.frame(height: 76)
@@ -506,7 +473,6 @@ struct ChatView: View {
                 // the raised composer with no reachable space below it.
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
                 .scrollDismissesKeyboard(.interactively)
-                .scrollPosition($scrollPosition)
                 .refreshable { await model.refresh() }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentSize.height <= geometry.containerSize.height
@@ -514,46 +480,46 @@ struct ChatView: View {
                 } action: { _, nextValue in
                     if nextValue != isAtBottom { isAtBottom = nextValue }
                 }
-                .onAppear { positionInitialHistoryIfNeeded() }
+                .onAppear { positionInitialHistoryIfNeeded(proxy) }
                 .onChange(of: model.messages.count) { _ in
                     guard !isPrependingHistory else { return }
                     guard didPositionInitialHistory else {
                         guard !model.isLoadingHistory, !model.messages.isEmpty else { return }
                         didPositionInitialHistory = true
-                        settleAtBottom()
+                        settleAtBottom(proxy)
                         return
                     }
                     guard !model.isLoadingHistory else { return }
                     let sentByMe = model.messages.last?.author == .human
                     guard isAtBottom || sentByMe else { return }
-                    scrollToBottom(animated: true)
+                    scrollToBottom(proxy, animated: true)
                 }
                 .onChange(of: model.isLoadingHistory) { loading in
                     guard !loading, !model.messages.isEmpty else { return }
                     guard !didPositionInitialHistory else { return }
                     didPositionInitialHistory = true
-                    settleAtBottom()
+                    settleAtBottom(proxy)
                 }
                 .onChange(of: model.streamingReply) { _ in
-                    if isAtBottom { scrollToBottom(animated: false) }
+                    if isAtBottom { scrollToBottom(proxy, animated: false) }
                 }
                 .onChange(of: model.isTyping) { _ in
-                    if isAtBottom { scrollToBottom(animated: true) }
+                    if isAtBottom { scrollToBottom(proxy, animated: true) }
                 }
                 .onChange(of: viewport.size.height) { _ in
                     guard isAtBottom else { return }
-                    scrollToBottom(animated: false)
+                    scrollToBottom(proxy, animated: false)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                        scrollToBottom(animated: false)
+                        scrollToBottom(proxy, animated: false)
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                     // Match the PWA: focusing the composer opens enough scrollable
                     // room and settles the latest bubble above the keyboard.
                     isAtBottom = true
-                    scrollToBottom(animated: true)
+                    scrollToBottom(proxy, animated: true)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-                        scrollToBottom(animated: false)
+                        scrollToBottom(proxy, animated: false)
                     }
                 }
                 .onChange(of: model.navigationRequest) { request in
@@ -567,8 +533,7 @@ struct ChatView: View {
                 .overlay(alignment: .bottomTrailing) {
                     if !isAtBottom {
                         Button {
-                            isAtBottom = true
-                            scrollToBottom(animated: true)
+                            jumpToBottom(proxy)
                         } label: {
                             Image(systemName: "arrow.down")
                                 .font(.system(size: 15, weight: .semibold))
@@ -590,10 +555,10 @@ struct ChatView: View {
         }
     }
 
-    private func positionInitialHistoryIfNeeded() {
+    private func positionInitialHistoryIfNeeded(_ proxy: ScrollViewProxy) {
         guard !model.isLoadingHistory, !model.messages.isEmpty else { return }
         didPositionInitialHistory = true
-        settleAtBottom()
+        settleAtBottom(proxy)
     }
 
     private func shouldShowTimestamp(for message: ChatMessage) -> Bool {
@@ -628,11 +593,11 @@ struct ChatView: View {
         return precise.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
     }
 
-    private func settleAtBottom() {
-        scrollToBottom(animated: false)
+    private func settleAtBottom(_ proxy: ScrollViewProxy) {
+        scrollToBottom(proxy, animated: false)
         // Lazy rows and authenticated images finish their first layout on later passes.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            scrollToBottom(animated: false)
+            scrollToBottom(proxy, animated: false)
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             canTriggerOlderHistory = true
@@ -651,13 +616,86 @@ struct ChatView: View {
         }
     }
 
-    private func scrollToBottom(animated: Bool) {
-        if animated {
-            withAnimation(.easeOut(duration: 0.28)) {
-                scrollPosition.scrollTo(edge: .bottom)
+    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+        guard let scrollView = chatScrollView else {
+            DispatchQueue.main.async {
+                if animated {
+                    withAnimation(.easeOut(duration: 0.24)) {
+                        proxy.scrollTo("chat-bottom", anchor: .bottom)
+                    }
+                } else {
+                    proxy.scrollTo("chat-bottom", anchor: .bottom)
+                }
             }
-        } else {
-            scrollPosition.scrollTo(edge: .bottom)
+            return
+        }
+        let distance = abs(bottomOffset(for: scrollView) - scrollView.contentOffset.y)
+        let shouldAnimate = animated && distance <= max(scrollView.bounds.height * 1.8, 900)
+        setExactBottom(on: scrollView, animated: shouldAnimate)
+    }
+
+    private func jumpToBottom(_ proxy: ScrollViewProxy) {
+        guard let scrollView = chatScrollView else {
+            scrollToBottom(proxy, animated: false)
+            return
+        }
+
+        scrollView.layoutIfNeeded()
+        let destination = bottomOffset(for: scrollView)
+        let distance = abs(destination - scrollView.contentOffset.y)
+        let shouldAnimate = distance <= max(scrollView.bounds.height * 1.8, 900)
+        setExactBottom(on: scrollView, animated: shouldAnimate)
+
+        // Lazy rows can refine their heights after a long jump. Re-read the
+        // real UIKit content size and settle again instead of trusting an
+        // estimated SwiftUI row position.
+        for delay in [0.10, 0.32] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard chatScrollView === scrollView else { return }
+                setExactBottom(on: scrollView, animated: false)
+            }
+        }
+    }
+
+    private func setExactBottom(on scrollView: UIScrollView, animated: Bool) {
+        scrollView.layoutIfNeeded()
+        scrollView.setContentOffset(
+            CGPoint(x: scrollView.contentOffset.x, y: bottomOffset(for: scrollView)),
+            animated: animated
+        )
+    }
+
+    private func bottomOffset(for scrollView: UIScrollView) -> CGFloat {
+        max(
+            -scrollView.adjustedContentInset.top,
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+    }
+
+    private struct ScrollViewResolver: UIViewRepresentable {
+        let onResolve: (UIScrollView) -> Void
+
+        func makeUIView(context: Context) -> UIView {
+            let view = UIView(frame: .zero)
+            resolve(from: view)
+            return view
+        }
+
+        func updateUIView(_ uiView: UIView, context: Context) {
+            resolve(from: uiView)
+        }
+
+        private func resolve(from view: UIView) {
+            DispatchQueue.main.async {
+                var candidate = view.superview
+                while let current = candidate {
+                    if let scrollView = current as? UIScrollView {
+                        onResolve(scrollView)
+                        return
+                    }
+                    candidate = current.superview
+                }
+            }
         }
     }
 

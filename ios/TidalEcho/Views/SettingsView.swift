@@ -480,6 +480,15 @@ private struct AppearanceSettingsView: View {
             }
             .pickerStyle(.segmented)
 
+            if model.bubbleStyle != .liquid {
+                Picker("气泡形状", selection: $model.bubbleShapeStyle) {
+                    ForEach(EchoBubbleShapeStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             if model.bubbleStyle == .liquid {
                 VStack(spacing: 12) {
                     HStack {
@@ -636,6 +645,7 @@ private struct AppearanceSettingsView: View {
                 model.bubbleWidthScale = 1
                 model.bubbleBorderWidth = 0
                 model.bubbleStyle = .classic
+                model.bubbleShapeStyle = .standard
                 model.liquidGlassStrength = 56.8
                 model.liquidGlassDispersion = 0.39
                 model.liquidGlassRimWidth = 0.28

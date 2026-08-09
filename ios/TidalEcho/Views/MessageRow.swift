@@ -19,11 +19,14 @@ struct MessageRow: View {
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
+    let bubbleShapeStyle: EchoBubbleShapeStyle
     let liquidGlass: LiquidGlassSettings
     let chatWeight: Double
     let peerName: String
     let showsTimestamp: Bool
+    let isGroupStart: Bool
     let isTail: Bool
+    let isGroupedWithPrevious: Bool
     let isPaper: Bool
     let isMist: Bool
     let onToggleStar: () -> Void
@@ -38,52 +41,55 @@ struct MessageRow: View {
     let attachmentRequest: (Attachment) -> URLRequest?
 
     var body: some View {
-        if message.kind == "thinking" || message.kind == "act" {
-            ProcessRow(
-                message: message,
-                palette: palette,
-                chatFont: chatFont,
-                fontScale: fontScale,
-                chatWeight: chatWeight,
-                isPaper: isPaper,
-                isMist: isMist,
-                showsAIAvatar: showsAIAvatar,
-                bubbleWidthScale: bubbleWidthScale
-            )
-        } else if message.kind == "call" {
-            if message.author == .ai {
-                Button(action: onAnswerCall) {
-                    HStack(spacing: 12) {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 40, height: 40)
-                            .background(Color.green, in: Circle())
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("\(peerName)来电").font(.subheadline.weight(.semibold))
-                            Text(message.text).font(.caption).lineLimit(2)
+        Group {
+            if message.kind == "thinking" || message.kind == "act" {
+                ProcessRow(
+                    message: message,
+                    palette: palette,
+                    chatFont: chatFont,
+                    fontScale: fontScale,
+                    chatWeight: chatWeight,
+                    isPaper: isPaper,
+                    isMist: isMist,
+                    showsAIAvatar: showsAIAvatar,
+                    bubbleWidthScale: bubbleWidthScale
+                )
+            } else if message.kind == "call" {
+                if message.author == .ai {
+                    Button(action: onAnswerCall) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "phone.fill")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 40, height: 40)
+                                .background(Color.green, in: Circle())
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("\(peerName)来电").font(.subheadline.weight(.semibold))
+                                Text(message.text).font(.caption).lineLimit(2)
+                            }
+                            .foregroundStyle(palette.text)
+                            Spacer()
+                            Text("接听")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(palette.accent)
                         }
-                        .foregroundStyle(palette.text)
-                        Spacer()
-                        Text("接听")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(palette.accent)
+                        .padding(12)
+                        .background(palette.composer.opacity(0.86), in: RoundedRectangle(cornerRadius: 17))
+                        .padding(.horizontal, 28)
                     }
-                    .padding(12)
-                    .background(palette.composer.opacity(0.86), in: RoundedRectangle(cornerRadius: 17))
-                    .padding(.horizontal, 28)
+                    .buttonStyle(.plain)
+                } else {
+                    Text(message.text)
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
                 }
-                .buttonStyle(.plain)
             } else {
-                Text(message.text)
-                    .font(.caption)
-                    .foregroundStyle(palette.secondaryText)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
+                bubble
             }
-        } else {
-            bubble
         }
+        .padding(.top, usesCompactGroupSpacing && isGroupedWithPrevious ? -6 : 0)
     }
 
     private var bubble: some View {
@@ -219,12 +225,18 @@ struct MessageRow: View {
         }
     }
 
-    private var bubbleShape: PWAChatBubbleShape {
-        PWAChatBubbleShape(
+    private var bubbleShape: EchoMessageBubbleShape {
+        EchoMessageBubbleShape(
+            style: bubbleShapeStyle,
+            author: message.author,
             radius: CGFloat(bubbleRadius),
-            bottomLeftRadius: message.author == .ai ? 5 : CGFloat(bubbleRadius),
-            bottomRightRadius: message.author == .human && isTail ? 5 : CGFloat(bubbleRadius)
+            isGroupStart: isGroupStart,
+            isTail: isTail
         )
+    }
+
+    private var usesCompactGroupSpacing: Bool {
+        bubbleStyle == .classic || bubbleStyle == .frosted
     }
 
     private var displayedReaction: String? {
@@ -405,6 +417,116 @@ private struct PWAChatBubbleShape: Shape {
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
         path.addArc(
             center: CGPoint(x: rect.minX + topLeft, y: rect.minY + topLeft),
+            radius: topLeft,
+            startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Material and silhouette are separate settings: classic/frosted bubbles can
+/// opt into Telegram-like grouping while liquid glass keeps its rounded shape.
+private struct EchoMessageBubbleShape: Shape {
+    let style: EchoBubbleShapeStyle
+    let author: MessageAuthor
+    let radius: CGFloat
+    let isGroupStart: Bool
+    let isTail: Bool
+
+    func path(in rect: CGRect) -> Path {
+        if style == .telegram {
+            return TelegramBubbleShape(
+                author: author,
+                radius: radius,
+                isGroupStart: isGroupStart,
+                isTail: isTail
+            ).path(in: rect)
+        }
+        return PWAChatBubbleShape(
+            radius: radius,
+            bottomLeftRadius: author == .ai && isTail ? 5 : radius,
+            bottomRightRadius: author == .human && isTail ? 5 : radius
+        ).path(in: rect)
+    }
+}
+
+private struct TelegramBubbleShape: Shape {
+    let author: MessageAuthor
+    let radius: CGFloat
+    let isGroupStart: Bool
+    let isTail: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let tailWidth: CGFloat = isTail ? 7 : 0
+        let body = CGRect(
+            x: rect.minX + (author == .ai ? tailWidth : 0),
+            y: rect.minY,
+            width: max(1, rect.width - tailWidth),
+            height: rect.height
+        )
+        let limit = min(body.width, body.height) / 2
+        let full = min(max(0, radius), limit)
+        let joined = min(CGFloat(4), limit)
+        let topLeft = author == .ai ? (isGroupStart ? full : joined) : full
+        let topRight = author == .human ? (isGroupStart ? full : joined) : full
+        let bottomLeft = author == .ai ? joined : full
+        let bottomRight = author == .human ? joined : full
+
+        var path = Path()
+        path.move(to: CGPoint(x: body.minX + topLeft, y: body.minY))
+        path.addLine(to: CGPoint(x: body.maxX - topRight, y: body.minY))
+        path.addArc(
+            center: CGPoint(x: body.maxX - topRight, y: body.minY + topRight),
+            radius: topRight,
+            startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
+        )
+
+        if author == .human && isTail {
+            path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - 11))
+            path.addCurve(
+                to: CGPoint(x: rect.maxX, y: rect.maxY - 1),
+                control1: CGPoint(x: body.maxX, y: body.maxY - 5),
+                control2: CGPoint(x: rect.maxX - 3, y: rect.maxY - 1)
+            )
+            path.addCurve(
+                to: CGPoint(x: body.maxX - 10, y: body.maxY),
+                control1: CGPoint(x: rect.maxX - 4, y: rect.maxY),
+                control2: CGPoint(x: body.maxX - 5, y: body.maxY)
+            )
+        } else {
+            path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - bottomRight))
+            path.addArc(
+                center: CGPoint(x: body.maxX - bottomRight, y: body.maxY - bottomRight),
+                radius: bottomRight,
+                startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
+            )
+        }
+
+        if author == .ai && isTail {
+            path.addLine(to: CGPoint(x: body.minX + 10, y: body.maxY))
+            path.addCurve(
+                to: CGPoint(x: rect.minX, y: rect.maxY - 1),
+                control1: CGPoint(x: body.minX + 5, y: body.maxY),
+                control2: CGPoint(x: rect.minX + 3, y: rect.maxY - 1)
+            )
+            path.addCurve(
+                to: CGPoint(x: body.minX, y: body.maxY - 11),
+                control1: CGPoint(x: rect.minX + 4, y: rect.maxY),
+                control2: CGPoint(x: body.minX, y: body.maxY - 5)
+            )
+        } else {
+            path.addLine(to: CGPoint(x: body.minX + bottomLeft, y: body.maxY))
+            path.addArc(
+                center: CGPoint(x: body.minX + bottomLeft, y: body.maxY - bottomLeft),
+                radius: bottomLeft,
+                startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false
+            )
+        }
+
+        path.addLine(to: CGPoint(x: body.minX, y: body.minY + topLeft))
+        path.addArc(
+            center: CGPoint(x: body.minX + topLeft, y: body.minY + topLeft),
             radius: topLeft,
             startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
         )
@@ -850,6 +972,7 @@ struct StreamingReplyRow: View {
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
+    let bubbleShapeStyle: EchoBubbleShapeStyle
     let liquidGlass: LiquidGlassSettings
     let chatWeight: Double
 
@@ -880,11 +1003,7 @@ struct StreamingReplyRow: View {
                                 settings: liquidGlass
                             )
                         } else {
-                            let shape = PWAChatBubbleShape(
-                                radius: CGFloat(bubbleRadius),
-                                bottomLeftRadius: 5,
-                                bottomRightRadius: CGFloat(bubbleRadius)
-                            )
+                            let shape = streamingBubbleShape
                             if bubbleStyle == .frosted {
                                 shape
                                     .fill(.ultraThinMaterial)
@@ -904,11 +1023,7 @@ struct StreamingReplyRow: View {
                             RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
                                 .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                         } else {
-                            PWAChatBubbleShape(
-                                radius: CGFloat(bubbleRadius),
-                                bottomLeftRadius: 5,
-                                bottomRightRadius: CGFloat(bubbleRadius)
-                            )
+                            streamingBubbleShape
                                 .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
                         }
                     }
@@ -919,6 +1034,16 @@ struct StreamingReplyRow: View {
                 )
             if showsAIBubble { Spacer(minLength: showsAIAvatar ? 44 : 18) }
         }
+    }
+
+    private var streamingBubbleShape: EchoMessageBubbleShape {
+        EchoMessageBubbleShape(
+            style: bubbleShapeStyle,
+            author: .ai,
+            radius: CGFloat(bubbleRadius),
+            isGroupStart: true,
+            isTail: true
+        )
     }
 }
 
@@ -1216,6 +1341,7 @@ private struct AuthenticatedImageView: View {
             FullScreenImagePreview(image: item.image)
         }
     }
+
 }
 
 struct LiquidGlassBubbleBackground: View {

@@ -355,11 +355,14 @@ struct ChatView: View {
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,
+                            bubbleShapeStyle: model.bubbleShapeStyle,
                             liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight,
                             peerName: model.peerDisplayName,
                             showsTimestamp: shouldShowTimestamp(for: message),
+                            isGroupStart: isBubbleGroupStart(message),
                             isTail: isBubbleTail(message),
+                            isGroupedWithPrevious: isGroupedWithPrevious(message),
                             isPaper: model.theme == .paper,
                             isMist: model.theme == .mist,
                             onToggleStar: {
@@ -438,6 +441,7 @@ struct ChatView: View {
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,
+                            bubbleShapeStyle: model.bubbleShapeStyle,
                             liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight
                         )
@@ -568,23 +572,43 @@ struct ChatView: View {
         for later in model.messages.indices where later > index {
             let next = model.messages[later]
             if next.kind == "thinking" || next.kind == "act" { continue }
-            return next.author != .ai
+            // Short-chat parts created from one reply share the exact source
+            // timestamp. Hide only those intermediate timestamps; a later
+            // autonomous send has its own timestamp even without a human reply.
+            return next.author != .ai || next.timestamp != message.timestamp
         }
         return true
+    }
+
+    private func isBubbleGroupStart(_ message: ChatMessage) -> Bool {
+        guard let index = model.messages.firstIndex(where: { $0.id == message.id }), index > 0 else {
+            return true
+        }
+        return !messagesShareBubbleGroup(model.messages[index - 1], message)
+    }
+
+    private func isGroupedWithPrevious(_ message: ChatMessage) -> Bool {
+        !isBubbleGroupStart(message)
     }
 
     private func isBubbleTail(_ message: ChatMessage) -> Bool {
         guard message.kind != "thinking", message.kind != "act",
               let index = model.messages.firstIndex(where: { $0.id == message.id }),
               model.messages.indices.contains(index + 1) else { return true }
-        let next = model.messages[index + 1]
-        guard next.kind != "thinking", next.kind != "act", next.author == message.author,
-              let date = Self.messageDate(message.timestamp),
-              let nextDate = Self.messageDate(next.timestamp) else { return true }
+        return !messagesShareBubbleGroup(message, model.messages[index + 1])
+    }
+
+    private func messagesShareBubbleGroup(_ first: ChatMessage, _ second: ChatMessage) -> Bool {
+        guard first.kind != "thinking", first.kind != "act",
+              second.kind != "thinking", second.kind != "act",
+              first.author == second.author,
+              let date = Self.messageDate(first.timestamp),
+              let nextDate = Self.messageDate(second.timestamp) else { return false }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        guard calendar.isDate(date, inSameDayAs: nextDate) else { return true }
-        return nextDate.timeIntervalSince(date) >= 5 * 60
+        guard calendar.isDate(date, inSameDayAs: nextDate) else { return false }
+        let interval = nextDate.timeIntervalSince(date)
+        return interval >= 0 && interval < 5 * 60
     }
 
     private static func messageDate(_ raw: String) -> Date? {

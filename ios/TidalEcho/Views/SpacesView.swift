@@ -1,5 +1,6 @@
 import PhotosUI
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 import WebKit
 
@@ -762,11 +763,12 @@ private struct MomentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: post.author == .human ? "person.crop.circle.fill" : "sparkles")
-                    .font(.title2)
-                    .foregroundStyle(post.author == .human ? Color.blue : Color.purple)
+                MomentAvatar(
+                    image: post.author == .human ? model.humanAvatarImage : model.aiAvatarImage,
+                    fallback: post.author == .human ? "person.fill" : "sparkles"
+                )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(post.author == .human ? "小雪" : "小克").font(.headline)
+                    Text(authorName(post.author)).font(.headline)
                     Text(shortTimestamp(post.timestamp)).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -814,9 +816,9 @@ private struct MomentCard: View {
                         Button {
                             replyingTo = item.author
                         } label: {
-                            (Text(item.author == .human ? "小雪" : "小克")
+                            (Text(authorName(item.author))
                                 .fontWeight(.semibold)
-                             + Text(item.replyTo == nil ? "：" : " 回复 \(item.replyTo == .human ? "小雪" : "小克")：")
+                             + Text(item.replyTo == nil ? "：" : " 回复 \(authorName(item.replyTo!))：")
                              + Text(item.text))
                                 .font(.subheadline)
                                 .foregroundStyle(.primary)
@@ -830,7 +832,7 @@ private struct MomentCard: View {
             }
 
             HStack(spacing: 8) {
-                TextField(replyingTo == nil ? "写评论…" : "回复 \(replyingTo == .human ? "小雪" : "小克")…", text: $comment)
+                TextField(replyingTo == nil ? "写评论…" : "回复 \(authorName(replyingTo!))…", text: $comment)
                     .textFieldStyle(.roundedBorder)
                     .submitLabel(.send)
                     .onSubmit { sendComment() }
@@ -862,6 +864,33 @@ private struct MomentCard: View {
                 isSendingComment = false
             }
         }
+    }
+
+    private func authorName(_ author: MessageAuthor) -> String {
+        author == .human ? "小雪" : "Altair"
+    }
+}
+
+private struct MomentAvatar: View {
+    let image: UIImage?
+    let fallback: String
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: fallback)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 36, height: 36)
+        .background(Color.secondary.opacity(0.10))
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white.opacity(0.45), lineWidth: 0.6))
     }
 }
 

@@ -125,8 +125,8 @@ struct MessageRow: View {
                     }
                 }
                 .foregroundStyle(palette.text)
-                .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : 13)
-                .padding(.vertical, 9)
+                .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : bubbleHorizontalPadding)
+                .padding(.vertical, bubbleVerticalPadding)
                 .background { bubbleBackground }
                 .overlay {
                     if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
@@ -238,6 +238,13 @@ struct MessageRow: View {
     private var usesCompactGroupSpacing: Bool {
         bubbleStyle == .classic || bubbleStyle == .frosted
     }
+
+    private var usesTelegramShape: Bool {
+        bubbleShapeStyle == .telegram && usesCompactGroupSpacing
+    }
+
+    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
+    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
 
     private var displayedReaction: String? {
         message.meta.reactions[message.author == .human ? "ai" : "human"]
@@ -458,16 +465,13 @@ private struct TelegramBubbleShape: Shape {
     let isTail: Bool
 
     func path(in rect: CGRect) -> Path {
-        let tailWidth: CGFloat = isTail ? 7 : 0
-        let body = CGRect(
-            x: rect.minX + (author == .ai ? tailWidth : 0),
-            y: rect.minY,
-            width: max(1, rect.width - tailWidth),
-            height: rect.height
-        )
+        // Keep the rounded body on the same alignment line for every row.
+        // The tail grows outward instead of reserving space inside the bubble.
+        let tailWidth: CGFloat = 7
+        let body = rect
         let limit = min(body.width, body.height) / 2
         let full = min(max(0, radius), limit)
-        let joined = min(CGFloat(4), limit)
+        let joined = min(max(CGFloat(7), full * 0.42), min(CGFloat(10), limit))
         let topLeft = author == .ai ? (isGroupStart ? full : joined) : full
         let topRight = author == .human ? (isGroupStart ? full : joined) : full
         let bottomLeft = author == .ai ? joined : full
@@ -485,13 +489,13 @@ private struct TelegramBubbleShape: Shape {
         if author == .human && isTail {
             path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - 11))
             path.addCurve(
-                to: CGPoint(x: rect.maxX, y: rect.maxY - 1),
+                to: CGPoint(x: rect.maxX + tailWidth, y: rect.maxY - 1),
                 control1: CGPoint(x: body.maxX, y: body.maxY - 5),
-                control2: CGPoint(x: rect.maxX - 3, y: rect.maxY - 1)
+                control2: CGPoint(x: rect.maxX + tailWidth - 3, y: rect.maxY - 1)
             )
             path.addCurve(
                 to: CGPoint(x: body.maxX - 10, y: body.maxY),
-                control1: CGPoint(x: rect.maxX - 4, y: rect.maxY),
+                control1: CGPoint(x: rect.maxX + tailWidth - 4, y: rect.maxY),
                 control2: CGPoint(x: body.maxX - 5, y: body.maxY)
             )
         } else {
@@ -506,13 +510,13 @@ private struct TelegramBubbleShape: Shape {
         if author == .ai && isTail {
             path.addLine(to: CGPoint(x: body.minX + 10, y: body.maxY))
             path.addCurve(
-                to: CGPoint(x: rect.minX, y: rect.maxY - 1),
+                to: CGPoint(x: rect.minX - tailWidth, y: rect.maxY - 1),
                 control1: CGPoint(x: body.minX + 5, y: body.maxY),
-                control2: CGPoint(x: rect.minX + 3, y: rect.maxY - 1)
+                control2: CGPoint(x: rect.minX - tailWidth + 3, y: rect.maxY - 1)
             )
             path.addCurve(
                 to: CGPoint(x: body.minX, y: body.maxY - 11),
-                control1: CGPoint(x: rect.minX + 4, y: rect.maxY),
+                control1: CGPoint(x: rect.minX - tailWidth + 4, y: rect.maxY),
                 control2: CGPoint(x: body.minX, y: body.maxY - 5)
             )
         } else {
@@ -991,8 +995,8 @@ struct StreamingReplyRow: View {
                     size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
                 ))
                 .foregroundStyle(palette.text)
-                .padding(.horizontal, showsAIBubble ? 13 : 2)
-                .padding(.vertical, 9)
+                .padding(.horizontal, showsAIBubble ? bubbleHorizontalPadding : 2)
+                .padding(.vertical, bubbleVerticalPadding)
                 .background {
                     if showsAIBubble {
                         if bubbleStyle == .liquid {
@@ -1045,6 +1049,13 @@ struct StreamingReplyRow: View {
             isTail: true
         )
     }
+
+    private var usesTelegramShape: Bool {
+        bubbleShapeStyle == .telegram && (bubbleStyle == .classic || bubbleStyle == .frosted)
+    }
+
+    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
+    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
 }
 
 private struct AvatarBadge: View {

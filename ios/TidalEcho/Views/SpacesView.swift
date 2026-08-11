@@ -45,6 +45,9 @@ struct SpacesView: View {
                         SpaceLink(title: "日历", subtitle: "日程与纪念日", icon: "calendar", color: .green, unreadCount: 0) {
                             EchoCalendarView(model: model)
                         }
+                        SpaceLink(title: "书房", subtitle: "一起读的书", icon: "books.vertical.fill", color: .brown, unreadCount: 0) {
+                            BookshelfView(model: model)
+                        }
                     }
 
                     VStack(alignment: .leading, spacing: 9) {

@@ -99,6 +99,7 @@ struct MessageMeta: Decodable, Hashable {
     var edited: Bool
     var glyph: String?
     var steps: [ToolStep]
+    var bookRef: BookRef?
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -107,6 +108,7 @@ struct MessageMeta: Decodable, Hashable {
         case apiSession = "api_session"
         case streamID = "stream_id"
         case sortAfter = "sort_after"
+        case bookRef = "book_ref"
         case starred, timer, edited, glyph, steps, act
     }
 
@@ -129,6 +131,7 @@ struct MessageMeta: Decodable, Hashable {
         self.edited = false
         self.glyph = nil
         self.steps = []
+        self.bookRef = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -142,6 +145,7 @@ struct MessageMeta: Decodable, Hashable {
         starred = try values.decodeIfPresent(String.self, forKey: .starred)
         timer = try values.decodeIfPresent(MessageTimer.self, forKey: .timer)
         edited = try values.decodeIfPresent(Bool.self, forKey: .edited) ?? false
+        bookRef = try values.decodeIfPresent(BookRef.self, forKey: .bookRef)
         let nestedAct = try values.decodeIfPresent(ActMeta.self, forKey: .act)
         glyph = try values.decodeIfPresent(String.self, forKey: .glyph) ?? nestedAct?.glyph
         steps = try values.decodeIfPresent([ToolStep].self, forKey: .steps) ?? nestedAct?.steps ?? []
@@ -271,12 +275,15 @@ struct StreamEnvelope: Decodable {
     let apiSession: String?
     let timer: MessageTimer?
     let post: MomentPost?
+    let bookID: Int?
+    let annotation: BookAnnotation?
 
     enum CodingKeys: String, CodingKey {
-        case type, active, id, reactions, text, done, starred, timer, post
+        case type, active, id, reactions, text, done, starred, timer, post, annotation
         case streamID = "stream_id"
         case timestamp = "ts"
         case apiSession = "api_session"
+        case bookID = "book_id"
     }
 }
 

@@ -31,6 +31,8 @@ final class AppModel: ObservableObject {
     @Published var errorMessage: String?
     @Published private(set) var giftUnreadCount = 0
     @Published private(set) var momentsUnreadCount = 0
+    /// 小克在书页边留了一句话：正开着那一章的阅读页会当场把它长出来。
+    @Published var incomingBookAnnotation: BookAnnotationEvent?
     @Published var theme: EchoTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: Keys.theme) }
     }
@@ -784,6 +786,57 @@ final class AppModel: ObservableObject {
 
     func deleteMoment(id: Int) async throws { try await requireClient().deleteMoment(id: id) }
 
+    // MARK: - 书房
+
+    func bookShelf() async throws -> [Book] { try await requireClient().books() }
+
+    func importBook(data: Data, name: String) async throws -> BookImportResult {
+        try await requireClient().uploadBook(data: data, name: name)
+    }
+
+    func removeBook(id: Int) async throws { try await requireClient().deleteBook(id: id) }
+
+    func bookChapter(bookID: Int, index: Int) async throws -> BookChapter {
+        try await requireClient().bookChapter(bookID: bookID, index: index)
+    }
+
+    func reportBookProgress(bookID: Int, chapter: Int, offset: Int) async throws -> BookProgressResponse {
+        try await requireClient().reportBookProgress(bookID: bookID, chapter: chapter, offset: offset)
+    }
+
+    func annotateBook(
+        bookID: Int,
+        chapterIdx: Int,
+        start: Int,
+        end: Int,
+        quote: String,
+        note: String
+    ) async throws -> BookAnnotation {
+        try await requireClient().annotateBook(
+            bookID: bookID, chapterIdx: chapterIdx, start: start, end: end, quote: quote, note: note
+        )
+    }
+
+    func deleteBookAnnotation(id: Int) async throws {
+        try await requireClient().deleteBookAnnotation(id: id)
+    }
+
+    func bookThread(bookID: Int, annotationIDs: [Int]) async throws -> [ChatMessage] {
+        try await requireClient().bookThread(bookID: bookID, annotationIDs: annotationIDs)
+    }
+
+    /// 从书页里说的一句话。走主聊天流，所以照常触发打字提示。
+    func sendFromBook(text: String, bookRef: BookRef) async throws {
+        let client = try requireClient()
+        typingSuppressedUntil = .distantPast
+        updateTypingState(true)
+        _ = try await client.sendFromBook(
+            text: text,
+            bookRef: bookRef,
+            sessionID: activeSessionID == Self.legacySessionID ? nil : activeSessionID
+        )
+    }
+
     func spaceCalendar(year: Int, month: Int) async throws -> CalendarMonthResponse {
         try await requireClient().calendar(year: year, month: month)
     }
@@ -1211,6 +1264,11 @@ final class AppModel: ObservableObject {
                 if let id = envelope.id,
                    let index = historyArchive.firstIndex(where: { $0.id == id }) {
                     historyArchive[index].meta.starred = envelope.starred
+                }
+                return
+            case "book_annotation":
+                if let bookID = envelope.bookID, let annotation = envelope.annotation {
+                    incomingBookAnnotation = BookAnnotationEvent(bookID: bookID, annotation: annotation)
                 }
                 return
             case "remove":

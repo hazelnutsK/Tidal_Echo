@@ -206,15 +206,21 @@ struct ReaderTextView: UIViewRepresentable {
             guard end > start else { return UIMenu(children: suggestedActions) }
             let quote = ScalarOffset.substring(text, from: start, to: end)
 
+            // 划完就退出选择态：选区留着，后面任何一次重新布局都可能被系统
+            // 当成"要把插入点滚进视野"，把她读的位置带走。
+            let leaveSelection = { [weak textView] in
+                textView?.selectedTextRange = nil
+                textView?.resignFirstResponder()
+            }
             let mark = UIAction(title: "划线", image: UIImage(systemName: "highlighter")) { [weak self] _ in
                 guard let self else { return }
+                leaveSelection()
                 self.parent.onMark(start, end, quote)
-                textView.selectedTextRange = nil
             }
             let annotate = UIAction(title: "写批注", image: UIImage(systemName: "square.and.pencil")) { [weak self] _ in
                 guard let self else { return }
+                leaveSelection()
                 self.parent.onAnnotate(start, end, quote)
-                textView.selectedTextRange = nil
             }
             return UIMenu(children: [mark, annotate] + suggestedActions)
         }

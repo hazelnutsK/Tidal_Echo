@@ -10,7 +10,11 @@ struct BookReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("tidalEcho.readerFontSize") private var readerFontSize = 18.0
+    @AppStorage("tidalEcho.readerLineSpacing") private var readerLineSpacing = 0.62
+    @AppStorage("tidalEcho.readerMargin") private var readerMargin = 18.0
+    @AppStorage("tidalEcho.readerNoteFontSize") private var readerNoteFontSize = 16.0
 
+    @State private var showingReaderSettings = false
     @State private var chapter: BookChapter?
     @State private var annotations: [BookAnnotation] = []
     @State private var percent: Double
@@ -53,6 +57,8 @@ struct BookReaderView: View {
                         charCount: chapter.charCount,
                         annotations: annotations,
                         fontSize: readerFontSize,
+                        lineSpacing: readerLineSpacing,
+                        margin: readerMargin,
                         textColor: UIColor(palette.text),
                         herHighlight: UIColor(palette.accent.opacity(0.22)),
                         aiHighlight: UIColor(Color.orange.opacity(0.26)),
@@ -131,6 +137,17 @@ struct BookReaderView: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showingReaderSettings) {
+            ReaderSettingsSheet(
+                palette: palette,
+                fontSize: $readerFontSize,
+                lineSpacing: $readerLineSpacing,
+                margin: $readerMargin,
+                noteFontSize: $readerNoteFontSize
+            )
+            .presentationDetents([.height(390)])
+            .presentationDragIndicator(.visible)
+        }
         .task {
             lastSeenMessageID = model.messages.last?.id ?? 0
             await loadChapter(index: book.curChapter, restoreTo: book.curOffset)
@@ -179,10 +196,7 @@ struct BookReaderView: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(palette.secondaryText)
 
-            Menu {
-                Button { readerFontSize = min(26, readerFontSize + 1) } label: { Label("字大一点", systemImage: "textformat.size.larger") }
-                Button { readerFontSize = max(14, readerFontSize - 1) } label: { Label("字小一点", systemImage: "textformat.size.smaller") }
-            } label: {
+            Button { showingReaderSettings = true } label: {
                 Image(systemName: "textformat.size")
             }
 
@@ -349,6 +363,89 @@ struct BookReaderView: View {
               event.annotation.chapterIdx == chapter.chapterIdx,
               !annotations.contains(where: { $0.id == event.annotation.id }) else { return }
         annotations.append(event.annotation)
+    }
+}
+
+// MARK: - 版式
+
+/// 读多久舒服，只有她自己知道——四根拉条都存在本机，换书换章都还在。
+private struct ReaderSettingsSheet: View {
+    let palette: EchoPalette
+    @Binding var fontSize: Double
+    @Binding var lineSpacing: Double
+    @Binding var margin: Double
+    @Binding var noteFontSize: Double
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 20) {
+                slider(
+                    title: "正文字号",
+                    value: $fontSize,
+                    range: 14...28,
+                    step: 1,
+                    caption: "\(Int(fontSize))"
+                )
+                slider(
+                    title: "行间距",
+                    value: $lineSpacing,
+                    range: 0.2...1.4,
+                    step: 0.02,
+                    caption: String(format: "%.2f 倍", lineSpacing)
+                )
+                slider(
+                    title: "页边留白",
+                    value: $margin,
+                    range: 8...52,
+                    step: 2,
+                    caption: "\(Int(margin))"
+                )
+                slider(
+                    title: "批注与回复字号",
+                    value: $noteFontSize,
+                    range: 13...24,
+                    step: 1,
+                    caption: "\(Int(noteFontSize))"
+                )
+
+                Text("这一句是用当前正文字号排的，看着累就再调。")
+                    .font(.custom("Songti SC", size: fontSize))
+                    .foregroundStyle(palette.secondaryText)
+                    .lineSpacing(fontSize * lineSpacing)
+                    .padding(.horizontal, max(0, margin - 14))
+                    .padding(.top, 2)
+
+                Spacer(minLength: 0)
+            }
+            .padding(20)
+            .background(palette.background.ignoresSafeArea())
+            .navigationTitle("版式")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("好") { dismiss() }.foregroundStyle(palette.accent)
+                }
+            }
+        }
+        .tint(palette.accent)
+    }
+
+    private func slider(
+        title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        caption: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.subheadline).foregroundStyle(palette.text)
+                Spacer()
+                Text(caption).font(.caption.monospacedDigit()).foregroundStyle(palette.secondaryText)
+            }
+            Slider(value: value, in: range, step: step)
+        }
     }
 }
 

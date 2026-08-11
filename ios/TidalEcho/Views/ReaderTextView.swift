@@ -10,6 +10,10 @@ struct ReaderTextView: UIViewRepresentable {
     let charCount: Int
     let annotations: [BookAnnotation]
     let fontSize: Double
+    /// 行距倍数（相对字号）
+    let lineSpacing: Double
+    /// 左右页边留白
+    let margin: Double
     let textColor: UIColor
     let herHighlight: UIColor
     let aiHighlight: UIColor
@@ -26,7 +30,6 @@ struct ReaderTextView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.alwaysBounceVertical = true
         view.showsVerticalScrollIndicator = true
-        view.textContainerInset = UIEdgeInsets(top: 14, left: 18, bottom: 90, right: 18)
         view.delegate = context.coordinator
         view.contentInsetAdjustmentBehavior = .never
 
@@ -45,15 +48,35 @@ struct ReaderTextView: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
 
-        let signature = "\(text.hashValue)#\(fontSize)#\(annotations.map { "\($0.id):\($0.startOff)-\($0.endOff):\($0.author)" }.joined(separator: ","))"
-        if coordinator.renderedSignature != signature {
-            let keepOffset = coordinator.renderedText == text ? view.contentOffset.y : 0
-            coordinator.renderedSignature = signature
+        view.textContainerInset = UIEdgeInsets(
+            top: 14, left: CGFloat(margin), bottom: 90, right: CGFloat(margin)
+        )
+
+        // 排版签名（正文/字号/行距）变了才重建；只是多了一条划线的话，
+        // 走下面的属性增量——重新赋 attributedText 会让 TextKit 重排后把
+        // 滚动位置甩到别处（她一划线页面就跳到底，就是这么来的）。
+        let layoutSignature = "\(text.hashValue)#\(fontSize)#\(lineSpacing)"
+        let markSignature = annotations
+            .map { "\($0.id):\($0.startOff)-\($0.endOff):\($0.author):\($0.hasNote)" }
+            .joined(separator: ",")
+
+        if coordinator.layoutSignature != layoutSignature {
+            let sameText = coordinator.renderedText == text
+            let keepOffset = sameText ? view.contentOffset.y : 0
+            coordinator.layoutSignature = layoutSignature
+            coordinator.markSignature = markSignature
             coordinator.renderedText = text
             view.attributedText = attributedChapter()
-            view.layoutIfNeeded()
-            // 重新上色不该把她读的位置弹走
-            view.contentOffset = CGPoint(x: 0, y: keepOffset)
+            if sameText {
+                // 排版换了尺寸，位置要等布局落定再钉回去
+                DispatchQueue.main.async {
+                    let maxY = max(0, view.contentSize.height - view.bounds.height)
+                    view.setContentOffset(CGPoint(x: 0, y: min(keepOffset, maxY)), animated: false)
+                }
+            }
+        } else if coordinator.markSignature != markSignature {
+            coordinator.markSignature = markSignature
+            applyMarks(to: view.textStorage, replacingExisting: true)
         }
 
         if let target = scrollToOffset, coordinator.appliedScrollTarget != target {
@@ -64,46 +87,68 @@ struct ReaderTextView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
+    // MARK: - 排版
+
+    private var readerFont: UIFont {
+        UIFont(name: "Songti SC", size: CGFloat(fontSize))
+            ?? UIFont(name: "STSongti-SC-Regular", size: CGFloat(fontSize))
+            ?? UIFont.systemFont(ofSize: CGFloat(fontSize))
+    }
+
     private func attributedChapter() -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = CGFloat(fontSize) * 0.62
+        paragraph.lineSpacing = CGFloat(fontSize * lineSpacing)
         paragraph.paragraphSpacing = CGFloat(fontSize) * 0.5
         paragraph.firstLineHeadIndent = CGFloat(fontSize) * 2
         paragraph.alignment = .justified
 
-        let font = UIFont(name: "PingFangSC-Regular", size: CGFloat(fontSize))
-            ?? UIFont.systemFont(ofSize: CGFloat(fontSize))
         let attributed = NSMutableAttributedString(
             string: text,
             attributes: [
-                .font: font,
+                .font: readerFont,
                 .foregroundColor: textColor,
                 .paragraphStyle: paragraph
             ]
         )
+        applyMarks(to: attributed, replacingExisting: false)
+        return attributed
+    }
 
-        let utf16Count = attributed.length
+    /// 划线只是几个属性的事，别去动文本本身。
+    private func applyMarks(to storage: NSMutableAttributedString, replacingExisting: Bool) {
+        let full = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        if replacingExisting {
+            storage.removeAttribute(.backgroundColor, range: full)
+            storage.removeAttribute(.underlineStyle, range: full)
+            storage.removeAttribute(.underlineColor, range: full)
+        }
         // 她的先上色，小克的压在上面：他留的话本来就该更显眼一点
         for annotation in annotations.sorted(by: { !$0.isAI && $1.isAI }) {
             let start = ScalarOffset.toUTF16(text, annotation.startOff)
             let end = ScalarOffset.toUTF16(text, annotation.endOff)
-            guard end > start, start >= 0, end <= utf16Count else { continue }
+            guard end > start, start >= 0, end <= storage.length else { continue }
             let range = NSRange(location: start, length: end - start)
-            attributed.addAttribute(.backgroundColor, value: annotation.isAI ? aiHighlight : herHighlight, range: range)
+            storage.addAttribute(
+                .backgroundColor,
+                value: annotation.isAI ? aiHighlight : herHighlight,
+                range: range
+            )
             if annotation.hasNote {
-                attributed.addAttributes([
+                storage.addAttributes([
                     .underlineStyle: NSUnderlineStyle.single.rawValue,
                     .underlineColor: annotation.isAI ? aiHighlight.withAlphaComponent(0.9) : herHighlight.withAlphaComponent(0.9)
                 ], range: range)
             }
         }
-        return attributed
+        storage.endEditing()
     }
 
     final class Coordinator: NSObject, UITextViewDelegate, UIGestureRecognizerDelegate {
         var parent: ReaderTextView
         weak var textView: UITextView?
-        var renderedSignature = ""
+        var layoutSignature = ""
+        var markSignature = ""
         var renderedText = ""
         var appliedScrollTarget: Int?
 

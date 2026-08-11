@@ -14,6 +14,7 @@ struct BookAnnotationSheet: View {
     let onAnnotationDeleted: (Int) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("tidalEcho.readerNoteFontSize") private var noteFontSize = 16.0
     @State private var group: [BookAnnotation]
     @State private var thread: [ChatMessage]?
     @State private var draft = ""
@@ -55,7 +56,7 @@ struct BookAnnotationSheet: View {
                     VStack(alignment: .leading, spacing: 14) {
                         if let quote = context.selection?.quote, !quote.isEmpty {
                             Text(quote)
-                                .font(.callout)
+                                .font(.custom("Songti SC", size: noteFontSize))
                                 .foregroundStyle(palette.text)
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,11 +68,21 @@ struct BookAnnotationSheet: View {
                         }
 
                         ForEach(rootAnnotations) { annotation in
-                            AnnotationRow(annotation: annotation, palette: palette, isReply: false) {
+                            AnnotationRow(
+                                annotation: annotation,
+                                palette: palette,
+                                fontSize: noteFontSize,
+                                isReply: false
+                            ) {
                                 pendingDeletion = annotation
                             }
                             ForEach(replies(of: annotation)) { reply in
-                                AnnotationRow(annotation: reply, palette: palette, isReply: true) {
+                                AnnotationRow(
+                                    annotation: reply,
+                                    palette: palette,
+                                    fontSize: noteFontSize,
+                                    isReply: true
+                                ) {
                                     pendingDeletion = reply
                                 }
                             }
@@ -91,7 +102,7 @@ struct BookAnnotationSheet: View {
                                     .foregroundStyle(palette.secondaryText)
                             } else {
                                 ForEach(thread ?? []) { message in
-                                    ThreadRow(message: message, palette: palette)
+                                    ThreadRow(message: message, palette: palette, fontSize: noteFontSize)
                                 }
                             }
                         }
@@ -172,14 +183,15 @@ struct BookAnnotationSheet: View {
         .background(.ultraThinMaterial)
     }
 
+    /// 纯划线（没写字）也要列出来——不然她想撤掉一条只划了线的，卡片上根本没有它。
     private var rootAnnotations: [BookAnnotation] {
         group.filter { annotation in
-            annotation.hasNote && (annotation.replyTo == nil || !group.contains { $0.id == annotation.replyTo })
+            annotation.replyTo == nil || !group.contains { $0.id == annotation.replyTo }
         }
     }
 
     private func replies(of annotation: BookAnnotation) -> [BookAnnotation] {
-        group.filter { $0.replyTo == annotation.id && $0.hasNote }
+        group.filter { $0.replyTo == annotation.id }
     }
 
     @MainActor
@@ -240,9 +252,8 @@ struct BookAnnotationSheet: View {
             try await model.deleteBookAnnotation(id: annotation.id)
             group.removeAll { $0.id == annotation.id }
             onAnnotationDeleted(annotation.id)
-            if group.isEmpty && context.composing == false && thread?.isEmpty != false {
-                dismiss()
-            }
+            // 这一处的划线都撤光了，卡片也就没什么可停留的了
+            if group.isEmpty { dismiss() }
         } catch {
             errorText = "没撤掉：\(error.localizedDescription)"
         }
@@ -252,24 +263,38 @@ struct BookAnnotationSheet: View {
 private struct AnnotationRow: View {
     let annotation: BookAnnotation
     let palette: EchoPalette
+    let fontSize: Double
     let isReply: Bool
     let onDelete: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
             Text(annotation.isAI ? "Altair" : "我")
-                .font(.caption2.weight(.semibold))
+                .font(.system(size: max(11, fontSize - 4), weight: .semibold))
                 .foregroundStyle(annotation.isAI ? Color.orange : palette.accent)
-                .frame(width: 42, alignment: .leading)
-            Text(annotation.note)
-                .font(.footnote)
-                .foregroundStyle(palette.text)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: 46, alignment: .leading)
+
+            if annotation.hasNote {
+                Text(annotation.note)
+                    .font(.system(size: fontSize))
+                    .foregroundStyle(palette.text)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text("只划了线")
+                    .font(.system(size: max(12, fontSize - 3)))
+                    .italic()
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             if !annotation.isAI {
                 Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(palette.secondaryText.opacity(0.6))
+                    Image(systemName: "trash")
+                        .font(.system(size: max(13, fontSize - 3)))
+                        .foregroundStyle(palette.secondaryText)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -281,14 +306,15 @@ private struct AnnotationRow: View {
 private struct ThreadRow: View {
     let message: ChatMessage
     let palette: EchoPalette
+    let fontSize: Double
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("\(message.author == .ai ? "Altair" : "我") · \(shortTime(message.timestamp))")
-                .font(.caption2)
+                .font(.system(size: max(11, fontSize - 5)))
                 .foregroundStyle(palette.secondaryText)
             Text(message.text)
-                .font(.footnote)
+                .font(.system(size: fontSize))
                 .foregroundStyle(palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)

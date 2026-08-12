@@ -39,9 +39,14 @@ struct BookshelfView: View {
             }
         }
         .background(palette.background.ignoresSafeArea())
-        .navigationTitle("书房")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("书房")
+                    .font(.custom("Songti SC", size: 17).weight(.semibold))
+                    .foregroundStyle(palette.text)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 if isImporting {
                     ProgressView()
@@ -100,9 +105,10 @@ struct BookshelfView: View {
             Image(systemName: "books.vertical")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(palette.accent.opacity(0.7))
-            Text("书架还是空的").font(.headline)
+            Text("书架还是空的")
+                .font(.custom("Songti SC", size: 17).weight(.semibold))
             Text("右上角 ＋ 放一本 epub 进来，\n我们就从同一页开始读。")
-                .font(.subheadline)
+                .font(.custom("Songti SC", size: 15))
                 .multilineTextAlignment(.center)
                 .foregroundStyle(palette.secondaryText)
         }
@@ -190,7 +196,7 @@ private struct BookCard: View {
                             endPoint: .bottomTrailing
                         )
                         Text(book.title)
-                            .font(.system(size: 15, weight: .semibold, design: .serif))
+                            .font(.custom("Songti SC", size: 15).weight(.semibold))
                             .foregroundStyle(palette.text)
                             .multilineTextAlignment(.center)
                             .lineLimit(4)
@@ -211,11 +217,11 @@ private struct BookCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             Text(book.title)
-                .font(.subheadline.weight(.semibold))
+                .font(.custom("Songti SC", size: 15).weight(.semibold))
                 .foregroundStyle(palette.text)
                 .lineLimit(1)
             Text("\(Int(book.percent.rounded()))% · \(book.annotations) 处划线")
-                .font(.caption)
+                .font(.custom("Songti SC", size: 12))
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
         }
@@ -265,7 +271,7 @@ struct BookBanner: View {
 
     var body: some View {
         Text(text)
-            .font(.footnote)
+            .font(.custom("Songti SC", size: 14))
             .foregroundStyle(.white)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 16)

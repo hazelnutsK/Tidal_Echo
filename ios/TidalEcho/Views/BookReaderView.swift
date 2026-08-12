@@ -13,6 +13,8 @@ struct BookReaderView: View {
     @AppStorage("tidalEcho.readerLineSpacing") private var readerLineSpacing = 0.62
     @AppStorage("tidalEcho.readerMargin") private var readerMargin = 18.0
     @AppStorage("tidalEcho.readerNoteFontSize") private var readerNoteFontSize = 16.0
+    @AppStorage("tidalEcho.readerFontWeight") private var readerFontWeight = 400.0
+    @AppStorage("tidalEcho.readerDarkMode") private var readerDarkMode = false
 
     @State private var showingReaderSettings = false
     @State private var chapter: BookChapter?
@@ -31,6 +33,7 @@ struct BookReaderView: View {
     @State private var flashRef: BookRef?
     @State private var hasUnreadChat = false
     @State private var lastSeenMessageID = 0
+    @State private var footerShowsPercent = false
 
     private let reportInterval: TimeInterval = 30
     private let reportChars = 500
@@ -41,11 +44,14 @@ struct BookReaderView: View {
         _percent = State(initialValue: book.percent)
     }
 
-    private var palette: EchoPalette { model.theme.palette }
+    private var readerBackground: Color { readerDarkMode ? .black : Color(hex: 0xEEEDED) }
+    private var readerText: Color { readerDarkMode ? .white : .black }
+    private var readerSecondaryText: Color { readerText.opacity(0.56) }
+    private var readerAccent: Color { readerDarkMode ? .white : .black }
 
     var body: some View {
         ZStack(alignment: .top) {
-            palette.background.ignoresSafeArea()
+            readerBackground.ignoresSafeArea()
 
             VStack(spacing: 0) {
                 header
@@ -57,10 +63,11 @@ struct BookReaderView: View {
                         charCount: chapter.charCount,
                         annotations: annotations,
                         fontSize: readerFontSize,
+                        fontWeight: readerFontWeight,
                         lineSpacing: readerLineSpacing,
                         margin: readerMargin,
-                        textColor: UIColor(palette.text),
-                        herHighlight: UIColor(palette.accent.opacity(0.22)),
+                        textColor: UIColor(readerText),
+                        herHighlight: UIColor(readerAccent.opacity(0.18)),
                         aiHighlight: UIColor(Color.orange.opacity(0.26)),
                         scrollToOffset: restoreOffset,
                         onVisibleOffset: { offset in tracker.offset = offset },
@@ -90,7 +97,9 @@ struct BookReaderView: View {
                     Spacer()
                 } else {
                     Spacer()
-                    Text("这一章没打开").foregroundStyle(palette.secondaryText)
+                    Text("这一章没打开")
+                        .font(.custom("Songti SC", size: 16))
+                        .foregroundStyle(readerSecondaryText)
                     Spacer()
                 }
 
@@ -103,8 +112,13 @@ struct BookReaderView: View {
                     openFlash()
                 } label: {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Altair").font(.caption.weight(.semibold)).foregroundStyle(palette.accent)
-                        Text(flashText).font(.footnote).foregroundStyle(palette.text).lineLimit(3)
+                        Text("Altair")
+                            .font(.custom("Songti SC", size: 13).weight(.semibold))
+                            .foregroundStyle(readerAccent)
+                        Text(flashText)
+                            .font(.custom("Songti SC", size: 14))
+                            .foregroundStyle(readerText)
+                            .lineLimit(3)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(13)
@@ -139,13 +153,14 @@ struct BookReaderView: View {
         }
         .sheet(isPresented: $showingReaderSettings) {
             ReaderSettingsSheet(
-                palette: palette,
                 fontSize: $readerFontSize,
+                fontWeight: $readerFontWeight,
                 lineSpacing: $readerLineSpacing,
                 margin: $readerMargin,
-                noteFontSize: $readerNoteFontSize
+                noteFontSize: $readerNoteFontSize,
+                darkMode: $readerDarkMode
             )
-            .presentationDetents([.height(390)])
+            .presentationDetents([.height(520)])
             .presentationDragIndicator(.visible)
         }
         .task {
@@ -163,6 +178,7 @@ struct BookReaderView: View {
         .onChange(of: model.messages.last?.id ?? 0) { _ in noticeIncomingChat() }
         .onChange(of: model.incomingBookAnnotation) { _ in absorbAIAnnotation() }
         .statusBarHidden(false)
+        .preferredColorScheme(readerDarkMode ? .dark : .light)
     }
 
     // MARK: - 顶栏 / 底栏
@@ -178,26 +194,14 @@ struct BookReaderView: View {
                 Image(systemName: "chevron.left").font(.body.weight(.semibold))
             }
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(chapter?.title ?? book.title)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                if let chapter {
-                    Text("第 \(chapter.chapterIdx + 1) / \(chapter.totalChapters) 章 · \(chapter.heading)")
-                        .font(.caption2)
-                        .foregroundStyle(palette.secondaryText)
-                        .lineLimit(1)
-                }
-            }
+            Text(book.title)
+                .font(.custom("Songti SC", size: 16).weight(.semibold))
+                .lineLimit(1)
 
             Spacer(minLength: 6)
 
-            Text("\(Int(percent.rounded()))%")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(palette.secondaryText)
-
             Button { showingReaderSettings = true } label: {
-                Image(systemName: "textformat.size")
+                Image(systemName: "gearshape")
             }
 
             Button {
@@ -213,37 +217,61 @@ struct BookReaderView: View {
                     }
             }
         }
-        .font(.body)
-        .foregroundStyle(palette.text)
+        .font(.custom("Songti SC", size: 16))
+        .foregroundStyle(readerText)
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.ultraThinMaterial)
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 8) {
             Button {
                 Task { await goChapter(-1) }
             } label: {
-                Label("上一章", systemImage: "chevron.left").font(.footnote)
+                Label("上一章", systemImage: "chevron.left")
+                    .font(.custom("Songti SC", size: 14))
             }
             .disabled((chapter?.chapterIdx ?? 0) <= 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
+            Button { footerShowsPercent.toggle() } label: {
+                Text(footerProgressText)
+                    .font(.custom("Songti SC", size: 13))
+                    .monospacedDigit()
+                    .foregroundStyle(readerSecondaryText)
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
 
             Button {
                 Task { await goChapter(1) }
             } label: {
                 Label("下一章", systemImage: "chevron.right")
                     .labelStyle(.titleAndIcon)
-                    .font(.footnote)
+                    .font(.custom("Songti SC", size: 14))
             }
             .disabled(chapter.map { $0.chapterIdx >= $0.totalChapters - 1 } ?? true)
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .tint(palette.accent)
+        .tint(readerAccent)
         .padding(.horizontal, 22)
         .padding(.vertical, 11)
         .background(.ultraThinMaterial)
+    }
+
+    private var footerProgressText: String {
+        guard let chapter else { return "—" }
+        if footerShowsPercent { return "\(Int(percent.rounded()))%" }
+        return "第\(chineseNumber(chapter.chapterIdx + 1))章·共\(chineseNumber(chapter.totalChapters))章"
+    }
+
+    private func chineseNumber(_ value: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .spellOut
+        formatter.locale = Locale(identifier: "zh_CN")
+        return formatter.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
     // MARK: - 章节
@@ -370,22 +398,36 @@ struct BookReaderView: View {
 
 /// 读多久舒服，只有她自己知道——四根拉条都存在本机，换书换章都还在。
 private struct ReaderSettingsSheet: View {
-    let palette: EchoPalette
     @Binding var fontSize: Double
+    @Binding var fontWeight: Double
     @Binding var lineSpacing: Double
     @Binding var margin: Double
     @Binding var noteFontSize: Double
+    @Binding var darkMode: Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 20) {
+                Picker("阅读模式", selection: $darkMode) {
+                    Text("日间").tag(false)
+                    Text("夜间").tag(true)
+                }
+                .pickerStyle(.segmented)
+
                 slider(
                     title: "正文字号",
                     value: $fontSize,
                     range: 14...28,
                     step: 1,
                     caption: "\(Int(fontSize))"
+                )
+                slider(
+                    title: "正文字重",
+                    value: $fontWeight,
+                    range: 300...700,
+                    step: 25,
+                    caption: "\(Int(fontWeight))"
                 )
                 slider(
                     title: "行间距",
@@ -410,8 +452,8 @@ private struct ReaderSettingsSheet: View {
                 )
 
                 Text("这一句是用当前正文字号排的，看着累就再调。")
-                    .font(.custom("Songti SC", size: fontSize))
-                    .foregroundStyle(palette.secondaryText)
+                    .font(.custom("Songti SC", size: fontSize).weight(fontWeight.echoFontWeight))
+                    .foregroundStyle(Color.black.opacity(0.58))
                     .lineSpacing(fontSize * lineSpacing)
                     .padding(.horizontal, max(0, margin - 14))
                     .padding(.top, 2)
@@ -419,16 +461,24 @@ private struct ReaderSettingsSheet: View {
                 Spacer(minLength: 0)
             }
             .padding(20)
-            .background(palette.background.ignoresSafeArea())
-            .navigationTitle("版式")
+            .background(Color(hex: 0xEEEDED).ignoresSafeArea())
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("版式")
+                        .font(.custom("Songti SC", size: 16).weight(.semibold))
+                        .foregroundStyle(Color.black)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("好") { dismiss() }.foregroundStyle(palette.accent)
+                    Button("好") { dismiss() }
+                        .font(.custom("Songti SC", size: 16))
+                        .foregroundStyle(Color.black)
                 }
             }
         }
-        .tint(palette.accent)
+        .tint(.black)
+        .preferredColorScheme(.light)
     }
 
     private func slider(
@@ -440,11 +490,15 @@ private struct ReaderSettingsSheet: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(title).font(.subheadline).foregroundStyle(palette.text)
+                Text(title).font(.custom("Songti SC", size: 15)).foregroundStyle(Color.black)
                 Spacer()
-                Text(caption).font(.caption.monospacedDigit()).foregroundStyle(palette.secondaryText)
+                Text(caption)
+                    .font(.custom("Songti SC", size: 13))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.black.opacity(0.55))
             }
             Slider(value: value, in: range, step: step)
+                .tint(.black)
         }
     }
 }

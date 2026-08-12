@@ -10,6 +10,7 @@ struct ReaderTextView: UIViewRepresentable {
     let charCount: Int
     let annotations: [BookAnnotation]
     let fontSize: Double
+    let fontWeight: Double
     /// 行距倍数（相对字号）
     let lineSpacing: Double
     /// 左右页边留白
@@ -55,7 +56,7 @@ struct ReaderTextView: UIViewRepresentable {
         // 排版签名（正文/字号/行距）变了才重建；只是多了一条划线的话，
         // 走下面的属性增量——重新赋 attributedText 会让 TextKit 重排后把
         // 滚动位置甩到别处（她一划线页面就跳到底，就是这么来的）。
-        let layoutSignature = "\(text.hashValue)#\(fontSize)#\(lineSpacing)"
+        let layoutSignature = "\(text.hashValue)#\(fontSize)#\(fontWeight)#\(lineSpacing)#\(textColor)"
         let markSignature = annotations
             .map { "\($0.id):\($0.startOff)-\($0.endOff):\($0.author):\($0.hasNote)" }
             .joined(separator: ",")
@@ -90,15 +91,23 @@ struct ReaderTextView: UIViewRepresentable {
     // MARK: - 排版
 
     private var readerFont: UIFont {
-        UIFont(name: "Songti SC", size: CGFloat(fontSize))
+        let base = UIFont(name: "Songti SC", size: CGFloat(fontSize))
             ?? UIFont(name: "STSongti-SC-Regular", size: CGFloat(fontSize))
             ?? UIFont.systemFont(ofSize: CGFloat(fontSize))
+        let normalizedWeight = min(0.8, max(-0.8, (fontWeight - 400) / 375))
+        let descriptor = base.fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: CGFloat(normalizedWeight)]
+        ])
+        return UIFont(descriptor: descriptor, size: CGFloat(fontSize))
     }
 
     private func attributedChapter() -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = CGFloat(fontSize * lineSpacing)
-        paragraph.paragraphSpacing = CGFloat(fontSize) * 0.5
+        // EPUB chapters already contain paragraph breaks. Adding another half
+        // line after every paragraph doubled that gap and made the page look
+        // like separate cards rather than continuous book text.
+        paragraph.paragraphSpacing = 0
         paragraph.firstLineHeadIndent = CGFloat(fontSize) * 2
         paragraph.alignment = .justified
 

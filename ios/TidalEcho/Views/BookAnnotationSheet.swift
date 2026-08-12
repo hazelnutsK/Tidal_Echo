@@ -15,6 +15,7 @@ struct BookAnnotationSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("tidalEcho.readerNoteFontSize") private var noteFontSize = 16.0
+    @AppStorage("tidalEcho.readerDarkMode") private var readerDarkMode = false
     @State private var group: [BookAnnotation]
     @State private var thread: [ChatMessage]?
     @State private var draft = ""
@@ -42,7 +43,7 @@ struct BookAnnotationSheet: View {
         _group = State(initialValue: context.group)
     }
 
-    private var palette: EchoPalette { model.theme.palette }
+    private var colors: ReaderBookColors { ReaderBookColors(isDark: readerDarkMode) }
     private var annotationIDs: [Int] { group.map(\.id) }
     /// 新消息挂在她最早那条划线上（没有就挂整本书）
     private var anchorAnnotationID: Int? {
@@ -57,12 +58,12 @@ struct BookAnnotationSheet: View {
                         if let quote = context.selection?.quote, !quote.isEmpty {
                             Text(quote)
                                 .font(.custom("Songti SC", size: noteFontSize))
-                                .foregroundStyle(palette.text)
+                                .foregroundStyle(colors.text)
                                 .padding(12)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(palette.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .background(colors.accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 .overlay(alignment: .leading) {
-                                    Rectangle().fill(palette.accent.opacity(0.55)).frame(width: 3)
+                                    Rectangle().fill(colors.accent.opacity(0.55)).frame(width: 3)
                                 }
                                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         }
@@ -70,7 +71,7 @@ struct BookAnnotationSheet: View {
                         ForEach(rootAnnotations) { annotation in
                             AnnotationRow(
                                 annotation: annotation,
-                                palette: palette,
+                                colors: colors,
                                 fontSize: noteFontSize,
                                 isReply: false
                             ) {
@@ -79,7 +80,7 @@ struct BookAnnotationSheet: View {
                             ForEach(replies(of: annotation)) { reply in
                                 AnnotationRow(
                                     annotation: reply,
-                                    palette: palette,
+                                    colors: colors,
                                     fontSize: noteFontSize,
                                     isReply: true
                                 ) {
@@ -90,19 +91,24 @@ struct BookAnnotationSheet: View {
 
                         if !context.composing {
                             Text("就着这句话说的")
-                                .font(.caption)
-                                .foregroundStyle(palette.secondaryText)
+                                .font(.custom("Songti SC", size: 13))
+                                .foregroundStyle(colors.secondaryText)
                                 .padding(.top, 2)
 
                             if thread == nil {
-                                HStack { ProgressView(); Text("正在拿…").font(.footnote).foregroundStyle(palette.secondaryText) }
+                                HStack {
+                                    ProgressView()
+                                    Text("正在拿…")
+                                        .font(.custom("Songti SC", size: 14))
+                                        .foregroundStyle(colors.secondaryText)
+                                }
                             } else if thread?.isEmpty == true {
                                 Text("还没说过话。在下面说一句，他会收到。")
-                                    .font(.footnote)
-                                    .foregroundStyle(palette.secondaryText)
+                                    .font(.custom("Songti SC", size: 14))
+                                    .foregroundStyle(colors.secondaryText)
                             } else {
                                 ForEach(thread ?? []) { message in
-                                    ThreadRow(message: message, palette: palette, fontSize: noteFontSize)
+                                    ThreadRow(message: message, colors: colors, fontSize: noteFontSize)
                                 }
                             }
                         }
@@ -112,19 +118,27 @@ struct BookAnnotationSheet: View {
 
                 composer
             }
-            .background(palette.background.ignoresSafeArea())
-            .navigationTitle(context.composing ? "写在页边" : (context.selection?.quote.isEmpty == false ? "这一句" : "《\(book.title)》"))
+            .background(colors.background.ignoresSafeArea())
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(context.composing ? "写在页边" : (context.selection?.quote.isEmpty == false ? "这一句" : "《\(book.title)》"))
+                        .font(.custom("Songti SC", size: 16).weight(.semibold))
+                        .foregroundStyle(colors.text)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("完成") { dismiss() }.foregroundStyle(palette.accent)
+                    Button("完成") { dismiss() }
+                        .font(.custom("Songti SC", size: 16))
+                        .foregroundStyle(colors.accent)
                 }
             }
             .overlay(alignment: .bottom) {
                 if let errorText { BookBanner(text: errorText, tone: .error).padding(.bottom, 66) }
             }
         }
-        .tint(palette.accent)
+        .tint(colors.accent)
+        .preferredColorScheme(readerDarkMode ? .dark : .light)
         .task {
             if context.composing {
                 isDraftFocused = true
@@ -158,11 +172,13 @@ struct BookAnnotationSheet: View {
                 axis: .vertical
             )
             .lineLimit(1...5)
+            .font(.custom("Songti SC", size: noteFontSize))
+            .foregroundStyle(colors.text)
             .textFieldStyle(.plain)
             .focused($isDraftFocused)
             .padding(.horizontal, 13)
             .padding(.vertical, 9)
-            .background(palette.composer, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(colors.composer, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
 
             Button {
                 Task { await submit() }
@@ -176,7 +192,7 @@ struct BookAnnotationSheet: View {
             }
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
             .frame(width: 38, height: 38)
-            .background(palette.accent.opacity(0.16), in: Circle())
+            .background(colors.accent.opacity(0.16), in: Circle())
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -262,7 +278,7 @@ struct BookAnnotationSheet: View {
 
 private struct AnnotationRow: View {
     let annotation: BookAnnotation
-    let palette: EchoPalette
+    let colors: ReaderBookColors
     let fontSize: Double
     let isReply: Bool
     let onDelete: () -> Void
@@ -270,20 +286,20 @@ private struct AnnotationRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 9) {
             Text(annotation.isAI ? "Altair" : "我")
-                .font(.system(size: max(11, fontSize - 4), weight: .semibold))
-                .foregroundStyle(annotation.isAI ? Color.orange : palette.accent)
+                .font(.custom("Songti SC", size: max(11, fontSize - 4)).weight(.semibold))
+                .foregroundStyle(annotation.isAI ? Color.orange : colors.accent)
                 .frame(width: 46, alignment: .leading)
 
             if annotation.hasNote {
                 Text(annotation.note)
-                    .font(.system(size: fontSize))
-                    .foregroundStyle(palette.text)
+                    .font(.custom("Songti SC", size: fontSize))
+                    .foregroundStyle(colors.text)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 Text("只划了线")
-                    .font(.system(size: max(12, fontSize - 3)))
+                    .font(.custom("Songti SC", size: max(12, fontSize - 3)))
                     .italic()
-                    .foregroundStyle(palette.secondaryText)
+                    .foregroundStyle(colors.secondaryText)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -291,7 +307,7 @@ private struct AnnotationRow: View {
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: max(13, fontSize - 3)))
-                        .foregroundStyle(palette.secondaryText)
+                        .foregroundStyle(colors.secondaryText)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
@@ -305,21 +321,21 @@ private struct AnnotationRow: View {
 
 private struct ThreadRow: View {
     let message: ChatMessage
-    let palette: EchoPalette
+    let colors: ReaderBookColors
     let fontSize: Double
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("\(message.author == .ai ? "Altair" : "我") · \(shortTime(message.timestamp))")
-                .font(.system(size: max(11, fontSize - 5)))
-                .foregroundStyle(palette.secondaryText)
+                .font(.custom("Songti SC", size: max(11, fontSize - 5)))
+                .foregroundStyle(colors.secondaryText)
             Text(message.text)
-                .font(.system(size: fontSize))
-                .foregroundStyle(palette.text)
+                .font(.custom("Songti SC", size: fontSize))
+                .foregroundStyle(colors.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(10)
                 .background(
-                    (message.author == .ai ? palette.aiBubble : palette.humanBubble),
+                    (message.author == .ai ? colors.aiBubble : colors.humanBubble),
                     in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                 )
         }
@@ -330,4 +346,16 @@ private struct ThreadRow: View {
         guard trimmed.count >= 16 else { return trimmed }
         return String(trimmed.prefix(16).suffix(11))
     }
+}
+
+private struct ReaderBookColors {
+    let isDark: Bool
+
+    var background: Color { isDark ? .black : Color(hex: 0xEEEDED) }
+    var text: Color { isDark ? .white : .black }
+    var secondaryText: Color { text.opacity(0.56) }
+    var accent: Color { isDark ? .white : .black }
+    var composer: Color { isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06) }
+    var aiBubble: Color { isDark ? Color.white.opacity(0.10) : Color.white.opacity(0.72) }
+    var humanBubble: Color { isDark ? Color.white.opacity(0.16) : Color.black.opacity(0.08) }
 }

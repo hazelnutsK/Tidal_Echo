@@ -12,6 +12,7 @@ struct BookshelfView: View {
     @State private var pendingDeletion: Book?
     @State private var noticeText: String?
     @State private var errorText: String?
+    @State private var selectedBookID: Int?
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -22,20 +23,34 @@ struct BookshelfView: View {
             } else if books.isEmpty {
                 emptyState
             } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 18) {
-                    ForEach(books) { book in
-                        Button { openedBook = book } label: {
-                            BookCard(book: book, model: model, palette: palette)
+                VStack(spacing: 0) {
+                    bookCarousel
+                    pageDots
+                        .padding(.top, 15)
+
+                    if let selectedBook {
+                        Text(selectedBook.title)
+                            .font(.custom("Songti SC", size: 23).weight(.semibold))
+                            .foregroundStyle(palette.text)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 28)
+                            .padding(.top, 17)
+
+                        Text(selectedBook.author.isEmpty ? "佚名" : selectedBook.author)
+                            .font(.custom("Songti SC", size: 14))
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                            .padding(.top, 7)
+
+                        BookProgressCard(book: selectedBook, palette: palette) {
+                            openedBook = selectedBook
                         }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) { pendingDeletion = book } label: {
-                                Label("从书架撤掉", systemImage: "trash")
-                            }
-                        }
+                        .padding(.horizontal, 22)
+                        .padding(.top, 32)
                     }
                 }
-                .padding(16)
+                .padding(.bottom, 30)
             }
         }
         .background(palette.background.ignoresSafeArea())
@@ -116,12 +131,63 @@ struct BookshelfView: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var selectedBook: Book? {
+        books.first(where: { $0.id == selectedBookID }) ?? books.first
+    }
+
+    private var bookCarousel: some View {
+        GeometryReader { geometry in
+            let coverWidth = min(geometry.size.width * 0.64, 270)
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 22) {
+                    ForEach(books) { book in
+                        Button { openedBook = book } label: {
+                            BookCoverPage(book: book, model: model, palette: palette)
+                                .frame(width: coverWidth)
+                        }
+                        .buttonStyle(.plain)
+                        .id(book.id)
+                        .contextMenu {
+                            Button(role: .destructive) { pendingDeletion = book } label: {
+                                Label("从书架撤掉", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .contentMargins(.horizontal, max(22, (geometry.size.width - coverWidth) / 2), for: .scrollContent)
+            .scrollIndicators(.hidden)
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .always))
+            .scrollPosition(id: $selectedBookID)
+        }
+        .frame(height: 350)
+        .padding(.top, 18)
+    }
+
+    private var pageDots: some View {
+        HStack(spacing: 6) {
+            ForEach(books) { book in
+                Capsule(style: .continuous)
+                    .fill(book.id == selectedBook?.id ? palette.text.opacity(0.74) : palette.secondaryText.opacity(0.24))
+                    .frame(width: book.id == selectedBook?.id ? 18 : 5, height: 5)
+                    .animation(.easeOut(duration: 0.18), value: selectedBookID)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("第 \((books.firstIndex(where: { $0.id == selectedBook?.id }) ?? 0) + 1) 本，共 \(books.count) 本")
+    }
+
     @MainActor
     private func loadShelf() async {
         isLoading = true
         defer { isLoading = false }
         do {
             books = try await model.bookShelf()
+            if selectedBookID == nil || !books.contains(where: { $0.id == selectedBookID }) {
+                selectedBookID = books.first?.id
+            }
             errorText = nil
         } catch {
             errorText = "书架没加载出来：\(error.localizedDescription)"
@@ -178,58 +244,117 @@ struct BookshelfView: View {
     }
 }
 
-private struct BookCard: View {
+private struct BookCoverPage: View {
     let book: Book
     @ObservedObject var model: AppModel
     let palette: EchoPalette
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            ZStack(alignment: .bottom) {
-                if !book.cover.isEmpty, let request = model.authenticatedRequest(path: book.cover) {
-                    BookRemoteImage(request: request)
-                } else {
-                    ZStack {
-                        LinearGradient(
-                            colors: [palette.accent.opacity(0.28), palette.accent.opacity(0.08)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+        ZStack {
+            if !book.cover.isEmpty, let request = model.authenticatedRequest(path: book.cover) {
+                BookRemoteImage(request: request, contentMode: .fit)
+                    .background(Color.white.opacity(0.76))
+            } else {
+                ZStack {
+                    LinearGradient(
+                        colors: [palette.accent.opacity(0.24), palette.background.opacity(0.94)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                    VStack(spacing: 16) {
+                        Image(systemName: "book.closed")
+                            .font(.system(size: 27, weight: .light))
+                            .foregroundStyle(palette.secondaryText)
                         Text(book.title)
-                            .font(.custom("Songti SC", size: 15).weight(.semibold))
+                            .font(.custom("Songti SC", size: 20).weight(.semibold))
                             .foregroundStyle(palette.text)
                             .multilineTextAlignment(.center)
-                            .lineLimit(4)
-                            .padding(12)
+                            .lineLimit(5)
                     }
+                    .padding(24)
                 }
-
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Color.black.opacity(0.18)
-                        palette.accent
-                            .frame(width: geometry.size.width * CGFloat(min(100, max(0, book.percent)) / 100))
-                    }
-                }
-                .frame(height: 3)
             }
-            .frame(height: 168)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            Text(book.title)
-                .font(.custom("Songti SC", size: 15).weight(.semibold))
-                .foregroundStyle(palette.text)
-                .lineLimit(1)
-            Text("\(Int(book.percent.rounded()))% · \(book.annotations) 处划线")
-                .font(.custom("Songti SC", size: 12))
-                .foregroundStyle(palette.secondaryText)
-                .lineLimit(1)
         }
+        .frame(height: 338)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(Color.white.opacity(0.56), lineWidth: 0.7))
+        .shadow(color: Color.black.opacity(0.13), radius: 17, y: 9)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityLabel("打开《\(book.title)》")
+    }
+}
+
+private struct BookProgressCard: View {
+    let book: Book
+    let palette: EchoPalette
+    let onContinue: () -> Void
+
+    var body: some View {
+        VStack(spacing: 15) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(chapterText)
+                    .font(.custom("Songti SC", size: 15).weight(.semibold))
+                    .foregroundStyle(palette.text)
+                Spacer()
+                Text("已读 \(percentText)")
+                    .font(.custom("Songti SC", size: 13))
+                    .foregroundStyle(palette.secondaryText)
+            }
+
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(palette.secondaryText.opacity(0.13))
+                    Capsule()
+                        .fill(palette.text.opacity(0.62))
+                        .frame(width: geometry.size.width * CGFloat(progress))
+                }
+            }
+            .frame(height: 4)
+
+            HStack {
+                Text("共读 · \(book.annotations) 处批注")
+                    .font(.custom("Songti SC", size: 13))
+                    .foregroundStyle(palette.secondaryText)
+                Spacer()
+                Button(action: onContinue) {
+                    Text(book.percent > 0 ? "继续阅读" : "开始阅读")
+                        .font(.custom("Songti SC", size: 14).weight(.semibold))
+                        .foregroundStyle(palette.background)
+                        .padding(.horizontal, 22)
+                        .frame(height: 42)
+                        .background(palette.text.opacity(0.82), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(20)
+        .background(
+            palette.composer.opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.white.opacity(0.42), lineWidth: 0.7)
+        )
+        .shadow(color: Color.black.opacity(0.06), radius: 16, y: 7)
+    }
+
+    private var progress: Double {
+        min(1, max(0, book.percent / 100))
+    }
+
+    private var percentText: String {
+        String(format: "%.1f%%", book.percent)
+    }
+
+    private var chapterText: String {
+        "第 \(max(1, book.curChapter + 1)) 章 · 共 \(max(1, book.totalChapters)) 章"
     }
 }
 
 struct BookRemoteImage: View {
     let request: URLRequest
+    var contentMode: ContentMode = .fill
     @State private var image: UIImage?
     @State private var failed = false
 
@@ -239,7 +364,7 @@ struct BookRemoteImage: View {
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .aspectRatio(contentMode: contentMode)
             } else if failed {
                 Image(systemName: "book.closed").foregroundStyle(.secondary)
             } else {

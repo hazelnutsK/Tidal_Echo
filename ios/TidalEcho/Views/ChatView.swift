@@ -18,7 +18,7 @@ struct ChatView: View {
     @State private var didPositionInitialHistory = false
     @State private var canTriggerOlderHistory = false
     @State private var isPrependingHistory = false
-    @State private var composerHeight: CGFloat = 70
+    @State private var composerHeight: CGFloat = 126
     @State private var isAtBottom = true
     @State private var chatScrollView: UIScrollView?
 
@@ -47,7 +47,10 @@ struct ChatView: View {
 
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    ComposerView(model: model)
+                    ComposerView(
+                        model: model,
+                        onShowSessions: { showingSessions = true }
+                    )
                         .background {
                             GeometryReader { geometry in
                                 Color.clear.preference(
@@ -137,47 +140,7 @@ struct ChatView: View {
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            Button { showingSessions = true } label: {
-                VStack(
-                    alignment: model.theme == .paper ? .leading : .center,
-                    spacing: 3
-                ) {
-                    HStack(spacing: 4) {
-                        Text(model.peerDisplayName)
-                            .font(headerNameFont)
-                            .lineLimit(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                    .foregroundStyle(palette.text)
-
-                    Group {
-                        if model.isTyping {
-                            HeaderTypingStatus(palette: palette)
-                        } else {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(model.isStreamConnected ? Color.green.opacity(0.8) : palette.secondaryText)
-                                    .frame(width: 6, height: 6)
-                                Text(model.connectionText)
-                                    .font(.system(size: 12, weight: .regular))
-                                    .foregroundStyle(palette.secondaryText)
-                            }
-                        }
-                    }
-                    .offset(x: model.theme == .paper ? 0 : -4)
-                }
-                .padding(.horizontal, model.theme == .paper ? 0 : 26)
-                .padding(.top, model.theme == .paper ? 0 : 5)
-                .padding(.bottom, model.theme == .paper ? 0 : 7)
-                .frame(minWidth: model.theme == .paper ? nil : 150)
-                .background {
-                    if model.theme != .paper {
-                        headerGlass(shape: Capsule())
-                    }
-                }
-            }
-            .buttonStyle(.plain)
+            headerButton(icon: "slider.horizontal.3", size: 17) { showingSettings = true }
 
             Spacer(minLength: 6)
 
@@ -190,7 +153,6 @@ struct ChatView: View {
             HStack(spacing: 14) {
                 headerButton(icon: "phone.fill", size: 15) { showingVoiceCall = true }
                 headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
-                headerButton(icon: "slider.horizontal.3", size: 17) { showingSettings = true }
             }
         }
         .padding(.horizontal, 16)
@@ -231,28 +193,6 @@ struct ChatView: View {
         .frame(height: 120)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
-    }
-
-    private var headerNameFont: Font {
-        pwaHeaderFont(
-            for: model.peerDisplayName,
-            size: model.theme == .paper ? 18 : 19,
-            weight: .semibold
-        )
-    }
-
-    private func pwaHeaderFont(for text: String, size: CGFloat, weight: Font.Weight) -> Font {
-        let containsCJK = text.unicodeScalars.contains { scalar in
-            (0x3400...0x4DBF).contains(scalar.value)
-                || (0x4E00...0x9FFF).contains(scalar.value)
-                || (0xF900...0xFAFF).contains(scalar.value)
-        }
-        // Anthropic Serif does not contain CJK glyphs. The PWA falls through to
-        // Songti for Chinese text, so make that fallback explicit on iOS.
-        let anthropicName = "AnthropicSerifWebVariable-TextRegular"
-        let hasRegisteredAnthropic = UIFont(name: anthropicName, size: size) != nil
-        let name = containsCJK ? "Songti SC" : (hasRegisteredAnthropic ? anthropicName : "Georgia")
-        return .custom(name, fixedSize: size).weight(weight)
     }
 
     @ViewBuilder
@@ -1167,52 +1107,16 @@ private final class IncomingCallRinger: ObservableObject {
 }
 
 private struct ComposerHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 70
+    static var defaultValue: CGFloat = 126
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
     }
 }
 
-private struct HeaderTypingStatus: View {
-    let palette: EchoPalette
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text("typing")
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { context in
-                HStack(spacing: 3) {
-                    ForEach(0..<3, id: \.self) { index in
-                        let lift = reduceMotion ? 0 : pulse(at: context.date, index: index)
-                        Circle()
-                            .fill(palette.secondaryText)
-                            .frame(width: 4, height: 4)
-                            .offset(y: -3 * CGFloat(lift))
-                            .opacity(0.4 + 0.6 * lift)
-                    }
-                }
-            }
-            .frame(width: 18, height: 10)
-        }
-        .font(.system(size: 12, weight: .medium))
-        .foregroundStyle(palette.secondaryText.opacity(0.58))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("typing")
-    }
-
-    private func pulse(at date: Date, index: Int) -> Double {
-        let duration = 1.25
-        let delayedTime = date.timeIntervalSinceReferenceDate - Double(index) * 0.16
-        let phase = ((delayedTime.truncatingRemainder(dividingBy: duration)) + duration)
-            .truncatingRemainder(dividingBy: duration) / duration
-        guard phase < 0.70 else { return 0 }
-        return max(0, 1 - abs(phase - 0.35) / 0.35)
-    }
-}
-
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
+    let onShowSessions: () -> Void
     @StateObject private var recorder = VoiceRecorder()
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showingAttachmentMenu = false
@@ -1261,10 +1165,8 @@ private struct ComposerView: View {
                     .background(palette.accent, in: Capsule())
                     .disabled(model.isUploadingVoice)
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(palette.composer.opacity(0.92), in: RoundedRectangle(cornerRadius: 16))
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 2)
+                .padding(.vertical, 6)
             }
 
             if !model.pendingAttachments.isEmpty || model.isUploading {
@@ -1286,11 +1188,22 @@ private struct ComposerView: View {
                         }
                         if model.isUploading { ProgressView().tint(palette.accent) }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 2)
                 }
             }
 
-            HStack(alignment: .bottom, spacing: 10) {
+            TextField("和Altair说话…", text: $draftText, axis: .vertical)
+                .lineLimit(1...5)
+                .font(model.chatFont.font(
+                    size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
+                    numericWeight: model.chatWeight
+                ))
+                .foregroundStyle(palette.text)
+                .padding(.horizontal, 4)
+                .padding(.top, 3)
+                .padding(.bottom, 2)
+
+            HStack(alignment: .center, spacing: 9) {
                 Button { showingAttachmentMenu = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .semibold))
@@ -1300,16 +1213,29 @@ private struct ComposerView: View {
                 }
                 .disabled(model.isUploading)
 
-                TextField("写点什么…", text: $draftText, axis: .vertical)
-                    .lineLimit(1...5)
-                    .font(model.chatFont.font(
-                        size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
-                        numericWeight: model.chatWeight
-                    ))
+                Button(action: onShowSessions) {
+                    HStack(spacing: 7) {
+                        Circle()
+                            .fill(model.isStreamConnected ? Color.green.opacity(0.86) : palette.secondaryText.opacity(0.72))
+                            .frame(width: 7, height: 7)
+                        Text(model.activeSessionTitle)
+                            .font(.system(size: 14, weight: .semibold))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(palette.secondaryText)
+                    }
                     .foregroundStyle(palette.text)
-                    .padding(.horizontal, 15)
-                    .padding(.vertical, 10)
-                    .background { composerFieldGlass }
+                    .padding(.horizontal, 13)
+                    .frame(height: 38)
+                    .background(composerAuxiliaryBackground.opacity(0.86), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    "切换对话窗口，当前为 \(model.activeSessionTitle)，\(model.isStreamConnected ? "在线" : "离线")"
+                )
+
+                Spacer(minLength: 0)
 
                 Button {
                     toggleRecording()
@@ -1336,9 +1262,11 @@ private struct ComposerView: View {
                 }
                 .disabled(!canSend)
             }
-            .padding(.horizontal, 14)
         }
-        .padding(.top, 9)
+        .padding(12)
+        .background { composerContainerGlass }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
         .padding(.bottom, 8)
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
@@ -1367,14 +1295,14 @@ private struct ComposerView: View {
         }
     }
 
-    private var composerFieldGlass: some View {
-        let shape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+    private var composerContainerGlass: some View {
+        let shape = RoundedRectangle(cornerRadius: 29, style: .continuous)
         return shape
             .fill(.ultraThinMaterial)
-            .overlay(shape.fill(palette.composer.opacity(model.theme == .paper ? 0.44 : 0.30)))
-            .overlay(shape.stroke(Color.white.opacity(model.theme == .harbor ? 0.10 : 0.34), lineWidth: 0.6))
+            .overlay(shape.fill(palette.composer.opacity(model.theme == .paper ? 0.58 : 0.42)))
+            .overlay(shape.stroke(Color.white.opacity(model.theme == .harbor ? 0.13 : 0.42), lineWidth: 0.7))
             .overlay(shape.stroke(palette.hairline, lineWidth: 0.5))
-            .shadow(color: Color.black.opacity(0.035), radius: 8, y: 2)
+            .shadow(color: Color.black.opacity(0.08), radius: 14, y: 5)
     }
 
     private var composerAuxiliaryBackground: Color {

@@ -257,7 +257,7 @@ private struct BookCoverPage: View {
             } else {
                 ZStack {
                     LinearGradient(
-                        colors: [palette.accent.opacity(0.24), palette.background.opacity(0.94)],
+                        colors: [palette.accent.opacity(0.24), palette.backgroundTop.opacity(0.94)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )

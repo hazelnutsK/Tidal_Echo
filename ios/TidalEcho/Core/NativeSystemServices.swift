@@ -17,6 +17,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
     @Published private(set) var acceptedInvite: IncomingCallInvite?
     @Published private(set) var ringingInvite: IncomingCallInvite?
     @Published private(set) var lastCallKitError: String?
+    @Published private(set) var shouldPlayInAppRingtone = false
 
     private let provider: CXProvider
     private let controller = CXCallController()
@@ -41,6 +42,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         invites[invite.uuid] = invite
         ringingInvite = invite
         activeUUID = invite.uuid
+        shouldPlayInAppRingtone = false
 
         let update = CXCallUpdate()
         update.remoteHandle = CXHandle(type: .generic, value: "小克")
@@ -54,9 +56,14 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
             Task { @MainActor in
                 if let error {
                     self.lastCallKitError = error.localizedDescription
-                    NativeNotificationCenter.shared.scheduleIncomingCall(invite)
+                    let isForeground = UIApplication.shared.applicationState == .active
+                    self.shouldPlayInAppRingtone = isForeground
+                    if !isForeground {
+                        NativeNotificationCenter.shared.scheduleIncomingCall(invite)
+                    }
                 } else {
                     self.lastCallKitError = nil
+                    self.shouldPlayInAppRingtone = false
                 }
             }
         }
@@ -67,6 +74,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         ringingInvite = nil
         acceptedInvite = invite
         activeUUID = invite.uuid
+        shouldPlayInAppRingtone = false
         let transaction = CXTransaction(action: CXAnswerCallAction(call: invite.uuid))
         controller.request(transaction) { _ in }
     }
@@ -75,6 +83,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         guard let invite = ringingInvite else { return }
         ringingInvite = nil
         acceptedInvite = nil
+        shouldPlayInAppRingtone = false
         endSystemCall(uuid: invite.uuid)
         activeUUID = nil
     }
@@ -87,11 +96,13 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         ringingInvite = nil
         acceptedInvite = invite
         activeUUID = invite.uuid
+        shouldPlayInAppRingtone = false
     }
 
     func declineFromNotification(messageID: Int) {
         if ringingInvite?.id == messageID { ringingInvite = nil }
         if acceptedInvite?.id == messageID { acceptedInvite = nil }
+        shouldPlayInAppRingtone = false
         if let activeUUID { endSystemCall(uuid: activeUUID) }
     }
 
@@ -107,6 +118,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         activeUUID = nil
         ringingInvite = nil
         acceptedInvite = nil
+        shouldPlayInAppRingtone = false
     }
 
     func finishCurrentCall() {
@@ -115,6 +127,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         self.activeUUID = nil
         ringingInvite = nil
         acceptedInvite = nil
+        shouldPlayInAppRingtone = false
     }
 
     private func endSystemCall(uuid: UUID) {
@@ -127,6 +140,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
             self?.activeUUID = nil
             self?.ringingInvite = nil
             self?.acceptedInvite = nil
+            self?.shouldPlayInAppRingtone = false
         }
     }
 
@@ -137,6 +151,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
                 self.ringingInvite = nil
                 self.acceptedInvite = invite
                 self.activeUUID = action.callUUID
+                self.shouldPlayInAppRingtone = false
                 action.fulfill()
             } else {
                 action.fail()
@@ -150,6 +165,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
             if self?.activeUUID == action.callUUID { self?.activeUUID = nil }
             self?.ringingInvite = nil
             self?.acceptedInvite = nil
+            self?.shouldPlayInAppRingtone = false
             action.fulfill()
         }
     }

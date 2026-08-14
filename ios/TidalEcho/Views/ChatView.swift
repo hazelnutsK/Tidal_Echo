@@ -73,6 +73,7 @@ struct ChatView: View {
                 NativeIncomingCallOverlay(
                     model: model,
                     invite: invite,
+                    playsFallbackRingtone: nativeCalls.shouldPlayInAppRingtone,
                     onAccept: { presentVoiceCallDirectly() },
                     onDecline: { nativeCalls.declineRingingCall() }
                 )
@@ -1291,6 +1292,7 @@ private struct EditMessageView: View {
 private struct NativeIncomingCallOverlay: View {
     @ObservedObject var model: AppModel
     let invite: IncomingCallInvite
+    let playsFallbackRingtone: Bool
     let onAccept: () -> Void
     let onDecline: () -> Void
     @StateObject private var ringer = IncomingCallRinger()
@@ -1351,7 +1353,10 @@ private struct NativeIncomingCallOverlay: View {
                 .padding(.bottom, 62)
             }
         }
-        .onAppear { ringer.start() }
+        .onAppear { ringer.start(soundEnabled: playsFallbackRingtone) }
+        .onChange(of: playsFallbackRingtone) { enabled in
+            ringer.setSoundEnabled(enabled)
+        }
         .onDisappear { ringer.stop() }
     }
 
@@ -1376,10 +1381,19 @@ private final class IncomingCallRinger: ObservableObject {
     @Published var pulse = false
     private var timer: Timer?
 
-    func start() {
+    func start(soundEnabled: Bool) {
+        withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) { pulse = true }
+        setSoundEnabled(soundEnabled)
+    }
+
+    func setSoundEnabled(_ enabled: Bool) {
+        if !enabled {
+            timer?.invalidate()
+            timer = nil
+            return
+        }
         guard timer == nil else { return }
         ring()
-        withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true)) { pulse = true }
         timer = Timer.scheduledTimer(withTimeInterval: 2.2, repeats: true) { _ in
             AudioServicesPlayAlertSound(SystemSoundID(1005))
         }
@@ -1388,6 +1402,7 @@ private final class IncomingCallRinger: ObservableObject {
     func stop() {
         timer?.invalidate()
         timer = nil
+        pulse = false
     }
 
     private func ring() {

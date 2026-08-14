@@ -280,6 +280,11 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
     private var fallbackTask: Task<Void, Never>?
     private var usesAudioSegments = false
 
+    // 这一句话的录音：转写在手机上做，音频跟着转写一起上传——
+    // 她的气泡上会长出语音条，服务器那边的耳朵也听得见她是怎么说的。
+    private var utteranceFile: AVAudioFile?
+    private var utteranceURL: URL?
+
     private var responseQueue: [(Int, String)] = []
     private var queueTask: Task<Void, Never>?
     private var player: AVAudioPlayer?
@@ -459,8 +464,13 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw APIError.server("没有读到麦克风音频") }
+        startUtteranceClip(format: format)
+        // 录音文件在闭包里强持有：tap 摘掉之前它不会被释放，
+        // 音频线程正在写的时候主线程置 nil 也不会写到已经析构的对象上。
+        let clipFile = utteranceFile
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.recognitionRequest?.append(buffer)
+            try? clipFile?.write(from: buffer)
             guard let channel = buffer.floatChannelData?.pointee else { return }
             let frames = Int(buffer.frameLength)
             guard frames > 0 else { return }
@@ -473,6 +483,47 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         audioEngine.prepare()
         try audioEngine.start()
         phase = .listening
+    }
+
+    private struct CallClip {
+        let data: Data
+        let name: String
+        let mime: String
+    }
+
+    private func startUtteranceClip(format: AVAudioFormat) {
+        discardUtteranceClip()
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("call-say-\(UUID().uuidString).m4a")
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: format.sampleRate,
+            AVNumberOfChannelsKey: format.channelCount,
+            AVEncoderBitRateKey: 32_000
+        ]
+        // 录不成也不能影响通话本身——转写照走，只是这句没有声音留下来。
+        utteranceFile = try? AVAudioFile(forWriting: url, settings: settings)
+        utteranceURL = utteranceFile == nil ? nil : url
+    }
+
+    /// 收走这一句的录音（要在 tap 停掉之后调，文件才是完整的）。
+    private func takeUtteranceClip() -> CallClip? {
+        utteranceFile = nil                       // 释放 = 收尾落盘
+        guard let url = utteranceURL else { return nil }
+        utteranceURL = nil
+        defer { try? FileManager.default.removeItem(at: url) }
+        guard let data = try? Data(contentsOf: url), data.count > 2_000 else { return nil }
+        return CallClip(
+            data: data,
+            name: "call-\(Int(Date().timeIntervalSince1970)).m4a",
+            mime: "audio/mp4"
+        )
+    }
+
+    private func discardUtteranceClip() {
+        utteranceFile = nil
+        if let utteranceURL { try? FileManager.default.removeItem(at: utteranceURL) }
+        utteranceURL = nil
     }
 
     private func armSilenceCommit() {
@@ -491,6 +542,7 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         liveTranscript = ""
         silenceTask?.cancel()
         stopRecognition()
+        let clip = takeUtteranceClip()      // 停了 tap 才收，不然文件是半截的
         phase = .sending
 
         if !isMuted {
@@ -503,8 +555,18 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         }
         if let model {
             Task {
-                do { _ = try await model.sendCallTranscript(text, callID: callID) }
-                catch { self.errorText = "这一段没有送出去：\(error.localizedDescription)" }
+                do {
+                    if let clip {
+                        _ = try await model.sendCallUtterance(
+                            text: text, data: clip.data, name: clip.name,
+                            mime: clip.mime, callID: callID
+                        )
+                    } else {
+                        _ = try await model.sendCallTranscript(text, callID: callID)
+                    }
+                } catch {
+                    self.errorText = "这一段没有送出去：\(error.localizedDescription)"
+                }
             }
         }
     }
@@ -614,7 +676,23 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
 
     private func stopInput(discardFallback: Bool) {
         stopRecognition()
+        discardUtteranceClip()
         stopFallback(discard: discardFallback)
+    }
+
+    /// 我说完话之后重新开耳朵。
+    /// ⚠️ 必须先把 phase 从 .speaking 落回来再启动——startRecognition/startFallbackSegment
+    /// 自己带着 `phase != .speaking` 的守卫，先启动后改 phase 会被那个守卫原地挡掉，
+    /// 于是她说完第一句、我回完一句之后，麦克风就再也没开过（"只能说一句话"）。
+    private func resumeListeningAfterSpeaking() {
+        guard isActive, !isMuted, phase == .speaking || phase == .sending else { return }
+        phase = .listening
+        do {
+            if usesAudioSegments { try startFallbackSegment() }
+            else { try startRecognition() }
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 
     private func drainResponseQueueIfNeeded() {
@@ -626,6 +704,7 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
                 await self.speak(text: item.1, messageID: item.0)
             }
             self.queueTask = nil
+            self.resumeListeningAfterSpeaking()   // 我说完了，把耳朵还给她
         }
     }
 
@@ -645,14 +724,8 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         }
         level = 0
         aiCaption = ""
-        guard isActive, !isMuted else { return }
-        do {
-            if usesAudioSegments { try startFallbackSegment() }
-            else { try startRecognition() }
-            phase = .listening
-        } catch {
-            errorText = error.localizedDescription
-        }
+        // 这里不开麦：队列里可能还有下一条要念（会把我自己的声音录进去）。
+        // 全部念完之后由 drainResponseQueueIfNeeded 统一把耳朵还给她。
     }
 
     private func play(data: Data) async {

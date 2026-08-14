@@ -96,10 +96,19 @@ struct APIClient {
         return try decoder.decode(Attachment.self, from: responseData)
     }
 
-    func sendVoiceAudio(data: Data, name: String, mime: String, callID: String? = nil) async throws -> VoiceResponse {
+    /// `text` 是手机端现场转好的字。带上它，服务器就不用再转一遍，
+    /// 耳朵那边只听语气（快得多），这段录音也会挂在她自己的气泡上。
+    func sendVoiceAudio(
+        data: Data,
+        name: String,
+        mime: String,
+        callID: String? = nil,
+        text: String? = nil
+    ) async throws -> VoiceResponse {
         var components = URLComponents(url: endpoint("app/voice"), resolvingAgainstBaseURL: false)
         var query = [URLQueryItem(name: "name", value: name)]
         if let callID, !callID.isEmpty { query.append(URLQueryItem(name: "call_id", value: callID)) }
+        if let text, !text.isEmpty { query.append(URLQueryItem(name: "text", value: text)) }
         components?.queryItems = query
         guard let url = components?.url else { throw APIError.invalidURL }
         var req = request(url: url, method: "POST")

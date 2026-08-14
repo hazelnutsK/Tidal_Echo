@@ -755,6 +755,23 @@ final class AppModel: ObservableObject {
         return response
     }
 
+    /// 通话里说完的一句：转写和这句话的录音一起送。
+    /// 录音会挂在她自己的气泡上（像语音条），也让耳朵听得见她是怎么说的。
+    func sendCallUtterance(
+        text: String,
+        data: Data,
+        name: String,
+        mime: String,
+        callID: String
+    ) async throws -> VoiceResponse {
+        let client = try requireClient()
+        let response = try await client.sendVoiceAudio(
+            data: data, name: name, mime: mime, callID: callID, text: text
+        )
+        await catchUp(using: client)
+        return response
+    }
+
     func sendCallAudioSegment(data: Data, name: String, mime: String, callID: String) async throws -> VoiceResponse {
         let client = try requireClient()
         let response = try await client.sendVoiceAudio(data: data, name: name, mime: mime, callID: callID)

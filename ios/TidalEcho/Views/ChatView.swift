@@ -12,6 +12,7 @@ struct ChatView: View {
     @State private var showingVoiceCall = false
     @State private var showingSearch = false
     @State private var showingSessions = false
+    @State private var askSheetContext: AskSheetContext?
     @State private var editingMessage: ChatMessage?
     @State private var pendingRegeneration: ChatMessage?
     @State private var pendingHide: ChatMessage?
@@ -85,6 +86,12 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showingSearch) {
             MessageSearchView(model: model)
+        }
+        .sheet(item: $askSheetContext) { context in
+            MessageAskSheet(model: model, context: context)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(28)
         }
         .sheet(isPresented: $showingSessions) {
             SessionManagerView(model: model)
@@ -345,6 +352,10 @@ struct ChatView: View {
                                     do { try await model.completeTimer(messageID: message.id) }
                                     catch { model.errorMessage = error.localizedDescription }
                                 }
+                            },
+                            onOpenAsk: {
+                                guard let ask = message.meta.ask else { return }
+                                askSheetContext = AskSheetContext(messageID: message.id, initialAsk: ask)
                             },
                             onAnswerCall: {
                                 presentVoiceCallDirectly()
@@ -677,6 +688,177 @@ struct ChatView: View {
         // asking SwiftUI for a different full-screen presentation.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
             showingVoiceCall = true
+        }
+    }
+}
+
+private struct AskSheetContext: Identifiable {
+    let messageID: Int
+    let initialAsk: MessageAsk
+    var id: Int { messageID }
+}
+
+private struct MessageAskSheet: View {
+    @ObservedObject var model: AppModel
+    let context: AskSheetContext
+    @Environment(\.dismiss) private var dismiss
+    @State private var freeText = ""
+    @State private var isSubmitting = false
+    @State private var errorText: String?
+    @FocusState private var freeAnswerFocused: Bool
+
+    private var palette: EchoPalette { model.theme.palette }
+    private var accentForeground: Color {
+        model.theme == .harbor ? Color(hex: 0x15212D) : .white
+    }
+    private var ask: MessageAsk {
+        model.messages.first(where: { $0.id == context.messageID })?.meta.ask ?? context.initialAsk
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(alignment: .top) {
+                        Text("ALTAIR 在问")
+                            .font(.system(size: 12, weight: .semibold))
+                            .tracking(1.5)
+                            .foregroundStyle(palette.accent)
+                            .padding(.top, 5)
+                        Spacer()
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(palette.secondaryText)
+                                .frame(width: 32, height: 32)
+                                .background(palette.composer.opacity(0.82), in: Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭")
+                    }
+
+                    Text(ask.question)
+                        .font(model.chatFont.font(size: 17 * model.fontScale, numericWeight: max(450, model.chatWeight)))
+                        .foregroundStyle(palette.text)
+                        .lineSpacing(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 5)
+                        .padding(.bottom, 15)
+
+                    VStack(spacing: 0) {
+                        ForEach(Array(ask.options.enumerated()), id: \.offset) { index, option in
+                            Button { submit(index: index) } label: {
+                                HStack(spacing: 12) {
+                                    Text(letter(for: index))
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(isPicked(index) ? accentForeground : palette.secondaryText)
+                                        .frame(width: 28, height: 28)
+                                        .background(
+                                            isPicked(index) ? palette.accent : palette.composer,
+                                            in: Circle()
+                                        )
+                                    Text(option)
+                                        .font(model.chatFont.font(size: 15 * model.fontScale, numericWeight: model.chatWeight))
+                                        .foregroundStyle(palette.text)
+                                        .multilineTextAlignment(.leading)
+                                    Spacer(minLength: 8)
+                                    Image(systemName: isPicked(index) ? "checkmark" : "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(isPicked(index) ? palette.accent : palette.secondaryText)
+                                }
+                                .padding(.vertical, 13)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(ask.answer != nil || isSubmitting)
+                            .opacity(ask.answer == nil || isPicked(index) ? 1 : 0.42)
+
+                            Divider().overlay(palette.hairline)
+                        }
+                    }
+
+                    if let answer = ask.answer {
+                        Text(answer.kind == "free" ? "你自己答的：「\(answer.text)」" : "答过了，不许改口。")
+                            .font(.system(size: 13))
+                            .foregroundStyle(palette.secondaryText)
+                            .padding(.top, 16)
+                    } else {
+                        HStack(spacing: 9) {
+                            TextField("自己胡说一个答案…", text: $freeText)
+                                .font(model.chatFont.font(size: 14 * model.fontScale, numericWeight: model.chatWeight))
+                                .foregroundStyle(palette.text)
+                                .focused($freeAnswerFocused)
+                                .submitLabel(.send)
+                                .onSubmit { submitFreeAnswer() }
+                                .padding(.horizontal, 15)
+                                .frame(height: 42)
+                                .background(palette.composer.opacity(0.82), in: Capsule())
+                                .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.6))
+
+                            Button { submitFreeAnswer() } label: {
+                                if isSubmitting {
+                                    ProgressView().controlSize(.small).tint(accentForeground)
+                                } else {
+                                    Image(systemName: "arrow.up")
+                                        .font(.system(size: 15, weight: .bold))
+                                }
+                            }
+                            .foregroundStyle(accentForeground)
+                            .frame(width: 42, height: 42)
+                            .background(palette.accent, in: Circle())
+                            .disabled(freeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+                            .opacity(freeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.42 : 1)
+                        }
+                        .padding(.top, 16)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 28)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(palette.background.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+        }
+        .preferredColorScheme(model.theme.preferredColorScheme)
+        .alert("没答上", isPresented: Binding(
+            get: { errorText != nil },
+            set: { if !$0 { errorText = nil } }
+        )) {
+            Button("好", role: .cancel) { errorText = nil }
+        } message: {
+            Text(errorText ?? "请再试一次。")
+        }
+    }
+
+    private func letter(for index: Int) -> String {
+        let letters = Array("ABCDEF")
+        return letters.indices.contains(index) ? String(letters[index]) : String(index + 1)
+    }
+
+    private func isPicked(_ index: Int) -> Bool {
+        ask.answer?.kind == "pick" && ask.answer?.index == index
+    }
+
+    private func submitFreeAnswer() {
+        let text = freeText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        submit(text: String(text.prefix(200)))
+    }
+
+    private func submit(index: Int? = nil, text: String? = nil) {
+        guard ask.answer == nil, !isSubmitting else { return }
+        isSubmitting = true
+        freeAnswerFocused = false
+        Task {
+            do {
+                try await model.answerAsk(messageID: context.messageID, index: index, text: text)
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                dismiss()
+            } catch {
+                errorText = error.localizedDescription
+                isSubmitting = false
+            }
         }
     }
 }

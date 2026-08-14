@@ -37,6 +37,7 @@ struct MessageRow: View {
     let onHide: () -> Void
     let onReact: (String) -> Void
     let onCompleteTimer: () -> Void
+    let onOpenAsk: () -> Void
     let onAnswerCall: () -> Void
     let attachmentRequest: (Attachment) -> URLRequest?
 
@@ -122,6 +123,10 @@ struct MessageRow: View {
                             palette: palette,
                             onDone: onCompleteTimer
                         )
+                    }
+
+                    if let ask = message.meta.ask {
+                        MessageAskChip(ask: ask, palette: palette, onOpen: onOpenAsk)
                     }
                 }
                 .foregroundStyle(palette.text)
@@ -365,6 +370,44 @@ private struct MarkdownMessageText: View {
             }
         }
         return value
+    }
+}
+
+private struct MessageAskChip: View {
+    let ask: MessageAsk
+    let palette: EchoPalette
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            HStack(spacing: 9) {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(palette.accent)
+                Text(chipText)
+                    .font(.system(size: 13.5, weight: .regular))
+                    .foregroundStyle(ask.answer == nil ? palette.text : palette.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text(ask.answer == nil ? "回答" : "看看")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ask.answer == nil ? palette.accent : palette.secondaryText)
+            }
+            .padding(.horizontal, 12)
+            .frame(minHeight: 40)
+            .background(palette.composer.opacity(0.76), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(palette.hairline, lineWidth: 0.6)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(ask.answer == nil ? "回答问题：\(ask.question)" : "查看已回答的问题：\(ask.question)")
+    }
+
+    private var chipText: String {
+        if let answer = ask.answer { return "你答：\(answer.text)" }
+        return ask.question
     }
 }
 

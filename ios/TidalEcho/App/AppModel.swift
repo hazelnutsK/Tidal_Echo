@@ -606,6 +606,11 @@ final class AppModel: ObservableObject {
     func spaceGiftPages() async throws -> [GiftPage] { try await requireClient().giftPages() }
     func giftPageURL(file: String) -> URL? { client?.giftPageURL(file: file) }
 
+    func answerAsk(messageID: Int, index: Int? = nil, text: String? = nil) async throws {
+        let ask = try await requireClient().answerAsk(messageID: messageID, index: index, text: text)
+        updateAsk(messageID: messageID, ask: ask)
+    }
+
     func greetingForCurrentTime() async -> String? {
         let defaults = UserDefaults.standard
         let pool: GreetingPool?
@@ -1261,6 +1266,11 @@ final class AppModel: ObservableObject {
                     updateTimer(messageID: id, timer: timer)
                 }
                 return
+            case "ask":
+                if let id = envelope.id, let ask = envelope.ask {
+                    updateAsk(messageID: id, ask: ask)
+                }
+                return
             case "star":
                 if let id = envelope.id,
                    let index = messages.firstIndex(where: { $0.id == id }) {
@@ -1306,6 +1316,15 @@ final class AppModel: ObservableObject {
             if message.kind == "reply" {
                 streamingReply = ""
             }
+        }
+    }
+
+    private func updateAsk(messageID: Int, ask: MessageAsk) {
+        if let index = messages.firstIndex(where: { $0.id == messageID }) {
+            messages[index].meta.ask = ask
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
+            historyArchive[index].meta.ask = ask
         }
     }
 

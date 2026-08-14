@@ -219,6 +219,13 @@ struct APIClient {
         return try decoder.decode(GiftPagesResponse.self, from: responseData).pages
     }
 
+    func answerAsk(messageID: Int, index: Int? = nil, text: String? = nil) async throws -> MessageAsk {
+        var req = request(url: endpoint("app/ask/\(messageID)/answer"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(AskAnswerPayload(index: index, text: text))
+        return try decoder.decode(AskResponse.self, from: try await data(for: req)).ask
+    }
+
     func greetings() async throws -> GreetingPool {
         let responseData = try await data(for: request(url: endpoint("app/greetings")))
         return try decoder.decode(GreetingPool.self, from: responseData)
@@ -479,6 +486,10 @@ private struct LoopPresetPayload: Encodable {
 private struct ChatModePayload: Encodable { let mode: ChatMode }
 
 private struct StarPayload: Encodable { let on: Bool }
+private struct AskAnswerPayload: Encodable {
+    let index: Int?
+    let text: String?
+}
 
 private struct MomentCreatePayload: Encodable {
     let author: MessageAuthor

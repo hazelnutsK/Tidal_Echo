@@ -88,6 +88,24 @@ struct Attachment: Codable, Hashable, Identifiable {
     var isAudio: Bool { voice == true || kind == "audio" || mime?.hasPrefix("audio/") == true }
 }
 
+struct MessageAskAnswer: Decodable, Hashable {
+    let kind: String
+    let index: Int?
+    let text: String
+}
+
+struct MessageAsk: Decodable, Hashable {
+    let question: String
+    let options: [String]
+    var answer: MessageAskAnswer?
+    var answeredAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case question, options, answer
+        case answeredAt = "answered_at"
+    }
+}
+
 struct MessageMeta: Decodable, Hashable {
     var attachments: [Attachment]
     var reactions: [String: String]
@@ -97,6 +115,7 @@ struct MessageMeta: Decodable, Hashable {
     var sortAfter: Int?
     var starred: String?
     var timer: MessageTimer?
+    var ask: MessageAsk?
     var edited: Bool
     var glyph: String?
     var steps: [ToolStep]
@@ -110,7 +129,7 @@ struct MessageMeta: Decodable, Hashable {
         case streamID = "stream_id"
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
-        case starred, timer, edited, glyph, steps, act
+        case starred, timer, ask, edited, glyph, steps, act
     }
 
     init(
@@ -129,6 +148,7 @@ struct MessageMeta: Decodable, Hashable {
         self.sortAfter = sortAfter
         self.starred = nil
         self.timer = nil
+        self.ask = nil
         self.edited = false
         self.glyph = nil
         self.steps = []
@@ -145,6 +165,7 @@ struct MessageMeta: Decodable, Hashable {
         sortAfter = try values.decodeIfPresent(Int.self, forKey: .sortAfter)
         starred = try values.decodeIfPresent(String.self, forKey: .starred)
         timer = try values.decodeIfPresent(MessageTimer.self, forKey: .timer)
+        ask = try values.decodeIfPresent(MessageAsk.self, forKey: .ask)
         edited = try values.decodeIfPresent(Bool.self, forKey: .edited) ?? false
         bookRef = try values.decodeIfPresent(BookRef.self, forKey: .bookRef)
         let nestedAct = try values.decodeIfPresent(ActMeta.self, forKey: .act)
@@ -248,6 +269,10 @@ struct TimerResponse: Decodable {
     let timer: MessageTimer
 }
 
+struct AskResponse: Decodable {
+    let ask: MessageAsk
+}
+
 struct MessageNavigationRequest: Equatable {
     let token = UUID()
     let messageID: Int
@@ -275,12 +300,13 @@ struct StreamEnvelope: Decodable {
     let starred: String?
     let apiSession: String?
     let timer: MessageTimer?
+    let ask: MessageAsk?
     let post: MomentPost?
     let bookID: Int?
     let annotation: BookAnnotation?
 
     enum CodingKeys: String, CodingKey {
-        case type, active, id, reactions, text, done, starred, timer, post, annotation
+        case type, active, id, reactions, text, done, starred, timer, ask, post, annotation
         case streamID = "stream_id"
         case timestamp = "ts"
         case apiSession = "api_session"

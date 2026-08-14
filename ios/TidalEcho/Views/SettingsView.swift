@@ -423,6 +423,11 @@ private struct AppearanceSettingsView: View {
                     }
                     Slider(value: $model.chatWeight, in: 300...800, step: 20)
                         .tint(palette.accent)
+                    if model.chatFont == .system {
+                        Text(EchoChatFont.weightDiagnostic())
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText)
+                    }
                 }
             }
 

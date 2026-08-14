@@ -1,3 +1,4 @@
+import CoreText
 import SwiftUI
 import UIKit
 
@@ -113,9 +114,13 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         guard self == .system else {
             return font(size: size, weight: numericWeight.echoFontWeight)
         }
-        // Safari resolves the PWA's PingFang CSS stack to concrete PingFangSC
-        // faces. Address those faces directly so SwiftUI does not embolden a
-        // generic custom-family font synthetically.
+        // iOS 18 / macOS Sequoia 起，系统里的 PingFang 换成了带 wght 轴的可变字体
+        // (私有 PingFangUI)。Safari 因此能把 420 / 440 / 460 渲染成各不相同的粗细，
+        // 而这里原先点名静态 face，只能在 4 档之间跳——同一个滑块值两端就对不上。
+        // 能拿到 wght 轴就走连续字重，拿不到(旧系统/静态 PingFang)按老办法分桶。
+        if let variable = Self.variableSans(size: CGFloat(size), weight: numericWeight) {
+            return Font(variable)
+        }
         let face: String
         switch numericWeight {
         case ..<350: face = "PingFangSC-Light"
@@ -124,6 +129,40 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         default: face = "PingFangSC-Semibold"
         }
         return .custom(face, fixedSize: CGFloat(size))
+    }
+
+    /// 'wght' 轴的四字符标识
+    static let wghtAxisID: UInt32 = 0x77676874
+
+    /// PingFang 的 wght 轴可用时，返回按 `weight` 连续插值的字体；否则 nil。
+    static func variableSans(size: CGFloat, weight: Double) -> UIFont? {
+        guard let base = UIFont(name: "PingFangSC-Regular", size: size) else { return nil }
+        guard let ids = variationAxisIDs(of: base), ids.contains(wghtAxisID) else { return nil }
+        let attribute = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+        let descriptor = base.fontDescriptor.addingAttributes([
+            attribute: [NSNumber(value: wghtAxisID): NSNumber(value: weight)]
+        ])
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
+    private static func variationAxisIDs(of font: UIFont) -> [UInt32]? {
+        guard let raw = CTFontCopyVariationAxes(font as CTFont) as NSArray? else { return nil }
+        guard let axes = raw as? [[String: Any]], !axes.isEmpty else { return nil }
+        let key = kCTFontVariationAxisIdentifierKey as String
+        return axes.compactMap { ($0[key] as? NSNumber)?.uint32Value }
+    }
+
+    /// 设置页那行小字：一眼看出这台机上到底走没走可变字重。
+    static func weightDiagnostic() -> String {
+        guard let base = UIFont(name: "PingFangSC-Regular", size: 14) else {
+            return "取不到 PingFangSC-Regular · 走系统回退"
+        }
+        guard let ids = variationAxisIDs(of: base) else {
+            return "静态字体 · 无可变轴 · 4 档分桶"
+        }
+        return ids.contains(wghtAxisID)
+            ? "可变 wght ✓ 连续字重（\(ids.count) 轴）"
+            : "有 \(ids.count) 轴但无 wght · 4 档分桶"
     }
 
     /// SwiftUI's `lineSpacing` is added on top of the font's native line box.

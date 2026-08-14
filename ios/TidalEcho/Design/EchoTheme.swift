@@ -34,13 +34,13 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
             return EchoPalette(
                 backgroundTop: Color(hex: 0xE8EDF2),
                 backgroundBottom: Color(hex: 0xF7FAFC),
-                text: Color(hex: 0x344050),
-                secondaryText: Color(hex: 0x738194),
+                text: Color(hex: 0x292929),
+                secondaryText: Color.black.opacity(0.54),
                 aiBubble: Color(hex: 0xEBEBEB).opacity(0.92),
                 humanBubble: Color(hex: 0xC9CCD3).opacity(0.90),
                 composer: Color.white.opacity(0.58),
-                accent: Color(hex: 0x65758A),
-                hairline: Color(hex: 0x66778A).opacity(0.16)
+                accent: Color.black,
+                hairline: Color.black.opacity(0.13)
             )
         case .paper:
             return EchoPalette(

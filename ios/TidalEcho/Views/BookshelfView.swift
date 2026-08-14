@@ -55,7 +55,13 @@ struct BookshelfView: View {
                 .padding(.bottom, 30)
             }
         }
-        .background(palette.background.ignoresSafeArea())
+        .background {
+            if model.theme == .mist {
+                Color.white.ignoresSafeArea()
+            } else {
+                palette.background.ignoresSafeArea()
+            }
+        }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

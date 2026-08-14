@@ -2,6 +2,24 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
+private struct SettingsPageBackground: View {
+    let theme: EchoTheme
+    let palette: EchoPalette
+
+    @ViewBuilder
+    var body: some View {
+        if theme == .mist {
+            Color.white
+        } else {
+            palette.background
+        }
+    }
+}
+
+private func settingsRowBackground(theme: EchoTheme, palette: EchoPalette) -> Color {
+    theme == .mist ? Color.white : palette.composer.opacity(0.72)
+}
+
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let onSearch: () -> Void
@@ -60,7 +78,7 @@ struct SettingsView: View {
                                 .frame(width: unit * 2 + 10)
 
                                 Button { leaveHub(for: onSearch) } label: {
-                                    HubTile(icon: "magnifyingglass", title: "搜索", subtitle: "全局消息", palette: palette)
+                                    HubTile(icon: "magnifyingglass", title: "搜索", subtitle: "全局消息", palette: palette, isMist: model.theme == .mist)
                                 }
                                 .frame(width: unit)
                             }
@@ -69,22 +87,22 @@ struct SettingsView: View {
                         .frame(height: 104)
 
                         LazyVGrid(columns: columns, spacing: 10) {
-                            HubNavigationTile(icon: "paintpalette", title: "外观与聊天", subtitle: model.theme.title, palette: palette) {
+                            HubNavigationTile(icon: "paintpalette", title: "外观与聊天", subtitle: model.theme.title, palette: palette, isMist: model.theme == .mist) {
                                 AppearanceSettingsView(model: model)
                             }
-                            HubNavigationTile(icon: "brain.head.profile", title: "模型与连接", subtitle: "身体与 Relay", palette: palette) {
+                            HubNavigationTile(icon: "brain.head.profile", title: "模型与连接", subtitle: "身体与 Relay", palette: palette, isMist: model.theme == .mist) {
                                 ModelSettingsView(model: model)
                             }
-                            HubNavigationTile(icon: "gauge.with.dots.needle.50percent", title: "会话与上下文", subtitle: "窗口与切换", palette: palette) {
+                            HubNavigationTile(icon: "gauge.with.dots.needle.50percent", title: "会话与上下文", subtitle: "窗口与切换", palette: palette, isMist: model.theme == .mist) {
                                 ContextSettingsView(model: model)
                             }
-                            HubNavigationTile(icon: "bell.badge", title: "通知与后台", subtitle: "提醒与音频", palette: palette) {
+                            HubNavigationTile(icon: "bell.badge", title: "通知与后台", subtitle: "提醒与音频", palette: palette, isMist: model.theme == .mist) {
                                 NotificationSettingsView(model: model)
                             }
                             Button { leaveHub(for: onCall) } label: {
-                                HubTile(icon: "phone", title: "打电话", subtitle: model.peerDisplayName, palette: palette)
+                                HubTile(icon: "phone", title: "打电话", subtitle: model.peerDisplayName, palette: palette, isMist: model.theme == .mist)
                             }
-                            HubNavigationTile(icon: "chart.bar", title: "Claude 额度", subtitle: "限额与用量", palette: palette) {
+                            HubNavigationTile(icon: "chart.bar", title: "Claude 额度", subtitle: "限额与用量", palette: palette, isMist: model.theme == .mist) {
                                 ClaudeQuotaView(model: model)
                             }
                         }
@@ -191,6 +209,7 @@ private struct HubNavigationTile<Destination: View>: View {
     let title: String
     let subtitle: String
     let palette: EchoPalette
+    let isMist: Bool
     let destination: Destination
 
     init(
@@ -198,18 +217,20 @@ private struct HubNavigationTile<Destination: View>: View {
         title: String,
         subtitle: String,
         palette: EchoPalette,
+        isMist: Bool,
         @ViewBuilder destination: () -> Destination
     ) {
         self.icon = icon
         self.title = title
         self.subtitle = subtitle
         self.palette = palette
+        self.isMist = isMist
         self.destination = destination()
     }
 
     var body: some View {
         NavigationLink(destination: destination) {
-            HubTile(icon: icon, title: title, subtitle: subtitle, palette: palette)
+            HubTile(icon: icon, title: title, subtitle: subtitle, palette: palette, isMist: isMist)
         }
     }
 }
@@ -219,6 +240,7 @@ private struct HubTile: View {
     let title: String
     let subtitle: String
     let palette: EchoPalette
+    let isMist: Bool
 
     var body: some View {
         VStack(spacing: 7) {
@@ -237,7 +259,11 @@ private struct HubTile: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: 104)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .opacity(isMist ? 0.64 : 1)
+        }
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(palette.hairline))
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
@@ -288,8 +314,8 @@ private struct NotificationSettingsView: View {
         }
         .tint(palette.accent)
         .scrollContentBackground(.hidden)
-        .background(palette.background.ignoresSafeArea())
-        .listRowBackground(palette.composer.opacity(0.72))
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("通知与后台")
         .navigationBarTitleDisplayMode(.inline)
         .task { await notifications.refreshAuthorizationStatus() }
@@ -465,8 +491,8 @@ private struct AppearanceSettingsView: View {
         }
         .tint(palette.accent)
         .scrollContentBackground(.hidden)
-        .background(palette.background.ignoresSafeArea())
-        .listRowBackground(palette.composer.opacity(0.72))
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("外观与聊天")
         .navigationBarTitleDisplayMode(.inline)
         .onChange(of: backgroundItem) { item in loadPhoto(item, kind: .background) }
@@ -845,8 +871,8 @@ private struct ModelSettingsView: View {
         }
         .tint(palette.accent)
         .scrollContentBackground(.hidden)
-        .background(palette.background.ignoresSafeArea())
-        .listRowBackground(palette.composer.opacity(0.72))
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("模型与连接")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -1014,8 +1040,8 @@ private struct ClaudeQuotaView: View {
             Button("刷新额度") { Task { await load() } }
         }
         .scrollContentBackground(.hidden)
-        .background(palette.background.ignoresSafeArea())
-        .listRowBackground(palette.composer.opacity(0.72))
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("Claude 额度")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -1169,8 +1195,8 @@ private struct APIControlView: View {
         }
         .tint(palette.accent)
         .scrollContentBackground(.hidden)
-        .background(palette.background.ignoresSafeArea())
-        .listRowBackground(palette.composer.opacity(0.72))
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("API 接口与用量")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -1272,6 +1298,10 @@ private struct AddAPIPresetView: View {
                         .font(.caption)
                 }
             }
+            .tint(model.theme.palette.accent)
+            .scrollContentBackground(.hidden)
+            .background(SettingsPageBackground(theme: model.theme, palette: model.theme.palette).ignoresSafeArea())
+            .listRowBackground(settingsRowBackground(theme: model.theme, palette: model.theme.palette))
             .navigationTitle("添加 API 接口")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1433,8 +1463,8 @@ private struct ContextSettingsView: View {
         }
         .tint(palette.accent)
         .scrollContentBackground(.hidden)
-        .background(palette.background.ignoresSafeArea())
-        .listRowBackground(palette.composer.opacity(0.72))
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
         .navigationTitle("会话与上下文")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

@@ -13,6 +13,8 @@ struct ChatView: View {
     @State private var showingSearch = false
     @State private var showingSessions = false
     @State private var askSheetContext: AskSheetContext?
+    @State private var seenAskMessageIDs = Set<Int>()
+    @State private var didPrimeAskAutopresentation = false
     @State private var editingMessage: ChatMessage?
     @State private var pendingRegeneration: ChatMessage?
     @State private var pendingHide: ChatMessage?
@@ -105,11 +107,24 @@ struct ChatView: View {
         .fullScreenCover(isPresented: $showingVoiceCall) {
             VoiceCallView(model: model)
         }
-        .onAppear { openAcceptedCallIfNeeded() }
+        .onAppear {
+            openAcceptedCallIfNeeded()
+            primeAskAutopresentationIfNeeded()
+        }
         .onPreferenceChange(ComposerHeightPreferenceKey.self) { height in
             if height > 0 { composerHeight = height }
         }
         .onChange(of: nativeCalls.acceptedInvite?.id) { _ in openAcceptedCallIfNeeded() }
+        .onChange(of: model.isLoadingHistory) { loading in
+            if loading {
+                didPrimeAskAutopresentation = false
+            } else {
+                primeAskAutopresentationIfNeeded()
+            }
+        }
+        .onChange(of: newestUnansweredAskID) { _ in
+            presentNewestAskIfNeeded()
+        }
         .confirmationDialog(
             "重新生成这条回复？",
             isPresented: Binding(
@@ -533,6 +548,34 @@ struct ChatView: View {
         return true
     }
 
+    private var newestUnansweredAskID: Int? {
+        model.messages.last(where: {
+            $0.id > 0 && $0.meta.ask != nil && $0.meta.ask?.answer == nil
+        })?.id
+    }
+
+    private func primeAskAutopresentationIfNeeded() {
+        guard !model.isLoadingHistory, !didPrimeAskAutopresentation else { return }
+        seenAskMessageIDs = Set(model.messages.compactMap { message in
+            message.meta.ask == nil ? nil : message.id
+        })
+        didPrimeAskAutopresentation = true
+    }
+
+    private func presentNewestAskIfNeeded() {
+        guard !model.isLoadingHistory else { return }
+        guard didPrimeAskAutopresentation else {
+            primeAskAutopresentationIfNeeded()
+            return
+        }
+        guard let message = model.messages.last(where: {
+            $0.id > 0 && $0.meta.ask != nil && $0.meta.ask?.answer == nil
+        }), let ask = message.meta.ask,
+              !seenAskMessageIDs.contains(message.id) else { return }
+        seenAskMessageIDs.insert(message.id)
+        askSheetContext = AskSheetContext(messageID: message.id, initialAsk: ask)
+    }
+
     private func isBubbleGroupStart(_ message: ChatMessage) -> Bool {
         guard let index = model.messages.firstIndex(where: { $0.id == message.id }), index > 0 else {
             return true
@@ -817,7 +860,13 @@ private struct MessageAskSheet: View {
                 .padding(.bottom, 28)
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(palette.background.ignoresSafeArea())
+            .background {
+                if model.theme == .mist {
+                    Color.white.ignoresSafeArea()
+                } else {
+                    palette.background.ignoresSafeArea()
+                }
+            }
             .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(model.theme.preferredColorScheme)

@@ -700,7 +700,7 @@ private struct ProcessRow: View {
     private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
     private var isHarbor: Bool { !isPaper && !isMist }
     private var processFontSize: Double {
-        PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.07 : 1)
+        PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.16 : 1)
     }
 
     private var mistTrigger: some View {
@@ -766,7 +766,7 @@ private struct ProcessRow: View {
                 ).italic())
                 .lineSpacing(PWAChatMetrics.lineSpacing(
                     font: chatFont,
-                    size: PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale
+                    size: processFontSize
                 ))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -813,12 +813,12 @@ private struct ProcessRow: View {
         NavigationStack {
             ScrollView {
                 processContent
-                    .foregroundStyle(palette.secondaryText)
+                    .foregroundStyle(palette.text.opacity(0.84))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(palette.background.ignoresSafeArea())
+            .background(Color.white.ignoresSafeArea())
             .navigationTitle(isThinking ? "Thought process" : "Action")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

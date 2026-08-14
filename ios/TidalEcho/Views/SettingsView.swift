@@ -1027,8 +1027,8 @@ private struct ClaudeQuotaView: View {
                     }
                     ProgressView(value: window.percent, total: 100)
                         .tint(window.percent >= 90 ? .red : (window.percent >= 70 ? .orange : palette.accent))
-                    if let reset = resetText(window.resetsAt) {
-                        Text(reset).font(.caption).foregroundStyle(palette.secondaryText)
+                    if !window.resetsAt.isEmpty {
+                        QuotaResetCountdown(resetsAt: window.resetsAt, palette: palette)
                     }
                 }
                 .padding(.vertical, 4)
@@ -1102,15 +1102,44 @@ private struct ClaudeQuotaView: View {
             .firstIndex(of: key) ?? 99
     }
 
-    private func resetText(_ raw: String) -> String? {
-        guard !raw.isEmpty else { return nil }
+}
+
+private struct QuotaResetCountdown: View {
+    let resetsAt: String
+    let palette: EchoPalette
+
+    private var resetDate: Date? {
         let formatter = ISO8601DateFormatter()
-        guard let date = formatter.date(from: raw) else { return nil }
-        let minutes = max(0, Int(date.timeIntervalSinceNow / 60))
-        if minutes < 60 { return "约 \(minutes) 分钟后重置" }
-        let hours = minutes / 60
-        if hours < 48 { return "约 \(hours) 小时后重置" }
-        return "约 \(Int((Double(hours) / 24).rounded())) 天后重置"
+        if let date = formatter.date(from: resetsAt) { return date }
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: resetsAt)
+    }
+
+    var body: some View {
+        if let resetDate {
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(countdownText(to: resetDate, from: context.date))
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    .monospacedDigit()
+            }
+        }
+    }
+
+    private func countdownText(to resetDate: Date, from now: Date) -> String {
+        let seconds = max(0, Int(resetDate.timeIntervalSince(now)))
+        guard seconds > 0 else { return "额度即将刷新" }
+        let totalMinutes = max(1, Int(ceil(Double(seconds) / 60)))
+        let days = totalMinutes / 1_440
+        let hours = (totalMinutes % 1_440) / 60
+        let minutes = totalMinutes % 60
+        if days > 0 {
+            return "距离额度刷新还有 \(days) 天 \(hours) 小时"
+        }
+        if hours > 0 {
+            return "距离额度刷新还有 \(hours) 小时 \(minutes) 分"
+        }
+        return "距离额度刷新还有 \(minutes) 分钟"
     }
 }
 
@@ -1176,8 +1205,14 @@ private struct APIControlView: View {
                         ForEach(stats.recent) { entry in
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack {
+                                    Circle()
+                                        .fill(cacheStateColor(entry))
+                                        .frame(width: 7, height: 7)
                                     Text(entry.model ?? "未知模型").lineLimit(1)
                                     Spacer()
+                                    Text(cacheHitText(entry))
+                                        .font(.caption.weight(.semibold).monospacedDigit())
+                                        .foregroundStyle(cacheStateColor(entry))
                                     Text(String(format: "$%.4f", entry.costUSD)).monospacedDigit()
                                 }
                                 Text("读 \(tokenText(entry.cacheRead)) · 写 \(tokenText(entry.cacheWrite)) · 入 \(tokenText(entry.input)) · 出 \(tokenText(entry.output))")
@@ -1235,6 +1270,17 @@ private struct APIControlView: View {
         if value >= 1_000_000 { return String(format: "%.2fM", Double(value) / 1_000_000) }
         if value >= 1_000 { return String(format: "%.1fk", Double(value) / 1_000) }
         return String(value)
+    }
+
+    private func cacheHitText(_ entry: APIUsageEntry) -> String {
+        guard let rate = entry.cacheHitRate else { return "命中 —" }
+        return "命中 \(Int((rate * 100).rounded()))%"
+    }
+
+    private func cacheStateColor(_ entry: APIUsageEntry) -> Color {
+        if entry.cacheRead > 0 { return .green }
+        if entry.cacheWrite > 0 { return .orange }
+        return .red
     }
 
     private func load() async {

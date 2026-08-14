@@ -454,6 +454,12 @@ struct APIUsageEntry: Decodable, Identifiable {
         case cacheWrite = "cache_write"
         case costUSD = "cost_usd"
     }
+
+    var cacheHitRate: Double? {
+        let denominator = input + cacheRead + cacheWrite
+        guard denominator > 0 else { return nil }
+        return Double(cacheRead) / Double(denominator)
+    }
 }
 
 struct APIUsageStats: Decodable {
@@ -482,15 +488,31 @@ struct StarResponse: Decodable {
 }
 
 struct AlbumPhoto: Decodable, Identifiable {
+    let albumID: Int?
     let url: String
     let timestamp: String
-    let author: MessageAuthor
-    var id: String { "\(timestamp)#\(url)" }
+    let keptAt: String
+    let title: String
+    let note: String
+    let author: MessageAuthor?
+    var id: String { albumID.map { "album-\($0)" } ?? "\(timestamp)#\(url)" }
 
     enum CodingKeys: String, CodingKey {
-        case url
+        case id, url, title, note
         case timestamp = "ts"
+        case keptAt = "kept_at"
         case author = "from"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        albumID = try values.decodeIfPresent(Int.self, forKey: .id)
+        url = try values.decode(String.self, forKey: .url)
+        timestamp = try values.decodeIfPresent(String.self, forKey: .timestamp) ?? ""
+        keptAt = try values.decodeIfPresent(String.self, forKey: .keptAt) ?? timestamp
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? ""
+        note = try values.decodeIfPresent(String.self, forKey: .note) ?? ""
+        author = try values.decodeIfPresent(MessageAuthor.self, forKey: .author)
     }
 }
 

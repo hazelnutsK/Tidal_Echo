@@ -33,7 +33,7 @@ struct SpacesView: View {
                         SpaceLink(title: "收藏", subtitle: "舍不得丢的对话", icon: "bookmark.fill", color: .orange, unreadCount: 0) {
                             StarsView(model: model)
                         }
-                        SpaceLink(title: "相册", subtitle: "聊天里的照片", icon: "photo.on.rectangle.angled", color: .cyan, unreadCount: 0) {
+                        SpaceLink(title: "相册", subtitle: "Altair 收藏的照片", icon: "photo.on.rectangle.angled", color: .cyan, unreadCount: 0) {
                             AlbumView(model: model)
                         }
                         SpaceLink(title: "礼物室", subtitle: "小克做的页面", icon: "gift.fill", color: .pink, unreadCount: model.giftUnreadCount) {
@@ -453,36 +453,86 @@ private struct AlbumView: View {
     @State private var isLoading = true
     @State private var errorText: String?
 
-    private let columns = [GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3), GridItem(.flexible(), spacing: 3)]
+    private var palette: EchoPalette { model.theme.palette }
+    private var groupedPhotos: [(day: String, photos: [AlbumPhoto])] {
+        var groups: [(day: String, photos: [AlbumPhoto])] = []
+        for photo in photos {
+            let day = albumDayLabel(photo.timestamp)
+            if groups.last?.day == day {
+                groups[groups.count - 1].photos.append(photo)
+            } else {
+                groups.append((day, [photo]))
+            }
+        }
+        return groups
+    }
 
     var body: some View {
         Group {
             if isLoading && photos.isEmpty {
                 ProgressView("正在整理相册…")
             } else if photos.isEmpty {
-                SpaceEmptyState(icon: "photo", title: "相册还是空的", text: "聊天里发过的图片会自动出现在这里。")
+                SpaceEmptyState(
+                    icon: "photo",
+                    title: "相册还是空的",
+                    text: "这里放 Altair 自己想留下来的照片。看到值得收的，他会把它放进来。"
+                )
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 3) {
-                        ForEach(photos) { photo in
-                            Button { selectedPhoto = photo } label: {
-                                if let request = model.authenticatedRequest(path: photo.url) {
-                                    SpaceRemoteImage(request: request, contentMode: .fill)
-                                        .frame(height: 124)
-                                        .frame(maxWidth: .infinity)
-                                        .clipped()
-                                        .overlay(alignment: .bottomTrailing) {
-                                            Image(systemName: photo.author == .human ? "person.fill" : "sparkle")
-                                                .font(.caption2)
-                                                .padding(5)
-                                                .background(.ultraThinMaterial, in: Circle())
-                                                .padding(5)
+                    LazyVStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(groupedPhotos.enumerated()), id: \.offset) { _, group in
+                            Text(group.day)
+                                .font(.caption)
+                                .tracking(0.8)
+                                .foregroundStyle(palette.secondaryText)
+                                .padding(.top, 5)
+
+                            ForEach(group.photos) { photo in
+                                Button { selectedPhoto = photo } label: {
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        if let request = model.authenticatedRequest(path: photo.url) {
+                                            SpaceRemoteImage(request: request, contentMode: .fill)
+                                                .frame(height: 280)
+                                                .frame(maxWidth: .infinity)
+                                                .clipped()
                                         }
+                                        if !photo.title.isEmpty || !photo.note.isEmpty {
+                                            VStack(alignment: .leading, spacing: 7) {
+                                                if !photo.title.isEmpty {
+                                                    Text(photo.title)
+                                                        .font(.headline)
+                                                        .foregroundStyle(palette.text)
+                                                }
+                                                if !photo.note.isEmpty {
+                                                    Text(photo.note)
+                                                        .font(.subheadline)
+                                                        .foregroundStyle(palette.secondaryText)
+                                                        .fixedSize(horizontal: false, vertical: true)
+                                                }
+                                                if !photo.keptAt.isEmpty {
+                                                    Text("收于 \(albumDayLabel(photo.keptAt))")
+                                                        .font(.caption2)
+                                                        .foregroundStyle(palette.secondaryText.opacity(0.72))
+                                                }
+                                            }
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(14)
+                                        }
+                                    }
+                                    .background(palette.composer.opacity(0.88))
+                                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                            .stroke(palette.hairline, lineWidth: 0.7)
+                                    }
+                                    .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
                 }
             }
         }
@@ -524,6 +574,19 @@ private struct AlbumLightbox: View {
                     SpaceRemoteImage(request: request, contentMode: .fit)
                         .padding(.vertical)
                 }
+                if !photo.title.isEmpty || !photo.note.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if !photo.title.isEmpty { Text(photo.title).font(.headline) }
+                        if !photo.note.isEmpty { Text(photo.note).font(.subheadline) }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .background(.ultraThinMaterial)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding()
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
@@ -537,6 +600,20 @@ private struct AlbumLightbox: View {
             .toolbarBackground(.visible, for: .navigationBar)
         }
     }
+}
+
+private func albumDayLabel(_ value: String) -> String {
+    let raw = String(value.prefix(10))
+    let parser = DateFormatter()
+    parser.locale = Locale(identifier: "en_US_POSIX")
+    parser.dateFormat = "yyyy-MM-dd"
+    guard let date = parser.date(from: raw) else { return raw }
+    let output = DateFormatter()
+    output.locale = Locale(identifier: "zh_CN")
+    output.dateFormat = Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: Date())
+        ? "M 月 d 日"
+        : "yyyy 年 M 月 d 日"
+    return output.string(from: date)
 }
 
 // MARK: - 礼物室

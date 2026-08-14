@@ -69,11 +69,11 @@ struct ChatView: View {
                 }
             }
 
-            if let invite = nativeCalls.ringingInvite {
+            if let invite = nativeCalls.ringingInvite,
+               nativeCalls.shouldPlayInAppRingtone {
                 NativeIncomingCallOverlay(
                     model: model,
                     invite: invite,
-                    playsFallbackRingtone: nativeCalls.shouldPlayInAppRingtone,
                     onAccept: { presentVoiceCallDirectly() },
                     onDecline: { nativeCalls.declineRingingCall() }
                 )
@@ -1292,7 +1292,6 @@ private struct EditMessageView: View {
 private struct NativeIncomingCallOverlay: View {
     @ObservedObject var model: AppModel
     let invite: IncomingCallInvite
-    let playsFallbackRingtone: Bool
     let onAccept: () -> Void
     let onDecline: () -> Void
     @StateObject private var ringer = IncomingCallRinger()
@@ -1353,10 +1352,7 @@ private struct NativeIncomingCallOverlay: View {
                 .padding(.bottom, 62)
             }
         }
-        .onAppear { ringer.start(soundEnabled: playsFallbackRingtone) }
-        .onChange(of: playsFallbackRingtone) { enabled in
-            ringer.setSoundEnabled(enabled)
-        }
+        .onAppear { ringer.start(soundEnabled: true) }
         .onDisappear { ringer.stop() }
     }
 

@@ -120,6 +120,7 @@ struct MessageMeta: Decodable, Hashable {
     var glyph: String?
     var steps: [ToolStep]
     var bookRef: BookRef?
+    var callStatus: String?
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -129,6 +130,7 @@ struct MessageMeta: Decodable, Hashable {
         case streamID = "stream_id"
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
+        case callStatus = "call_status"
         case starred, timer, ask, edited, glyph, steps, act
     }
 
@@ -153,6 +155,7 @@ struct MessageMeta: Decodable, Hashable {
         self.glyph = nil
         self.steps = []
         self.bookRef = nil
+        self.callStatus = nil
     }
 
     init(from decoder: Decoder) throws {
@@ -168,6 +171,7 @@ struct MessageMeta: Decodable, Hashable {
         ask = try values.decodeIfPresent(MessageAsk.self, forKey: .ask)
         edited = try values.decodeIfPresent(Bool.self, forKey: .edited) ?? false
         bookRef = try values.decodeIfPresent(BookRef.self, forKey: .bookRef)
+        callStatus = try values.decodeIfPresent(String.self, forKey: .callStatus)
         let nestedAct = try values.decodeIfPresent(ActMeta.self, forKey: .act)
         glyph = try values.decodeIfPresent(String.self, forKey: .glyph) ?? nestedAct?.glyph
         steps = try values.decodeIfPresent([ToolStep].self, forKey: .steps) ?? nestedAct?.steps ?? []

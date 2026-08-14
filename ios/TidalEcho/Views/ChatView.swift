@@ -333,6 +333,8 @@ struct ChatView: View {
                             isGroupedWithPrevious: isGroupedWithPrevious(message),
                             isPaper: model.theme == .paper,
                             isMist: model.theme == .mist,
+                            isIncomingCallActive: nativeCalls.ringingInvite?.id == message.id
+                                || nativeCalls.acceptedInvite?.id == message.id,
                             onToggleStar: {
                                 Task {
                                     do {

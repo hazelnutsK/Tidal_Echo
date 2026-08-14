@@ -2,6 +2,84 @@ import SwiftUI
 import UIKit
 import QuickLook
 
+private enum CallLifecycleEvent: Equatable {
+    case started
+    case ended
+    case missed
+
+    var icon: String {
+        switch self {
+        case .started: return "phone"
+        case .ended: return "phone.down"
+        case .missed: return "phone.down.fill"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .started: return "语音通话开启"
+        case .ended: return "语音通话结束"
+        case .missed: return "未接来电"
+        }
+    }
+}
+
+private struct CallLifecycleEventRow: View {
+    let event: CallLifecycleEvent
+    let palette: EchoPalette
+    let fontScale: Double
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: event.icon)
+            Text(event.title)
+        }
+        .font(.system(size: CGFloat(13 * fontScale), weight: .medium))
+        .foregroundStyle(event == .missed ? Color.red : palette.secondaryText)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 7)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private enum IncomingCallCardState: Equatable {
+    case ringing
+    case missed
+    case ended
+
+    var icon: String {
+        switch self {
+        case .ringing: return "phone.fill"
+        case .missed: return "phone.down.fill"
+        case .ended: return "phone.down"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .ringing: return .green
+        case .missed: return .red
+        case .ended: return .gray
+        }
+    }
+
+    func subtitle(_ fallback: String) -> String {
+        switch self {
+        case .ringing: return fallback
+        case .missed: return "未接听"
+        case .ended: return "通话已结束"
+        }
+    }
+
+    func accessibilityLabel(peerName: String) -> String {
+        switch self {
+        case .ringing: return "\(peerName)来电，接听"
+        case .missed: return "\(peerName)未接来电"
+        case .ended: return "\(peerName)通话已结束"
+        }
+    }
+}
+
 struct MessageRow: View {
     let message: ChatMessage
     let palette: EchoPalette
@@ -29,6 +107,7 @@ struct MessageRow: View {
     let isGroupedWithPrevious: Bool
     let isPaper: Bool
     let isMist: Bool
+    let isIncomingCallActive: Bool
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
     let onCopy: () -> Void
@@ -43,7 +122,9 @@ struct MessageRow: View {
 
     var body: some View {
         Group {
-            if message.kind == "thinking" || message.kind == "act" {
+            if let event = callLifecycleEvent {
+                CallLifecycleEventRow(event: event, palette: palette, fontScale: fontScale)
+            } else if message.kind == "thinking" || message.kind == "act" {
                 ProcessRow(
                     message: message,
                     palette: palette,
@@ -57,28 +138,14 @@ struct MessageRow: View {
                 )
             } else if message.kind == "call" {
                 if message.author == .ai {
-                    Button(action: onAnswerCall) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "phone.fill")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 40, height: 40)
-                                .background(Color.green, in: Circle())
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("\(peerName)来电").font(.subheadline.weight(.semibold))
-                                Text(message.text).font(.caption).lineLimit(2)
-                            }
-                            .foregroundStyle(palette.text)
-                            Spacer()
-                            Text("接听")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.accent)
+                    if incomingCallCardState == .ringing {
+                        Button(action: onAnswerCall) {
+                            incomingCallCard(state: .ringing)
                         }
-                        .padding(12)
-                        .background(palette.composer.opacity(0.86), in: RoundedRectangle(cornerRadius: 17))
-                        .padding(.horizontal, 28)
+                        .buttonStyle(.plain)
+                    } else {
+                        incomingCallCard(state: incomingCallCardState)
                     }
-                    .buttonStyle(.plain)
                 } else {
                     Text(message.text)
                         .font(.caption)
@@ -91,6 +158,54 @@ struct MessageRow: View {
             }
         }
         .padding(.top, usesCompactGroupSpacing && isGroupedWithPrevious ? -6 : 0)
+    }
+
+    private var callLifecycleEvent: CallLifecycleEvent? {
+        guard message.kind == "call" else { return nil }
+        if message.text.contains("[call_start]") {
+            return .started
+        }
+        if message.text.contains("[call_end]") {
+            return .ended
+        }
+        if message.text.contains("[call_missed]") {
+            return .missed
+        }
+        return nil
+    }
+
+    private var incomingCallCardState: IncomingCallCardState {
+        if message.meta.callStatus == "missed" { return .missed }
+        return isIncomingCallActive ? .ringing : .ended
+    }
+
+    private func incomingCallCard(state: IncomingCallCardState) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: state.icon)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(state.color, in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(state == .missed ? "\(peerName)未接来电" : "\(peerName)来电")
+                    .font(.subheadline.weight(.semibold))
+                Text(state.subtitle(message.text))
+                    .font(.caption)
+                    .lineLimit(2)
+            }
+            .foregroundStyle(state == .missed ? Color.red : palette.text)
+            Spacer()
+            if state == .ringing {
+                Text("接听")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.accent)
+            }
+        }
+        .padding(12)
+        .background(palette.composer.opacity(0.86), in: RoundedRectangle(cornerRadius: 17))
+        .padding(.horizontal, 28)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(state.accessibilityLabel(peerName: peerName))
     }
 
     private var bubble: some View {

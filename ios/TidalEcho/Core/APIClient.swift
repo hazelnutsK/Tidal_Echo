@@ -115,10 +115,10 @@ struct APIClient {
         return try decoder.decode(VoiceResponse.self, from: try await data(for: req))
     }
 
-    func callEvent(_ action: String, callID: String) async throws -> SendResponse {
+    func callEvent(_ action: String, callID: String, messageID: Int? = nil) async throws -> SendResponse {
         var req = request(url: endpoint("app/call"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(CallPayload(action: action, callID: callID))
+        req.httpBody = try JSONEncoder().encode(CallPayload(action: action, callID: callID, messageID: messageID))
         return try decoder.decode(SendResponse.self, from: try await data(for: req))
     }
 
@@ -449,10 +449,12 @@ private struct VoiceTextPayload: Encodable {
 private struct CallPayload: Encodable {
     let action: String
     let callID: String
+    let messageID: Int?
 
     enum CodingKeys: String, CodingKey {
         case action
         case callID = "call_id"
+        case messageID = "message_id"
     }
 }
 

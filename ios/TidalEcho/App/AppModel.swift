@@ -120,6 +120,8 @@ final class AppModel: ObservableObject {
     private var didBootstrap = false
     private var historyArchive: [ChatMessage] = []
     private var locallyHiddenMessageIDs: Set<Int> = []
+    private var missedCallMessageIDs: Set<Int> = []
+    private var pendingMissedCallMessageIDs: Set<Int> = []
     private var currentGiftTokens: Set<String> = []
     private var currentAIPostIDs: Set<Int> = []
 
@@ -159,6 +161,8 @@ final class AppModel: ObservableObject {
         static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
         static let activeSessionID = "tidalEcho.activeSessionID"
         static let locallyHiddenMessageIDs = "tidalEcho.locallyHiddenMessageIDs"
+        static let missedCallMessageIDs = "tidalEcho.missedCallMessageIDs"
+        static let pendingMissedCallMessageIDs = "tidalEcho.pendingMissedCallMessageIDs"
         static let seenGiftTokens = "tidalEcho.seenGiftTokens"
         static let seenAIPostIDs = "tidalEcho.seenAIPostIDs"
         static let greetingCache = "tidalEcho.greetingCache"
@@ -223,12 +227,17 @@ final class AppModel: ObservableObject {
         if let hidden = defaults.array(forKey: Keys.locallyHiddenMessageIDs) as? [Int] {
             locallyHiddenMessageIDs = Set(hidden)
         }
+        missedCallMessageIDs = Set((defaults.array(forKey: Keys.missedCallMessageIDs) as? [Int]) ?? [])
+        pendingMissedCallMessageIDs = Set((defaults.array(forKey: Keys.pendingMissedCallMessageIDs) as? [Int]) ?? [])
         backgroundImage = Self.loadAppearanceImage(.background)
         aiAvatarImage = Self.loadAppearanceImage(.aiAvatar)
         humanAvatarImage = Self.loadAppearanceImage(.humanAvatar)
         if shouldMigratePaperPreset {
             applyPaperAppearancePreset()
             defaults.set(true, forKey: Keys.paperPresetV3)
+        }
+        NativeCallCoordinator.shared.onDeclineIncomingCall = { [weak self] messageID in
+            await self?.markIncomingCallMissed(messageID: messageID)
         }
     }
 
@@ -753,8 +762,49 @@ final class AppModel: ObservableObject {
         return response
     }
 
-    func postCallEvent(_ action: String, callID: String) async throws {
-        _ = try await requireClient().callEvent(action, callID: callID)
+    func postCallEvent(_ action: String, callID: String, messageID: Int? = nil) async throws {
+        _ = try await requireClient().callEvent(action, callID: callID, messageID: messageID)
+    }
+
+    private func markIncomingCallMissed(messageID: Int) async {
+        guard messageID > 0 else { return }
+        missedCallMessageIDs.insert(messageID)
+        pendingMissedCallMessageIDs.insert(messageID)
+        persistMissedCallState()
+        applyMissedCallState(messageID: messageID)
+        await flushPendingCallDeclines()
+    }
+
+    private func flushPendingCallDeclines() async {
+        guard let client else { return }
+        for messageID in pendingMissedCallMessageIDs.sorted() {
+            do {
+                _ = try await client.callEvent(
+                    "decline",
+                    callID: "incoming-\(messageID)",
+                    messageID: messageID
+                )
+                pendingMissedCallMessageIDs.remove(messageID)
+            } catch {
+                // Keep it queued. The next successful connection retries the
+                // idempotent server update so CallKit declines are never lost.
+            }
+        }
+        persistMissedCallState()
+    }
+
+    private func applyMissedCallState(messageID: Int) {
+        if let index = messages.firstIndex(where: { $0.id == messageID }) {
+            messages[index].meta.callStatus = "missed"
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
+            historyArchive[index].meta.callStatus = "missed"
+        }
+    }
+
+    private func persistMissedCallState() {
+        UserDefaults.standard.set(missedCallMessageIDs.sorted(), forKey: Keys.missedCallMessageIDs)
+        UserDefaults.standard.set(pendingMissedCallMessageIDs.sorted(), forKey: Keys.pendingMissedCallMessageIDs)
     }
 
     func synthesizeSpeech(text: String, messageID: Int? = nil, persist: Bool = false) async throws -> Data {
@@ -999,6 +1049,7 @@ final class AppModel: ObservableObject {
             }
             await waitForStreamConnection()
             await catchUp(using: nextClient)
+            await flushPendingCallDeclines()
             startHeartbeat()
         } catch {
             client = nil
@@ -1020,7 +1071,7 @@ final class AppModel: ObservableObject {
                 guard !batch.isEmpty else { break }
                 archive.append(contentsOf: batch.filter {
                     !$0.meta.hidden && !locallyHiddenMessageIDs.contains($0.id) && messageBelongsToActiveSession($0)
-                })
+                }.map(normalizingMissedCallState))
                 guard let last = batch.last else { break }
                 cursor = max(cursor, last.id)
                 if batch.count < 500 { break }
@@ -1368,7 +1419,8 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func upsert(_ message: ChatMessage) {
+    private func upsert(_ incomingMessage: ChatMessage) {
+        let message = normalizingMissedCallState(incomingMessage)
         guard !locallyHiddenMessageIDs.contains(message.id) else { return }
         let wasKnown = messages.contains(where: { $0.id == message.id })
         let belongsToActiveSession = messageBelongsToActiveSession(message)
@@ -1391,6 +1443,16 @@ final class AppModel: ObservableObject {
             messages.sort(by: Self.messageComesBefore)
         }
         handleNativeArrival(message, wasKnown: wasKnown)
+    }
+
+    private func normalizingMissedCallState(_ incomingMessage: ChatMessage) -> ChatMessage {
+        var message = incomingMessage
+        if message.meta.callStatus == "missed" {
+            missedCallMessageIDs.insert(message.id)
+        } else if missedCallMessageIDs.contains(message.id) {
+            message.meta.callStatus = "missed"
+        }
+        return message
     }
 
     private func handleNativeArrival(_ message: ChatMessage, wasKnown: Bool) {

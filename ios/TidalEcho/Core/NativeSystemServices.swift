@@ -19,10 +19,13 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
     @Published private(set) var lastCallKitError: String?
     @Published private(set) var shouldPlayInAppRingtone = false
 
+    var onDeclineIncomingCall: ((Int) async -> Void)?
+
     private let provider: CXProvider
     private let controller = CXCallController()
     private var invites: [UUID: IncomingCallInvite] = [:]
     private var activeUUID: UUID?
+    private var reportedDeclineMessageIDs: Set<Int> = []
 
     override init() {
         let configuration = CXProviderConfiguration(localizedName: "Tidal Echo")
@@ -81,6 +84,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
 
     func declineRingingCall() {
         guard let invite = ringingInvite else { return }
+        reportDeclineIfNeeded(messageID: invite.id)
         ringingInvite = nil
         acceptedInvite = nil
         shouldPlayInAppRingtone = false
@@ -100,10 +104,12 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
     }
 
     func declineFromNotification(messageID: Int) {
+        reportDeclineIfNeeded(messageID: messageID)
         if ringingInvite?.id == messageID { ringingInvite = nil }
         if acceptedInvite?.id == messageID { acceptedInvite = nil }
         shouldPlayInAppRingtone = false
         if let activeUUID { endSystemCall(uuid: activeUUID) }
+        activeUUID = nil
     }
 
     func consumeAcceptedInvite() {
@@ -135,6 +141,13 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         controller.request(transaction) { _ in }
     }
 
+    private func reportDeclineIfNeeded(messageID: Int) {
+        guard reportedDeclineMessageIDs.insert(messageID).inserted else { return }
+        Task { [weak self] in
+            await self?.onDeclineIncomingCall?(messageID)
+        }
+    }
+
     nonisolated func providerDidReset(_ provider: CXProvider) {
         Task { @MainActor [weak self] in
             self?.activeUUID = nil
@@ -161,11 +174,16 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
 
     nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         Task { @MainActor [weak self] in
-            self?.invites.removeValue(forKey: action.callUUID)
-            if self?.activeUUID == action.callUUID { self?.activeUUID = nil }
-            self?.ringingInvite = nil
-            self?.acceptedInvite = nil
-            self?.shouldPlayInAppRingtone = false
+            guard let self else { action.fail(); return }
+            if let invite = self.invites[action.callUUID],
+               self.acceptedInvite?.uuid != action.callUUID {
+                self.reportDeclineIfNeeded(messageID: invite.id)
+            }
+            self.invites.removeValue(forKey: action.callUUID)
+            if self.activeUUID == action.callUUID { self.activeUUID = nil }
+            self.ringingInvite = nil
+            self.acceptedInvite = nil
+            self.shouldPlayInAppRingtone = false
             action.fulfill()
         }
     }

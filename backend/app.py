@@ -842,13 +842,57 @@ async def app_call(request: Request):
     body = await request.json()
     action = (body.get("action") or "").strip().lower()
     call_id = (body.get("call_id") or "").strip()
-    if action not in {"start", "end"}:
+    if action not in {"start", "end", "decline"}:
         raise HTTPException(status_code=400, detail="invalid call action")
+    if action == "decline":
+        try:
+            message_id = int(body.get("message_id"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="message_id required")
+
+        with db() as conn:
+            row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+            if not row or row["kind"] != "call":
+                raise HTTPException(status_code=404, detail="call message not found")
+            try:
+                call_meta = json.loads(row["meta"] or "{}")
+            except json.JSONDecodeError:
+                call_meta = {}
+            changed = call_meta.get("call_status") != "missed"
+            if changed:
+                call_meta["call_status"] = "missed"
+                conn.execute(
+                    "UPDATE messages SET meta = ? WHERE id = ?",
+                    (json.dumps(call_meta, ensure_ascii=False), message_id),
+                )
+                conn.commit()
+                row = conn.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
+
+        updated_call = rows_to_messages([row])[0]
+        await broadcast(app_subs, app_payload(updated_call))
+        if not changed:
+            return {"id": message_id}
+
+        event_meta = {
+            "user": "human",
+            "call": "decline",
+            "call_id": call_id,
+            "call_message_id": message_id,
+            "hidden": True,
+        }
+        if call_meta.get("api_session"):
+            event_meta["api_session"] = call_meta["api_session"]
+        text = f"📞 [call_missed] {HUMAN_NAME}未接听这次语音来电。"
+        msg = save_message("in", "call", text, event_meta)
+        await broadcast(plugin_subs, plugin_payload(msg))
+        return {"id": msg["id"]}
+
     if action == "start":
         text = f"📞 [call_start] {HUMAN_NAME}开启了语音通话。接下来带 🎤 的消息来自语音。请用适合朗读的短句回复。"
     else:
         text = f"📞 [call_end] {HUMAN_NAME}结束了语音通话。"
     msg = save_message("in", "call", text, {"user": "human", "call": action, "call_id": call_id})
+    await broadcast(app_subs, app_payload(msg))
     if action == "end":
         await broadcast(plugin_subs, plugin_payload(msg))
     if action == "start":

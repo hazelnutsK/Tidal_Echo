@@ -23,6 +23,8 @@ struct ChatView: View {
     @State private var isPrependingHistory = false
     @State private var composerHeight: CGFloat = 126
     @State private var isAtBottom = true
+    @State private var newMessageCount = 0
+    @State private var observedMessageCount = 0
     @State private var chatScrollView: UIScrollView?
 
     private var palette: EchoPalette { model.theme.palette }
@@ -110,6 +112,7 @@ struct ChatView: View {
         .onAppear {
             openAcceptedCallIfNeeded()
             primeAskAutopresentationIfNeeded()
+            observedMessageCount = model.messages.count
         }
         .onPreferenceChange(ComposerHeightPreferenceKey.self) { height in
             if height > 0 { composerHeight = height }
@@ -450,10 +453,13 @@ struct ChatView: View {
                     geometry.contentSize.height <= geometry.containerSize.height
                         || geometry.visibleRect.maxY >= geometry.contentSize.height - 56
                 } action: { _, nextValue in
+                    if nextValue { newMessageCount = 0 }
                     if nextValue != isAtBottom { isAtBottom = nextValue }
                 }
                 .onAppear { positionInitialHistoryIfNeeded(proxy) }
-                .onChange(of: model.messages.count) { _ in
+                .onChange(of: model.messages.count) { count in
+                    let previousCount = observedMessageCount
+                    observedMessageCount = count
                     guard !isPrependingHistory else { return }
                     guard didPositionInitialHistory else {
                         guard !model.isLoadingHistory, !model.messages.isEmpty else { return }
@@ -463,10 +469,21 @@ struct ChatView: View {
                     }
                     guard !model.isLoadingHistory else { return }
                     let sentByMe = model.messages.last?.author == .human
+                    if !isAtBottom, !sentByMe, count > previousCount {
+                        let appended = model.messages.suffix(count - previousCount)
+                        let incomingCount = appended.filter {
+                            $0.author == .ai && $0.kind != "thinking" && $0.kind != "act"
+                        }.count
+                        newMessageCount += incomingCount
+                    }
                     guard isAtBottom || sentByMe else { return }
                     scrollToBottom(proxy, animated: true)
                 }
                 .onChange(of: model.isLoadingHistory) { loading in
+                    if loading {
+                        newMessageCount = 0
+                        observedMessageCount = model.messages.count
+                    }
                     guard !loading, !model.messages.isEmpty else { return }
                     guard !didPositionInitialHistory else { return }
                     didPositionInitialHistory = true
@@ -489,6 +506,7 @@ struct ChatView: View {
                     // Match the PWA: focusing the composer opens enough scrollable
                     // room and settles the latest bubble above the keyboard.
                     isAtBottom = true
+                    newMessageCount = 0
                     scrollToBottom(proxy, animated: true)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
                         scrollToBottom(proxy, animated: false)
@@ -504,25 +522,53 @@ struct ChatView: View {
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if !isAtBottom {
-                        Button {
-                            jumpToBottom(proxy)
-                        } label: {
-                            Image(systemName: "arrow.down")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(palette.text)
-                                .frame(width: 36, height: 36)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
-                                .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+                        HStack(spacing: 8) {
+                            if newMessageCount > 0 {
+                                Button {
+                                    newMessageCount = 0
+                                    jumpToBottom(proxy)
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Circle()
+                                            .fill(palette.accent)
+                                            .frame(width: 6, height: 6)
+                                        Text(newMessageCount > 99 ? "99+ 条新消息" : "\(newMessageCount) 条新消息")
+                                            .font(.system(size: 12, weight: .medium))
+                                    }
+                                    .foregroundStyle(palette.text)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 34)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                                    .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
+                                    .shadow(color: Color.black.opacity(0.07), radius: 8, y: 3)
+                                }
+                                .buttonStyle(.plain)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                                .accessibilityLabel("\(newMessageCount) 条新消息，回到最新位置")
+                            }
+
+                            Button {
+                                newMessageCount = 0
+                                jumpToBottom(proxy)
+                            } label: {
+                                Image(systemName: "arrow.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(palette.text)
+                                    .frame(width: 36, height: 36)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
+                                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("回到最新消息")
                         }
-                        .buttonStyle(.plain)
                         .padding(.trailing, 16)
                         .padding(.bottom, composerHeight + 12)
                         .transition(.scale(scale: 0.88).combined(with: .opacity))
-                        .accessibilityLabel("回到最新消息")
                     }
                 }
                 .animation(.easeOut(duration: 0.18), value: isAtBottom)
+                .animation(.easeOut(duration: 0.18), value: newMessageCount)
             }
         }
     }
@@ -792,7 +838,7 @@ private struct MessageAskSheet: View {
                         ForEach(Array(ask.options.enumerated()), id: \.offset) { index, option in
                             Button { submit(index: index) } label: {
                                 HStack(spacing: 12) {
-                                    Text(letter(for: index))
+                                    Text(optionNumber(for: index))
                                         .font(.system(size: 12, weight: .semibold))
                                         .foregroundStyle(isPicked(index) ? accentForeground : palette.secondaryText)
                                         .frame(width: 28, height: 28)
@@ -827,7 +873,7 @@ private struct MessageAskSheet: View {
                             .padding(.top, 16)
                     } else {
                         HStack(spacing: 9) {
-                            TextField("自己胡说一个答案…", text: $freeText)
+                            TextField("我偏要自己答", text: $freeText)
                                 .font(model.chatFont.font(size: 14 * model.fontScale, numericWeight: model.chatWeight))
                                 .foregroundStyle(palette.text)
                                 .focused($freeAnswerFocused)
@@ -880,9 +926,8 @@ private struct MessageAskSheet: View {
         }
     }
 
-    private func letter(for index: Int) -> String {
-        let letters = Array("ABCDEF")
-        return letters.indices.contains(index) ? String(letters[index]) : String(index + 1)
+    private func optionNumber(for index: Int) -> String {
+        String(index + 1)
     }
 
     private func isPicked(_ index: Int) -> Bool {

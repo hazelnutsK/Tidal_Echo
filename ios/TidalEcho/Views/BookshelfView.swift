@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// 书架。她把 epub 放进来，点开就是阅读页；小克能看见的，只有她已经读过的部分。
@@ -87,17 +88,16 @@ struct BookshelfView: View {
         .tint(palette.accent)
         .task { await loadShelf() }
         .refreshable { await loadShelf() }
-        .fileImporter(
-            isPresented: $showingFilePicker,
-            allowedContentTypes: BookshelfView.importableTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { Task { await importBook(at: url) } }
-            case .failure(let error):
-                errorText = error.localizedDescription
-            }
+        .sheet(isPresented: $showingFilePicker) {
+            BookDocumentPicker(
+                contentTypes: BookshelfView.importableTypes,
+                onPick: { url in
+                    showingFilePicker = false
+                    Task { await importBook(at: url) }
+                },
+                onCancel: { showingFilePicker = false }
+            )
+            .ignoresSafeArea()
         }
         .fullScreenCover(item: $openedBook) { book in
             BookReaderView(model: model, book: book)
@@ -220,23 +220,35 @@ struct BookshelfView: View {
 
     @MainActor
     private func importBook(at url: URL) async {
+        let ext = url.pathExtension.lowercased()
+        guard ext == "epub" || ext == "txt" else {
+            errorText = "书房目前可以放入 epub 或 txt。"
+            return
+        }
+        isImporting = true
+        noticeText = "正在把《\(url.deletingPathExtension().lastPathComponent)》放进书房…"
+        errorText = nil
+        defer { isImporting = false }
+
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let name = url.lastPathComponent
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try await Task.detached(priority: .userInitiated) {
+                try Data(contentsOf: url, options: .mappedIfSafe)
+            }.value
         } catch {
+            noticeText = nil
             errorText = "这个文件读不出来：\(error.localizedDescription)"
             return
         }
-        isImporting = true
-        defer { isImporting = false }
         do {
             let result = try await model.importBook(data: data, name: name)
             await loadShelf()
             showNotice(result.hint ?? "《\(result.title)》拆成了 \(result.chapters) 章")
         } catch {
+            noticeText = nil
             errorText = "没导进去：\(error.localizedDescription)"
         }
     }
@@ -262,9 +274,8 @@ struct BookshelfView: View {
     }
 
     private static var importableTypes: [UTType] {
-        // `.item` keeps EPUBs selectable even when a third-party Files
-        // provider reports only a generic/dynamic content type.
-        [.item]
+        // Keep generic data selectable for providers that don't report EPUB's UTI.
+        [UTType(filenameExtension: "epub") ?? .data, .plainText, .data]
     }
 
     private func applyMetadataOverrides(to incoming: [Book]) -> [Book] {
@@ -291,6 +302,48 @@ struct BookshelfView: View {
         var overrides = (try? JSONDecoder().decode([String: BookMetadataOverride].self, from: metadataOverridesData)) ?? [:]
         overrides.removeValue(forKey: String(bookID))
         metadataOverridesData = (try? JSONEncoder().encode(overrides)) ?? Data()
+    }
+}
+
+private struct BookDocumentPicker: UIViewControllerRepresentable {
+    let contentTypes: [UTType]
+    let onPick: (URL) -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onPick: onPick, onCancel: onCancel)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: contentTypes, asCopy: true)
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL) -> Void
+        let onCancel: () -> Void
+
+        init(onPick: @escaping (URL) -> Void, onCancel: @escaping () -> Void) {
+            self.onPick = onPick
+            self.onCancel = onCancel
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else {
+                onCancel()
+                return
+            }
+            onPick(url)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCancel()
+        }
     }
 }
 

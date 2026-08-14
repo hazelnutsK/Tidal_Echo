@@ -100,9 +100,9 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
     func font(size: Double, weight: Font.Weight = .regular) -> Font {
         switch self {
         case .system:
-            // Match the PWA's Chinese sans stack on iOS instead of relying on
-            // SwiftUI's locale-dependent generic fallback.
-            return .custom("PingFang SC", size: CGFloat(size)).weight(weight)
+            // PWA 实测走的就是系统那份可变中文字体(PingFangUI)，这里跟着走系统字体，
+            // 免得气泡(连续字重)跟别处(静态 PingFang SC)字形对不上。
+            return .system(size: CGFloat(size), weight: weight, design: .default)
         case .serif:
             return .custom("Songti SC", size: CGFloat(size)).weight(weight)
         case .rounded, .monospaced:
@@ -114,21 +114,35 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         guard self == .system else {
             return font(size: size, weight: numericWeight.echoFontWeight)
         }
-        // iOS 18 / macOS Sequoia 起，系统里的 PingFang 换成了带 wght 轴的可变字体
-        // (私有 PingFangUI)。Safari 因此能把 420 / 440 / 460 渲染成各不相同的粗细，
-        // 而这里原先点名静态 face，只能在 4 档之间跳——同一个滑块值两端就对不上。
-        // 能拿到 wght 轴就走连续字重，拿不到(旧系统/静态 PingFang)按老办法分桶。
+        // 万一哪天 PingFang 自己暴露了 wght 轴(现在拿不到)，优先用它，字形最贴。
         if let variable = Self.variableSans(size: CGFloat(size), weight: numericWeight) {
             return Font(variable)
         }
-        let face: String
-        switch numericWeight {
-        case ..<350: face = "PingFangSC-Light"
-        case ..<450: face = "PingFangSC-Regular"
-        case ..<550: face = "PingFangSC-Medium"
-        default: face = "PingFangSC-Semibold"
+        // 实测(2026-08-15，PWA 墨量探针 8/8)：Safari 的中文是连续插值的，用的是系统
+        // 那份可变 PingFangUI；而 UIFont(name:"PingFangSC-*") 拿到的静态 PingFang SC
+        // 没有 wght 轴，只能在 4 档之间跳。系统字体的 UIFont.Weight 是 -1.0…1.0 的
+        // 连续标度，传任意值即可插值——这才是和 PWA 对齐的路。
+        return Font(UIFont.systemFont(ofSize: CGFloat(size),
+                                      weight: Self.continuousWeight(numericWeight)))
+    }
+
+    /// CSS 字重(100…900) → UIFont.Weight 的连续标度，按系统命名字重分段线性插值。
+    static func continuousWeight(_ css: Double) -> UIFont.Weight {
+        let stops: [(css: Double, value: CGFloat)] = [
+            (100, -0.80), (200, -0.60), (300, -0.40), (400, 0.00), (500, 0.23),
+            (600, 0.30), (700, 0.40), (800, 0.56), (900, 0.62)
+        ]
+        let target = min(max(css, 100), 900)
+        for index in 1..<stops.count {
+            let lower = stops[index - 1]
+            let upper = stops[index]
+            if target <= upper.css {
+                let span = upper.css - lower.css
+                let ratio: CGFloat = span > 0 ? CGFloat((target - lower.css) / span) : CGFloat(0)
+                return UIFont.Weight(rawValue: lower.value + (upper.value - lower.value) * ratio)
+            }
         }
-        return .custom(face, fixedSize: CGFloat(size))
+        return UIFont.Weight(rawValue: stops[stops.count - 1].value)
     }
 
     /// 'wght' 轴的四字符标识
@@ -152,17 +166,14 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         return axes.compactMap { ($0[key] as? NSNumber)?.uint32Value }
     }
 
-    /// 设置页那行小字：一眼看出这台机上到底走没走可变字重。
-    static func weightDiagnostic() -> String {
-        guard let base = UIFont(name: "PingFangSC-Regular", size: 14) else {
-            return "取不到 PingFangSC-Regular · 走系统回退"
+    /// 设置页那行小字：一眼看出这台机上走的是哪条路，以及当前字重插值到了多少。
+    static func weightDiagnostic(_ current: Double) -> String {
+        if let base = UIFont(name: "PingFangSC-Regular", size: 14),
+           let ids = variationAxisIDs(of: base), ids.contains(wghtAxisID) {
+            return "PingFang 可变 wght ✓（\(ids.count) 轴）"
         }
-        guard let ids = variationAxisIDs(of: base) else {
-            return "静态字体 · 无可变轴 · 4 档分桶"
-        }
-        return ids.contains(wghtAxisID)
-            ? "可变 wght ✓ 连续字重（\(ids.count) 轴）"
-            : "有 \(ids.count) 轴但无 wght · 4 档分桶"
+        let value = Double(continuousWeight(current).rawValue)
+        return String(format: "系统字体 · 连续插值 · %d→%.3f", Int(current), value)
     }
 
     /// SwiftUI's `lineSpacing` is added on top of the font's native line box.
@@ -172,8 +183,9 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         let pointSize = CGFloat(size)
         switch self {
         case .system:
-            return UIFont(name: "PingFangSC-Regular", size: pointSize)?.lineHeight
-                ?? UIFont.systemFont(ofSize: pointSize).lineHeight
+            // 渲染已改走系统字体，行高基准必须跟着换：否则 lineSpacing 会拿另一套字体的
+            // 行盒去减，行距会莫名变松或变紧。总行高仍是 size × 1.64，视觉节奏不变。
+            return UIFont.systemFont(ofSize: pointSize).lineHeight
         case .serif:
             return UIFont(name: "Songti SC", size: pointSize)?.lineHeight
                 ?? UIFont.systemFont(ofSize: pointSize).lineHeight

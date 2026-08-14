@@ -1122,7 +1122,7 @@ private struct AttachmentView: View {
             AuthenticatedImageView(request: request, palette: palette)
                 .frame(maxWidth: 260, minHeight: 120, maxHeight: 330)
                 .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        } else if attachment.kind == "audio" || attachment.mime?.hasPrefix("audio/") == true {
+        } else if attachment.isAudio {
             VoiceAttachmentView(attachment: attachment, request: request, palette: palette)
         } else {
             AuthenticatedFileView(attachment: attachment, request: request, palette: palette)
@@ -1222,7 +1222,7 @@ private struct QuickLookPreview: UIViewControllerRepresentable {
     }
 }
 
-private struct VoiceAttachmentView: View {
+struct VoiceAttachmentView: View {
     let attachment: Attachment
     let request: URLRequest?
     let palette: EchoPalette

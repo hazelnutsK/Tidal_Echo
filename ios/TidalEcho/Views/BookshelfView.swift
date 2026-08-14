@@ -9,10 +9,12 @@ struct BookshelfView: View {
     @State private var isImporting = false
     @State private var showingFilePicker = false
     @State private var openedBook: Book?
+    @State private var editingBook: Book?
     @State private var pendingDeletion: Book?
     @State private var noticeText: String?
     @State private var errorText: String?
     @State private var selectedBookID: Int?
+    @AppStorage("tidalEcho.bookMetadataOverrides") private var metadataOverridesData = Data()
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -62,7 +64,13 @@ struct BookshelfView: View {
                     .font(.custom("Songti SC", size: 17).weight(.semibold))
                     .foregroundStyle(palette.text)
             }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if let selectedBook {
+                    Button { editingBook = selectedBook } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .accessibilityLabel("修改书名和作者")
+                }
                 if isImporting {
                     ProgressView()
                 } else {
@@ -87,6 +95,13 @@ struct BookshelfView: View {
         }
         .fullScreenCover(item: $openedBook) { book in
             BookReaderView(model: model, book: book)
+        }
+        .sheet(item: $editingBook) { book in
+            BookMetadataEditor(book: book) { title, author in
+                saveMetadata(for: book, title: title, author: author)
+            }
+            .presentationDetents([.height(300)])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: openedBook == nil) { closed in
             // 读完回来，进度和划线数要跟着变
@@ -148,6 +163,9 @@ struct BookshelfView: View {
                         .buttonStyle(.plain)
                         .id(book.id)
                         .contextMenu {
+                            Button { editingBook = book } label: {
+                                Label("修改书名与作者", systemImage: "pencil")
+                            }
                             Button(role: .destructive) { pendingDeletion = book } label: {
                                 Label("从书架撤掉", systemImage: "trash")
                             }
@@ -184,7 +202,7 @@ struct BookshelfView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            books = try await model.bookShelf()
+            books = applyMetadataOverrides(to: try await model.bookShelf())
             if selectedBookID == nil || !books.contains(where: { $0.id == selectedBookID }) {
                 selectedBookID = books.first?.id
             }
@@ -221,6 +239,7 @@ struct BookshelfView: View {
     private func delete(_ book: Book) async {
         do {
             try await model.removeBook(id: book.id)
+            removeMetadataOverride(for: book.id)
             await loadShelf()
         } catch {
             errorText = "没撤掉：\(error.localizedDescription)"
@@ -237,10 +256,103 @@ struct BookshelfView: View {
     }
 
     private static var importableTypes: [UTType] {
-        var types: [UTType] = [.plainText]
-        if let epub = UTType("org.idpf.epub-container") { types.insert(epub, at: 0) }
-        types.append(.data)
-        return types
+        // `.item` keeps EPUBs selectable even when a third-party Files
+        // provider reports only a generic/dynamic content type.
+        [.item]
+    }
+
+    private func applyMetadataOverrides(to incoming: [Book]) -> [Book] {
+        let overrides = (try? JSONDecoder().decode([String: BookMetadataOverride].self, from: metadataOverridesData)) ?? [:]
+        return incoming.map { book in
+            guard let override = overrides[String(book.id)] else { return book }
+            return book.replacingMetadata(title: override.title, author: override.author)
+        }
+    }
+
+    private func saveMetadata(for book: Book, title: String, author: String) {
+        let cleanedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanedTitle.isEmpty else { return }
+        let cleanedAuthor = author.trimmingCharacters(in: .whitespacesAndNewlines)
+        var overrides = (try? JSONDecoder().decode([String: BookMetadataOverride].self, from: metadataOverridesData)) ?? [:]
+        overrides[String(book.id)] = BookMetadataOverride(title: cleanedTitle, author: cleanedAuthor)
+        if let encoded = try? JSONEncoder().encode(overrides) { metadataOverridesData = encoded }
+        books = books.map {
+            $0.id == book.id ? $0.replacingMetadata(title: cleanedTitle, author: cleanedAuthor) : $0
+        }
+    }
+
+    private func removeMetadataOverride(for bookID: Int) {
+        var overrides = (try? JSONDecoder().decode([String: BookMetadataOverride].self, from: metadataOverridesData)) ?? [:]
+        overrides.removeValue(forKey: String(bookID))
+        metadataOverridesData = (try? JSONEncoder().encode(overrides)) ?? Data()
+    }
+}
+
+private struct BookMetadataOverride: Codable {
+    let title: String
+    let author: String
+}
+
+private extension Book {
+    func replacingMetadata(title: String, author: String) -> Book {
+        Book(
+            id: id,
+            title: title,
+            author: author,
+            cover: cover,
+            totalChapters: totalChapters,
+            totalChars: totalChars,
+            curChapter: curChapter,
+            curOffset: curOffset,
+            furthestChapter: furthestChapter,
+            furthestOffset: furthestOffset,
+            percent: percent,
+            annotations: annotations,
+            createdAt: createdAt
+        )
+    }
+}
+
+private struct BookMetadataEditor: View {
+    let book: Book
+    let onSave: (String, String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var author: String
+
+    init(book: Book, onSave: @escaping (String, String) -> Void) {
+        self.book = book
+        self.onSave = onSave
+        _title = State(initialValue: book.title)
+        _author = State(initialValue: book.author)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("书籍名称", text: $title)
+                    TextField("作者", text: $author)
+                } footer: {
+                    Text("修改会保存在这台设备上。")
+                }
+            }
+            .font(.custom("Songti SC", size: 16))
+            .navigationTitle("书籍资料")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("保存") {
+                        onSave(title, author)
+                        dismiss()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
     }
 }
 

@@ -91,14 +91,7 @@ struct ReaderTextView: UIViewRepresentable {
     // MARK: - 排版
 
     private var readerFont: UIFont {
-        let base = UIFont(name: "Songti SC", size: CGFloat(fontSize))
-            ?? UIFont(name: "STSongti-SC-Regular", size: CGFloat(fontSize))
-            ?? UIFont.systemFont(ofSize: CGFloat(fontSize))
-        let normalizedWeight = min(0.8, max(-0.8, (fontWeight - 400) / 375))
-        let descriptor = base.fontDescriptor.addingAttributes([
-            .traits: [UIFontDescriptor.TraitKey.weight: CGFloat(normalizedWeight)]
-        ])
-        return UIFont(descriptor: descriptor, size: CGFloat(fontSize))
+        ReaderSongtiFont.uiFont(size: CGFloat(fontSize), weight: fontWeight)
     }
 
     private func attributedChapter() -> NSAttributedString {
@@ -255,5 +248,29 @@ struct ReaderTextView: UIViewRepresentable {
         ) -> Bool {
             true
         }
+    }
+}
+
+/// Songti SC is a four-face family rather than a variable font. Asking its
+/// regular descriptor for an arbitrary weight leaves the glyphs unchanged on
+/// iOS, so map the slider to the actual installed faces instead.
+enum ReaderSongtiFont {
+    static func face(for weight: Double) -> String {
+        switch weight {
+        case ..<375: return "STSongti-SC-Light"
+        case ..<525: return "STSongti-SC-Regular"
+        case ..<650: return "STSongti-SC-Bold"
+        default: return "STSongti-SC-Black"
+        }
+    }
+
+    static func uiFont(size: CGFloat, weight: Double) -> UIFont {
+        UIFont(name: face(for: weight), size: size)
+            ?? UIFont(name: "Songti SC", size: size)
+            ?? UIFont.systemFont(ofSize: size)
+    }
+
+    static func font(size: Double, weight: Double) -> Font {
+        .custom(face(for: weight), fixedSize: CGFloat(size))
     }
 }

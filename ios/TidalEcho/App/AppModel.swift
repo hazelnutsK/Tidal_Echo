@@ -57,6 +57,9 @@ final class AppModel: ObservableObject {
     @Published var backgroundOpacity: Double {
         didSet { UserDefaults.standard.set(backgroundOpacity, forKey: Keys.backgroundOpacity) }
     }
+    @Published var backgroundBlur: Double {
+        didSet { UserDefaults.standard.set(backgroundBlur, forKey: Keys.backgroundBlur) }
+    }
     @Published var showsAIBubble: Bool {
         didSet { UserDefaults.standard.set(showsAIBubble, forKey: Keys.showsAIBubble) }
     }
@@ -135,6 +138,7 @@ final class AppModel: ObservableObject {
         static let bubbleRadius = "tidalEcho.bubbleRadius"
         static let chatWeight = "tidalEcho.chatWeight"
         static let backgroundOpacity = "tidalEcho.backgroundOpacity"
+        static let backgroundBlur = "tidalEcho.backgroundBlur"
         static let showsAIBubble = "tidalEcho.showsAIBubble"
         static let showsHumanAvatar = "tidalEcho.showsHumanAvatar"
         static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
@@ -197,6 +201,7 @@ final class AppModel: ObservableObject {
         defaults.set(true, forKey: Keys.pwaBubbleMetricsV1)
         chatWeight = defaults.object(forKey: Keys.chatWeight) == nil ? 400 : defaults.double(forKey: Keys.chatWeight)
         backgroundOpacity = defaults.object(forKey: Keys.backgroundOpacity) == nil ? 1 : defaults.double(forKey: Keys.backgroundOpacity)
+        backgroundBlur = defaults.object(forKey: Keys.backgroundBlur) == nil ? 0 : defaults.double(forKey: Keys.backgroundBlur)
         showsAIBubble = defaults.object(forKey: Keys.showsAIBubble) == nil ? true : defaults.bool(forKey: Keys.showsAIBubble)
         showsHumanAvatar = defaults.object(forKey: Keys.showsHumanAvatar) == nil ? false : defaults.bool(forKey: Keys.showsHumanAvatar)
         bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)

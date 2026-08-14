@@ -85,6 +85,7 @@ struct Attachment: Codable, Hashable, Identifiable {
 
     var id: String { "\(url)#\(name)" }
     var isImage: Bool { kind == "image" || mime?.hasPrefix("image/") == true }
+    var isAudio: Bool { voice == true || kind == "audio" || mime?.hasPrefix("audio/") == true }
 }
 
 struct MessageMeta: Decodable, Hashable {

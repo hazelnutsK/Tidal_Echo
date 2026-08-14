@@ -452,7 +452,7 @@ private struct ReaderSettingsSheet: View {
                 )
 
                 Text("这一句是用当前正文字号排的，看着累就再调。")
-                    .font(.custom("Songti SC", size: fontSize).weight(fontWeight.echoFontWeight))
+                    .font(ReaderSongtiFont.font(size: fontSize, weight: fontWeight))
                     .foregroundStyle(Color.black.opacity(0.58))
                     .lineSpacing(fontSize * lineSpacing)
                     .padding(.horizontal, max(0, margin - 14))

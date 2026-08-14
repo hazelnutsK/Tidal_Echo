@@ -30,7 +30,7 @@ struct SpacesView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        SpaceLink(title: "收藏", subtitle: "舍不得丢的对话", icon: "star.fill", color: .orange, unreadCount: 0) {
+                        SpaceLink(title: "收藏", subtitle: "舍不得丢的对话", icon: "bookmark.fill", color: .orange, unreadCount: 0) {
                             StarsView(model: model)
                         }
                         SpaceLink(title: "相册", subtitle: "聊天里的照片", icon: "photo.on.rectangle.angled", color: .cyan, unreadCount: 0) {
@@ -365,13 +365,13 @@ private struct StarsView: View {
             if isLoading && messages.isEmpty {
                 ProgressView("正在翻收藏夹…")
             } else if messages.isEmpty {
-                SpaceEmptyState(icon: "star", title: "还没有收藏", text: "回到聊天页，长按一条气泡就可以收藏。")
+                SpaceEmptyState(icon: "bookmark", title: "还没有收藏", text: "回到聊天页，长按一条气泡就可以收藏。")
             } else {
                 List {
                     ForEach(messages) { message in
                         VStack(alignment: .leading, spacing: 9) {
-                            HStack {
-                                Label(message.author == .human ? "小雪" : "小克", systemImage: message.author == .human ? "person.fill" : "sparkle")
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(message.author == .human ? "小雪" : "Altair")
                                     .font(.caption.weight(.semibold))
                                 Spacer()
                                 Text(shortTimestamp(message.timestamp))
@@ -390,13 +390,21 @@ private struct StarsView: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 14))
                                 }
                             }
+                            ForEach(message.meta.attachments.filter(\.isAudio)) { attachment in
+                                VoiceAttachmentView(
+                                    attachment: attachment,
+                                    request: model.authenticatedRequest(path: attachment.url),
+                                    palette: model.theme.palette
+                                )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
                         .padding(.vertical, 7)
                         .swipeActions {
                             Button(role: .destructive) {
                                 Task { await unstar(message) }
                             } label: {
-                                Label("取消收藏", systemImage: "star.slash")
+                                Label("取消收藏", systemImage: "bookmark.slash")
                             }
                         }
                     }

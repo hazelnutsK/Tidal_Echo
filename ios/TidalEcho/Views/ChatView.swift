@@ -33,6 +33,8 @@ struct ChatView: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
+                        .scaleEffect(1 + model.backgroundBlur / 260)
+                        .blur(radius: model.backgroundBlur)
                         .clipped()
                         .opacity(model.backgroundOpacity)
                 }
@@ -762,21 +764,32 @@ private struct MessageSearchView: View {
                 guard !trimmed.isEmpty else {
                     results = []
                     isSearching = false
+                    errorText = nil
                     return
                 }
+                let searchedQuery = trimmed
                 isSearching = true
+                errorText = nil
                 do {
                     try await Task.sleep(nanoseconds: 280_000_000)
                     guard !Task.isCancelled else { return }
-                    results = try await model.searchMessages(trimmed)
+                    let nextResults = try await model.searchMessages(searchedQuery)
+                    guard !Task.isCancelled,
+                          query.trimmingCharacters(in: .whitespacesAndNewlines) == searchedQuery else { return }
+                    results = nextResults
                     errorText = nil
                 } catch is CancellationError {
                     return
+                } catch let error as URLError where error.code == .cancelled {
+                    return
                 } catch {
+                    guard query.trimmingCharacters(in: .whitespacesAndNewlines) == searchedQuery else { return }
                     results = []
                     errorText = error.localizedDescription
                 }
-                isSearching = false
+                if query.trimmingCharacters(in: .whitespacesAndNewlines) == searchedQuery {
+                    isSearching = false
+                }
             }
             .alert("搜索失败", isPresented: Binding(
                 get: { errorText != nil },
@@ -1339,7 +1352,7 @@ private struct ComposerView: View {
 
     private func attachmentIcon(_ attachment: Attachment) -> String {
         if attachment.isImage { return "photo" }
-        if attachment.mime?.hasPrefix("audio/") == true || attachment.kind == "audio" { return "music.note" }
+        if attachment.isAudio { return "music.note" }
         return "doc"
     }
 

@@ -407,6 +407,8 @@ private struct AppearanceSettingsView: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                        .scaleEffect(1 + model.backgroundBlur / 260)
+                        .blur(radius: model.backgroundBlur)
                         .frame(height: 128)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
@@ -429,6 +431,16 @@ private struct AppearanceSettingsView: View {
                             .foregroundStyle(palette.secondaryText)
                     }
                     Slider(value: $model.backgroundOpacity, in: 0.05...1, step: 0.05)
+                        .tint(palette.accent)
+                }
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack {
+                        Text("背景模糊度")
+                        Spacer()
+                        Text("\(Int(model.backgroundBlur.rounded()))")
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                    Slider(value: $model.backgroundBlur, in: 0...24, step: 1)
                         .tint(palette.accent)
                 }
             }

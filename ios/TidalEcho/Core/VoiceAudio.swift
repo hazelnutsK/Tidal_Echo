@@ -63,6 +63,14 @@ final class VoicePlaybackCenter: NSObject, ObservableObject, AVAudioPlayerDelega
         reset()
     }
 
+    func seek(id: String, toProgress value: Double) {
+        guard currentID == id, let player, player.duration > 0 else { return }
+        let nextProgress = min(1, max(0, value))
+        player.currentTime = player.duration * nextProgress
+        progress = nextProgress
+        duration = player.duration
+    }
+
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         reset()
     }

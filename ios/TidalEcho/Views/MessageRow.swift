@@ -1270,15 +1270,19 @@ struct VoiceAttachmentView: View {
     let request: URLRequest?
     let palette: EchoPalette
     @ObservedObject private var playback = VoicePlaybackCenter.shared
+    @State private var scrubProgress: Double?
 
     private var isCurrent: Bool { playback.currentID == attachment.id }
+    private var displayedProgress: Double {
+        scrubProgress ?? (isCurrent ? playback.progress : 0)
+    }
 
     var body: some View {
-        Button {
-            guard let request else { return }
-            Task { await playback.toggle(id: attachment.id, request: request) }
-        } label: {
-            HStack(spacing: 10) {
+        HStack(spacing: 10) {
+            Button {
+                guard let request else { return }
+                Task { await playback.toggle(id: attachment.id, request: request) }
+            } label: {
                 ZStack {
                     Circle().fill(palette.accent.opacity(0.15))
                     if isCurrent && playback.isLoading {
@@ -1290,38 +1294,71 @@ struct VoiceAttachmentView: View {
                     }
                 }
                 .frame(width: 32, height: 32)
-
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        HStack(alignment: .center, spacing: 2) {
-                            ForEach(0..<22, id: \.self) { index in
-                                Capsule()
-                                    .fill(palette.secondaryText.opacity(0.34))
-                                    .frame(width: 2, height: CGFloat(7 + ((index * 7) % 12)))
-                            }
-                        }
-                        .frame(maxHeight: .infinity)
-                        if isCurrent {
-                            Rectangle()
-                                .fill(palette.accent.opacity(0.34))
-                                .frame(width: geometry.size.width * playback.progress)
-                                .blendMode(.sourceAtop)
-                        }
-                    }
-                }
-                .frame(width: 86, height: 24)
-
-                Text(playbackLabel)
-                    .font(.caption)
-                    .foregroundStyle(palette.secondaryText)
-                    .lineLimit(1)
-                    .frame(minWidth: 30, maxWidth: 92, alignment: .trailing)
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .background(palette.composer.opacity(0.72), in: Capsule())
+            .buttonStyle(.plain)
+            .accessibilityLabel(isCurrent && playback.isPlaying ? "暂停语音" : "播放语音")
+
+            VoiceWaveform(
+                progress: displayedProgress,
+                isPlaying: isCurrent && playback.isPlaying && scrubProgress == nil,
+                palette: palette
+            )
+            .frame(width: 86, height: 28)
+            .contentShape(Rectangle())
+            .gesture(waveformDragGesture)
+            .accessibilityElement()
+            .accessibilityLabel("语音播放进度")
+            .accessibilityValue("百分之 \(Int(displayedProgress * 100))")
+            .accessibilityAdjustableAction { direction in
+                guard isCurrent else { return }
+                let delta: Double
+                switch direction {
+                case .increment: delta = 0.05
+                case .decrement: delta = -0.05
+                @unknown default: return
+                }
+                playback.seek(id: attachment.id, toProgress: playback.progress + delta)
+            }
+
+            Text(playbackLabel)
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+                .frame(minWidth: 30, maxWidth: 92, alignment: .trailing)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(palette.composer.opacity(0.72), in: Capsule())
+    }
+
+    private var waveformDragGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                let next = waveformProgress(at: value.location.x)
+                scrubProgress = next
+                if isCurrent {
+                    playback.seek(id: attachment.id, toProgress: next)
+                }
+            }
+            .onEnded { value in
+                let next = waveformProgress(at: value.location.x)
+                if isCurrent {
+                    playback.seek(id: attachment.id, toProgress: next)
+                    scrubProgress = nil
+                } else if let request {
+                    Task { @MainActor in
+                        await playback.toggle(id: attachment.id, request: request)
+                        playback.seek(id: attachment.id, toProgress: next)
+                        scrubProgress = nil
+                    }
+                } else {
+                    scrubProgress = nil
+                }
+            }
+    }
+
+    private func waveformProgress(at x: CGFloat) -> Double {
+        Double(min(86, max(0, x)) / 86)
     }
 
     private func voiceTime(_ value: TimeInterval) -> String {
@@ -1330,9 +1367,44 @@ struct VoiceAttachmentView: View {
     }
 
     private var playbackLabel: String {
+        if let scrubProgress, isCurrent, playback.duration > 0 {
+            return voiceTime(playback.duration * scrubProgress)
+        }
         if isCurrent && playback.duration > 0 { return voiceTime(playback.duration) }
         if attachment.voice == true || attachment.name.lowercased().contains("voice") { return "语音" }
         return attachment.name
+    }
+}
+
+private struct VoiceWaveform: View {
+    let progress: Double
+    let isPlaying: Bool
+    let palette: EchoPalette
+
+    private let barHeights: [CGFloat] = [
+        8, 15, 21, 13, 18, 10, 16, 22, 12, 19, 9,
+        17, 14, 20, 11, 18, 13, 21, 10, 16, 12, 8
+    ]
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 12.0, paused: !isPlaying)) { timeline in
+            let phase = timeline.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(barHeights.indices, id: \.self) { index in
+                    let threshold = (Double(index) + 0.5) / Double(barHeights.count)
+                    Capsule()
+                        .fill(threshold <= progress ? palette.accent : palette.secondaryText.opacity(0.32))
+                        .frame(width: 2.2, height: animatedHeight(at: index, phase: phase))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    private func animatedHeight(at index: Int, phase: TimeInterval) -> CGFloat {
+        guard isPlaying else { return barHeights[index] }
+        let wave = sin(phase * 5.2 + Double(index) * 0.78)
+        return max(6, barHeights[index] + CGFloat(wave) * 2.4)
     }
 }
 

@@ -542,6 +542,7 @@ private struct AppearanceSettingsView: View {
                             ))
                             .padding(.horizontal, 13)
                             .padding(.vertical, 10)
+                            .foregroundStyle(model.resolvedBubbleTextColor(default: palette.text))
                             .background {
                                 LiquidGlassBubbleBackground(
                                     tint: model.resolvedAIBubbleColor(default: palette.aiBubble),
@@ -561,6 +562,7 @@ private struct AppearanceSettingsView: View {
                             ))
                             .padding(.horizontal, 13)
                             .padding(.vertical, 10)
+                            .foregroundStyle(model.resolvedBubbleTextColor(default: palette.text))
                             .background {
                                 LiquidGlassBubbleBackground(
                                     tint: model.resolvedHumanBubbleColor(default: palette.humanBubble),
@@ -582,6 +584,11 @@ private struct AppearanceSettingsView: View {
             ColorPicker("我的气泡颜色", selection: Binding(
                 get: { model.resolvedHumanBubbleColor(default: palette.humanBubble) },
                 set: { model.setHumanBubbleColor($0) }
+            ), supportsOpacity: false)
+
+            ColorPicker("气泡字体颜色", selection: Binding(
+                get: { model.resolvedBubbleTextColor(default: palette.text) },
+                set: { model.setBubbleTextColor($0) }
             ), supportsOpacity: false)
 
             settingSlider(
@@ -676,7 +683,7 @@ private struct AppearanceSettingsView: View {
                 )
             }
 
-            Button("恢复主题气泡颜色") { model.resetBubbleColors() }
+            Button("恢复主题气泡配色") { model.resetBubbleColors() }
             Button("恢复外观默认值") {
                 model.chatFont = .system
                 model.fontScale = 1

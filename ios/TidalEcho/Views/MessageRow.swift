@@ -92,6 +92,7 @@ struct MessageRow: View {
     let showsAIBubble: Bool
     let aiBubbleColor: Color
     let humanBubbleColor: Color
+    let bubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
     let bubbleWidthScale: Double
@@ -226,6 +227,7 @@ struct MessageRow: View {
                         MarkdownMessageText(
                             source: message.text,
                             palette: palette,
+                            textColor: bubbleTextColor,
                             chatFont: chatFont,
                             fontScale: fontScale,
                             chatWeight: chatWeight
@@ -243,8 +245,12 @@ struct MessageRow: View {
                     if let ask = message.meta.ask {
                         MessageAskChip(ask: ask, palette: palette, onOpen: onOpenAsk)
                     }
+
+                    if !message.meta.album.isEmpty {
+                        MessageAlbumChip(entries: message.meta.album, palette: palette)
+                    }
                 }
-                .foregroundStyle(palette.text)
+                .foregroundStyle(bubbleTextColor)
                 .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : bubbleHorizontalPadding)
                 .padding(.vertical, bubbleVerticalPadding)
                 .background { bubbleBackground }
@@ -441,6 +447,7 @@ struct MessageRow: View {
 private struct MarkdownMessageText: View {
     let source: String
     let palette: EchoPalette
+    let textColor: Color
     let chatFont: EchoChatFont
     let fontScale: Double
     let chatWeight: Double
@@ -465,7 +472,7 @@ private struct MarkdownMessageText: View {
         var value = (try? AttributedString(markdown: source, options: options)) ?? AttributedString(source)
         let size = PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
         value.font = chatFont.font(size: size, numericWeight: chatWeight)
-        value.foregroundColor = palette.text
+        value.foregroundColor = textColor
 
         let runs = value.runs.map { ($0.range, $0.inlinePresentationIntent) }
         for (range, intent) in runs {
@@ -485,6 +492,48 @@ private struct MarkdownMessageText: View {
             }
         }
         return value
+    }
+}
+
+private struct MessageAlbumChip: View {
+    let entries: [MessageAlbumEntry]
+    let palette: EchoPalette
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(palette.accent)
+                .frame(width: 30, height: 30)
+                .background(palette.accent.opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entries.count > 1 ? "收进相册 · \(entries.count) 张" : "收进相册")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(palette.accent)
+                Text(displayTitle)
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "checkmark")
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(palette.secondaryText.opacity(0.72))
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .background(palette.composer.opacity(0.72), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(palette.hairline, lineWidth: 0.6)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(entries.count > 1 ? "已收进相册 \(entries.count) 张照片" : "已收进相册，\(displayTitle)")
+    }
+
+    private var displayTitle: String {
+        let title = entries.first?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return title.isEmpty ? (entries.count > 1 ? "这些照片" : "这张照片") : title
     }
 }
 
@@ -1129,6 +1178,7 @@ struct StreamingReplyRow: View {
     let aiAvatarImage: UIImage?
     let showsAIBubble: Bool
     let aiBubbleColor: Color
+    let bubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
     let bubbleWidthScale: Double
@@ -1152,7 +1202,7 @@ struct StreamingReplyRow: View {
                     font: chatFont,
                     size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
                 ))
-                .foregroundStyle(palette.text)
+                .foregroundStyle(bubbleTextColor)
                 .padding(.horizontal, showsAIBubble ? bubbleHorizontalPadding : 2)
                 .padding(.vertical, bubbleVerticalPadding)
                 .background {

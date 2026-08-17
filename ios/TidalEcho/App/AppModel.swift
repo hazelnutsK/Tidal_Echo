@@ -105,6 +105,9 @@ final class AppModel: ObservableObject {
     @Published var humanBubbleColorHex: String {
         didSet { UserDefaults.standard.set(humanBubbleColorHex, forKey: Keys.humanBubbleColor) }
     }
+    @Published var bubbleTextColorHex: String {
+        didSet { UserDefaults.standard.set(bubbleTextColorHex, forKey: Keys.bubbleTextColor) }
+    }
     @Published var backgroundImage: UIImage?
     @Published var aiAvatarImage: UIImage?
     @Published var humanAvatarImage: UIImage?
@@ -158,6 +161,7 @@ final class AppModel: ObservableObject {
         static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
+        static let bubbleTextColor = "tidalEcho.bubbleTextColor"
         static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
         static let activeSessionID = "tidalEcho.activeSessionID"
         static let locallyHiddenMessageIDs = "tidalEcho.locallyHiddenMessageIDs"
@@ -223,6 +227,7 @@ final class AppModel: ObservableObject {
         peerRemark = defaults.string(forKey: Keys.peerRemark) ?? ""
         aiBubbleColorHex = defaults.string(forKey: Keys.aiBubbleColor) ?? ""
         humanBubbleColorHex = defaults.string(forKey: Keys.humanBubbleColor) ?? ""
+        bubbleTextColorHex = defaults.string(forKey: Keys.bubbleTextColor) ?? ""
         activeSessionID = defaults.string(forKey: Keys.activeSessionID) ?? Self.legacySessionID
         if let hidden = defaults.array(forKey: Keys.locallyHiddenMessageIDs) as? [Int] {
             locallyHiddenMessageIDs = Set(hidden)
@@ -508,25 +513,24 @@ final class AppModel: ObservableObject {
         guard historyCursor > 0 else { return false }
         do {
             let fetched = try await client.history(since: historyCursor, limit: 100).filter { !$0.meta.hidden }
-            fetched.forEach(upsert)
             let lastNotified = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
-            let candidates = fetched.filter {
-                $0.id > lastNotified && $0.author == .ai && ($0.kind == "reply" || $0.kind == "call")
-            }
+            let newestFetchedID = fetched.map(\.id).filter { $0 > 0 }.max() ?? historyCursor
             if lastNotified == 0 {
-                markNativeNotificationCursor(historyCursor)
+                fetched.forEach { upsert($0, allowsNativeArrival: false) }
+                markNativeNotificationCursor(newestFetchedID)
                 return false
             }
-            for message in candidates {
-                upsert(message)
-                if message.author == .ai && message.kind == "call" {
-                    NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
-                } else if message.author == .ai && message.kind == "reply" {
-                    NativeNotificationCenter.shared.scheduleMessage(message)
+            var deliveredNativeEvent = false
+            for message in fetched {
+                let isNewForNotifications = message.id > lastNotified
+                upsert(message, allowsNativeArrival: isNewForNotifications)
+                if isNewForNotifications, message.author == .ai,
+                   message.kind == "reply" || isFreshIncomingCall(message) {
+                    deliveredNativeEvent = true
                 }
             }
-            markNativeNotificationCursor(fetched.map(\.id).filter { $0 > 0 }.max() ?? historyCursor)
-            return !candidates.isEmpty
+            markNativeNotificationCursor(newestFetchedID)
+            return deliveredNativeEvent
         } catch {
             return false
         }
@@ -936,6 +940,10 @@ final class AppModel: ObservableObject {
         Color(hexString: humanBubbleColorHex) ?? fallback
     }
 
+    func resolvedBubbleTextColor(default fallback: Color) -> Color {
+        Color(hexString: bubbleTextColorHex) ?? fallback
+    }
+
     func setAIBubbleColor(_ color: Color) {
         aiBubbleColorHex = Self.hexString(color) ?? ""
     }
@@ -944,9 +952,14 @@ final class AppModel: ObservableObject {
         humanBubbleColorHex = Self.hexString(color) ?? ""
     }
 
+    func setBubbleTextColor(_ color: Color) {
+        bubbleTextColorHex = Self.hexString(color) ?? ""
+    }
+
     func resetBubbleColors() {
         aiBubbleColorHex = ""
         humanBubbleColorHex = ""
+        bubbleTextColorHex = ""
     }
 
     func saveAppearanceImage(data: Data, kind: AppearanceImageKind) throws {
@@ -1436,7 +1449,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    private func upsert(_ incomingMessage: ChatMessage) {
+    private func upsert(_ incomingMessage: ChatMessage, allowsNativeArrival: Bool = true) {
         let message = normalizingMissedCallState(incomingMessage)
         guard !locallyHiddenMessageIDs.contains(message.id) else { return }
         let wasKnown = messages.contains(where: { $0.id == message.id })
@@ -1450,7 +1463,7 @@ final class AppModel: ObservableObject {
             }
         }
         guard belongsToActiveSession else {
-            handleNativeArrival(message, wasKnown: false)
+            if allowsNativeArrival { handleNativeArrival(message, wasKnown: false) }
             return
         }
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
@@ -1459,7 +1472,7 @@ final class AppModel: ObservableObject {
             messages.append(message)
             messages.sort(by: Self.messageComesBefore)
         }
-        handleNativeArrival(message, wasKnown: wasKnown)
+        if allowsNativeArrival { handleNativeArrival(message, wasKnown: wasKnown) }
     }
 
     private func normalizingMissedCallState(_ incomingMessage: ChatMessage) -> ChatMessage {
@@ -1474,12 +1487,29 @@ final class AppModel: ObservableObject {
 
     private func handleNativeArrival(_ message: ChatMessage, wasKnown: Bool) {
         guard !wasKnown, message.author == .ai else { return }
-        if message.kind == "call" {
+        if isFreshIncomingCall(message) {
             NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
         } else if message.kind == "reply", UIApplication.shared.applicationState != .active {
             NativeNotificationCenter.shared.scheduleMessage(message)
         }
         markNativeNotificationCursor(message.id)
+    }
+
+    private func isFreshIncomingCall(_ message: ChatMessage) -> Bool {
+        guard message.author == .ai,
+              message.kind == "call",
+              message.meta.callStatus == nil || message.meta.callStatus == "ringing" else { return false }
+        let formatter = ISO8601DateFormatter()
+        let date: Date?
+        if let parsed = formatter.date(from: message.timestamp) {
+            date = parsed
+        } else {
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            date = formatter.date(from: message.timestamp)
+        }
+        guard let date else { return false }
+        let age = Date().timeIntervalSince(date)
+        return age >= -30 && age <= 120
     }
 
     private func updateReactions(messageID: Int, reactions: [String: String], haptic: Bool = false) {

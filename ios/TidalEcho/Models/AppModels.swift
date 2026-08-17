@@ -106,6 +106,27 @@ struct MessageAsk: Decodable, Hashable {
     }
 }
 
+struct MessageAlbumEntry: Decodable, Hashable, Identifiable {
+    let albumID: Int?
+    let url: String
+    let title: String
+    let note: String
+
+    var id: String { albumID.map { "album-\($0)" } ?? "\(url)#\(title)" }
+
+    enum CodingKeys: String, CodingKey {
+        case id, url, title, note
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        albumID = try values.decodeIfPresent(Int.self, forKey: .id)
+        url = try values.decodeIfPresent(String.self, forKey: .url) ?? ""
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? ""
+        note = try values.decodeIfPresent(String.self, forKey: .note) ?? ""
+    }
+}
+
 struct MessageMeta: Decodable, Hashable {
     var attachments: [Attachment]
     var reactions: [String: String]
@@ -121,6 +142,7 @@ struct MessageMeta: Decodable, Hashable {
     var steps: [ToolStep]
     var bookRef: BookRef?
     var callStatus: String?
+    var album: [MessageAlbumEntry]
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -131,7 +153,7 @@ struct MessageMeta: Decodable, Hashable {
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
         case callStatus = "call_status"
-        case starred, timer, ask, edited, glyph, steps, act
+        case starred, timer, ask, edited, glyph, steps, act, album
     }
 
     init(
@@ -156,6 +178,7 @@ struct MessageMeta: Decodable, Hashable {
         self.steps = []
         self.bookRef = nil
         self.callStatus = nil
+        self.album = []
     }
 
     init(from decoder: Decoder) throws {
@@ -172,6 +195,7 @@ struct MessageMeta: Decodable, Hashable {
         edited = try values.decodeIfPresent(Bool.self, forKey: .edited) ?? false
         bookRef = try values.decodeIfPresent(BookRef.self, forKey: .bookRef)
         callStatus = try values.decodeIfPresent(String.self, forKey: .callStatus)
+        album = try values.decodeIfPresent([MessageAlbumEntry].self, forKey: .album) ?? []
         let nestedAct = try values.decodeIfPresent(ActMeta.self, forKey: .act)
         glyph = try values.decodeIfPresent(String.self, forKey: .glyph) ?? nestedAct?.glyph
         steps = try values.decodeIfPresent([ToolStep].self, forKey: .steps) ?? nestedAct?.steps ?? []

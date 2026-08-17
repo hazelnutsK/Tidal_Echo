@@ -92,7 +92,8 @@ struct MessageRow: View {
     let showsAIBubble: Bool
     let aiBubbleColor: Color
     let humanBubbleColor: Color
-    let bubbleTextColor: Color
+    let aiBubbleTextColor: Color
+    let humanBubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
     let bubbleWidthScale: Double
@@ -227,7 +228,7 @@ struct MessageRow: View {
                         MarkdownMessageText(
                             source: message.text,
                             palette: palette,
-                            textColor: bubbleTextColor,
+                            textColor: resolvedBubbleTextColor,
                             chatFont: chatFont,
                             fontScale: fontScale,
                             chatWeight: chatWeight
@@ -250,7 +251,7 @@ struct MessageRow: View {
                         MessageAlbumChip(entries: message.meta.album, palette: palette)
                     }
                 }
-                .foregroundStyle(bubbleTextColor)
+                .foregroundStyle(resolvedBubbleTextColor)
                 .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : bubbleHorizontalPadding)
                 .padding(.vertical, bubbleVerticalPadding)
                 .background { bubbleBackground }
@@ -270,7 +271,7 @@ struct MessageRow: View {
                 .frame(
                     maxWidth: message.author == .ai && !showsAIBubble
                         ? .infinity
-                        : CGFloat(280 * bubbleWidthScale),
+                        : resolvedBubbleMaxWidth,
                     alignment: message.author == .human ? .trailing : .leading
                 )
 
@@ -315,7 +316,7 @@ struct MessageRow: View {
             }
 
             if message.author == .ai && showsAIBubble {
-                Spacer(minLength: showsAIAvatar ? 44 : 18)
+                Spacer(minLength: 0)
             }
         }
         .frame(maxWidth: .infinity)
@@ -359,6 +360,20 @@ struct MessageRow: View {
             isGroupStart: isGroupStart,
             isTail: isTail
         )
+    }
+
+    private var resolvedBubbleTextColor: Color {
+        message.author == .ai ? aiBubbleTextColor : humanBubbleTextColor
+    }
+
+    private var resolvedBubbleMaxWidth: CGFloat {
+        let scale = CGFloat(bubbleWidthScale)
+        if message.author == .ai {
+            // Above 100%, grow in screen-friendly point increments so 120% and
+            // 130% remain visibly distinct instead of both hitting the old spacer.
+            return scale <= 1 ? 280 * scale : 280 + ((scale - 1) * 140)
+        }
+        return 280 * min(scale, 1.2)
     }
 
     private var usesCompactGroupSpacing: Bool {
@@ -1178,7 +1193,7 @@ struct StreamingReplyRow: View {
     let aiAvatarImage: UIImage?
     let showsAIBubble: Bool
     let aiBubbleColor: Color
-    let bubbleTextColor: Color
+    let aiBubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
     let bubbleWidthScale: Double
@@ -1202,7 +1217,7 @@ struct StreamingReplyRow: View {
                     font: chatFont,
                     size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
                 ))
-                .foregroundStyle(bubbleTextColor)
+                .foregroundStyle(aiBubbleTextColor)
                 .padding(.horizontal, showsAIBubble ? bubbleHorizontalPadding : 2)
                 .padding(.vertical, bubbleVerticalPadding)
                 .background {
@@ -1241,11 +1256,16 @@ struct StreamingReplyRow: View {
                     }
                 }
                 .frame(
-                    maxWidth: showsAIBubble ? CGFloat(280 * bubbleWidthScale) : .infinity,
+                    maxWidth: showsAIBubble ? streamingBubbleMaxWidth : .infinity,
                     alignment: .leading
                 )
-            if showsAIBubble { Spacer(minLength: showsAIAvatar ? 44 : 18) }
+            if showsAIBubble { Spacer(minLength: 0) }
         }
+    }
+
+    private var streamingBubbleMaxWidth: CGFloat {
+        let scale = CGFloat(bubbleWidthScale)
+        return scale <= 1 ? 280 * scale : 280 + ((scale - 1) * 140)
     }
 
     private var streamingBubbleShape: EchoMessageBubbleShape {

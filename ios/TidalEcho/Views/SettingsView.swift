@@ -542,7 +542,7 @@ private struct AppearanceSettingsView: View {
                             ))
                             .padding(.horizontal, 13)
                             .padding(.vertical, 10)
-                            .foregroundStyle(model.resolvedBubbleTextColor(default: palette.text))
+                            .foregroundStyle(model.resolvedAIBubbleTextColor(default: palette.text))
                             .background {
                                 LiquidGlassBubbleBackground(
                                     tint: model.resolvedAIBubbleColor(default: palette.aiBubble),
@@ -562,7 +562,7 @@ private struct AppearanceSettingsView: View {
                             ))
                             .padding(.horizontal, 13)
                             .padding(.vertical, 10)
-                            .foregroundStyle(model.resolvedBubbleTextColor(default: palette.text))
+                            .foregroundStyle(model.resolvedHumanBubbleTextColor(default: palette.text))
                             .background {
                                 LiquidGlassBubbleBackground(
                                     tint: model.resolvedHumanBubbleColor(default: palette.humanBubble),
@@ -586,9 +586,14 @@ private struct AppearanceSettingsView: View {
                 set: { model.setHumanBubbleColor($0) }
             ), supportsOpacity: false)
 
-            ColorPicker("气泡字体颜色", selection: Binding(
-                get: { model.resolvedBubbleTextColor(default: palette.text) },
-                set: { model.setBubbleTextColor($0) }
+            ColorPicker("AI 气泡字体颜色", selection: Binding(
+                get: { model.resolvedAIBubbleTextColor(default: palette.text) },
+                set: { model.setAIBubbleTextColor($0) }
+            ), supportsOpacity: false)
+
+            ColorPicker("我的气泡字体颜色", selection: Binding(
+                get: { model.resolvedHumanBubbleTextColor(default: palette.text) },
+                set: { model.setHumanBubbleTextColor($0) }
             ), supportsOpacity: false)
 
             settingSlider(
@@ -609,8 +614,9 @@ private struct AppearanceSettingsView: View {
                 title: "气泡宽度",
                 valueText: "\(Int(model.bubbleWidthScale * 100))%",
                 value: $model.bubbleWidthScale,
-                range: 0.6...1.3,
-                step: 0.05
+                range: 0.6...1.5,
+                step: 0.05,
+                note: "超过 120% 时只继续放宽 AI 气泡"
             )
             settingSlider(
                 title: "边框粗细",

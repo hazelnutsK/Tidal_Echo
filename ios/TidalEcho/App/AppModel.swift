@@ -105,8 +105,11 @@ final class AppModel: ObservableObject {
     @Published var humanBubbleColorHex: String {
         didSet { UserDefaults.standard.set(humanBubbleColorHex, forKey: Keys.humanBubbleColor) }
     }
-    @Published var bubbleTextColorHex: String {
-        didSet { UserDefaults.standard.set(bubbleTextColorHex, forKey: Keys.bubbleTextColor) }
+    @Published var aiBubbleTextColorHex: String {
+        didSet { UserDefaults.standard.set(aiBubbleTextColorHex, forKey: Keys.aiBubbleTextColor) }
+    }
+    @Published var humanBubbleTextColorHex: String {
+        didSet { UserDefaults.standard.set(humanBubbleTextColorHex, forKey: Keys.humanBubbleTextColor) }
     }
     @Published var backgroundImage: UIImage?
     @Published var aiAvatarImage: UIImage?
@@ -161,6 +164,9 @@ final class AppModel: ObservableObject {
         static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
+        static let aiBubbleTextColor = "tidalEcho.aiBubbleTextColor"
+        static let humanBubbleTextColor = "tidalEcho.humanBubbleTextColor"
+        // Kept only to migrate the first shared text-color setting.
         static let bubbleTextColor = "tidalEcho.bubbleTextColor"
         static let lastNativeNotificationID = "tidalEcho.lastNativeNotificationID"
         static let activeSessionID = "tidalEcho.activeSessionID"
@@ -227,7 +233,9 @@ final class AppModel: ObservableObject {
         peerRemark = defaults.string(forKey: Keys.peerRemark) ?? ""
         aiBubbleColorHex = defaults.string(forKey: Keys.aiBubbleColor) ?? ""
         humanBubbleColorHex = defaults.string(forKey: Keys.humanBubbleColor) ?? ""
-        bubbleTextColorHex = defaults.string(forKey: Keys.bubbleTextColor) ?? ""
+        let legacyBubbleTextColor = defaults.string(forKey: Keys.bubbleTextColor) ?? ""
+        aiBubbleTextColorHex = defaults.string(forKey: Keys.aiBubbleTextColor) ?? legacyBubbleTextColor
+        humanBubbleTextColorHex = defaults.string(forKey: Keys.humanBubbleTextColor) ?? legacyBubbleTextColor
         activeSessionID = defaults.string(forKey: Keys.activeSessionID) ?? Self.legacySessionID
         if let hidden = defaults.array(forKey: Keys.locallyHiddenMessageIDs) as? [Int] {
             locallyHiddenMessageIDs = Set(hidden)
@@ -969,8 +977,12 @@ final class AppModel: ObservableObject {
         Color(hexString: humanBubbleColorHex) ?? fallback
     }
 
-    func resolvedBubbleTextColor(default fallback: Color) -> Color {
-        Color(hexString: bubbleTextColorHex) ?? fallback
+    func resolvedAIBubbleTextColor(default fallback: Color) -> Color {
+        Color(hexString: aiBubbleTextColorHex) ?? fallback
+    }
+
+    func resolvedHumanBubbleTextColor(default fallback: Color) -> Color {
+        Color(hexString: humanBubbleTextColorHex) ?? fallback
     }
 
     func setAIBubbleColor(_ color: Color) {
@@ -981,14 +993,20 @@ final class AppModel: ObservableObject {
         humanBubbleColorHex = Self.hexString(color) ?? ""
     }
 
-    func setBubbleTextColor(_ color: Color) {
-        bubbleTextColorHex = Self.hexString(color) ?? ""
+    func setAIBubbleTextColor(_ color: Color) {
+        aiBubbleTextColorHex = Self.hexString(color) ?? ""
+    }
+
+    func setHumanBubbleTextColor(_ color: Color) {
+        humanBubbleTextColorHex = Self.hexString(color) ?? ""
     }
 
     func resetBubbleColors() {
         aiBubbleColorHex = ""
         humanBubbleColorHex = ""
-        bubbleTextColorHex = ""
+        aiBubbleTextColorHex = ""
+        humanBubbleTextColorHex = ""
+        UserDefaults.standard.removeObject(forKey: Keys.bubbleTextColor)
     }
 
     func saveAppearanceImage(data: Data, kind: AppearanceImageKind) throws {

@@ -512,11 +512,12 @@ final class AppModel: ObservableObject {
     func backgroundRefreshForNotifications() async -> Bool {
         if client == nil { await bootstrap() }
         guard let client else { return false }
-        let historyCursor = messages.map(\.id).filter { $0 > 0 }.max() ?? 0
+        let lastNotified = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
+        let visibleHistoryCursor = messages.map(\.id).filter { $0 > 0 }.max() ?? 0
+        let historyCursor = max(visibleHistoryCursor, lastNotified)
         guard historyCursor > 0 else { return false }
         do {
             let fetched = try await client.history(since: historyCursor, limit: 100).filter { !$0.meta.hidden }
-            let lastNotified = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
             let newestFetchedID = fetched.map(\.id).filter { $0 > 0 }.max() ?? historyCursor
             if lastNotified == 0 {
                 fetched.forEach { upsert($0, allowsNativeArrival: false) }
@@ -1148,6 +1149,9 @@ final class AppModel: ObservableObject {
             }
             messages = merged.values.sorted(by: Self.messageComesBefore)
             canLoadOlderHistory = historyArchive.count > visibleHistory.count
+            if UIApplication.shared.applicationState == .active {
+                markNativeNotificationCursor(historyMaxID)
+            }
         } catch {
             errorMessage = "聊天记录加载失败：\(error.localizedDescription)"
         }
@@ -1214,7 +1218,11 @@ final class AppModel: ObservableObject {
 
     private func catchUp(using client: APIClient) async {
         guard !isCatchingUp else { return }
-        var cursor = messages.map(\.id).filter { $0 > 0 }.max() ?? 0
+        let visibleHistoryCursor = messages.map(\.id).filter { $0 > 0 }.max() ?? 0
+        var cursor = max(
+            visibleHistoryCursor,
+            UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
+        )
         // While the initial history request is still walking old pages, wait until
         // either it finds a cursor or a newly sent message gives us one.
         guard cursor > 0 || !isLoadingHistory else { return }
@@ -1514,11 +1522,15 @@ final class AppModel: ObservableObject {
     }
 
     private func handleNativeArrival(_ message: ChatMessage, wasKnown: Bool) {
-        guard !wasKnown, message.author == .ai else { return }
-        if isFreshIncomingCall(message) {
-            NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
-        } else if message.kind == "reply", UIApplication.shared.applicationState != .active {
-            NativeNotificationCenter.shared.scheduleMessage(message)
+        guard !wasKnown else { return }
+        let lastSeenID = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
+        guard message.id > lastSeenID else { return }
+        if message.author == .ai {
+            if isFreshIncomingCall(message) {
+                NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
+            } else if message.kind == "reply", UIApplication.shared.applicationState != .active {
+                NativeNotificationCenter.shared.scheduleMessage(message)
+            }
         }
         markNativeNotificationCursor(message.id)
     }

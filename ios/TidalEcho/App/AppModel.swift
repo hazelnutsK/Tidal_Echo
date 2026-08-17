@@ -393,7 +393,7 @@ final class AppModel: ObservableObject {
 
     func sessionTitle(for message: ChatMessage) -> String {
         guard let id = message.meta.apiSession, !id.isEmpty else { return "Claude Code" }
-        return sessions.first(where: { $0.id == id })?.title ?? "API 对话"
+        return sessions.first(where: { $0.id == id })?.title ?? "对话窗口"
     }
 
     func jumpToMessage(_ message: ChatMessage) async {
@@ -430,9 +430,7 @@ final class AppModel: ObservableObject {
         isLoadingHistory = true
         defer { isLoadingHistory = false }
         do {
-            if next != Self.legacySessionID {
-                applySessionsResponse(try await client.updateSession(id: next, active: true), chooseServerActiveWhenNeeded: false)
-            }
+            applySessionsResponse(try await client.updateSession(id: next, active: true), chooseServerActiveWhenNeeded: false)
             activeSessionID = next
             UserDefaults.standard.set(next, forKey: Keys.activeSessionID)
             streamingThinking = ""
@@ -444,8 +442,9 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func createSession(title: String = "新对话") async throws {
-        let response = try await requireClient().createSession(title: title)
+    func createSession(body: BrainTarget, title: String? = nil) async throws {
+        let fallback = body == .codex ? "Codex 对话" : "API 对话"
+        let response = try await requireClient().createSession(title: title ?? fallback, body: body)
         applySessionsResponse(response, chooseServerActiveWhenNeeded: true)
         if let created = response.created {
             activeSessionID = created.id
@@ -503,7 +502,11 @@ final class AppModel: ObservableObject {
 
     var activeSessionTitle: String {
         if activeSessionID == Self.legacySessionID { return "Claude Code" }
-        return sessions.first(where: { $0.id == activeSessionID })?.title ?? "API 对话"
+        return sessions.first(where: { $0.id == activeSessionID })?.title ?? "对话窗口"
+    }
+
+    private var activeWireSessionID: String? {
+        activeSessionID == Self.legacySessionID ? nil : activeSessionID
     }
 
     func backgroundRefreshForNotifications() async -> Bool {
@@ -730,7 +733,8 @@ final class AppModel: ObservableObject {
             let response = try await client.sendVoiceAudio(
                 data: recording.data,
                 name: recording.name,
-                mime: recording.mime
+                mime: recording.mime,
+                sessionID: activeWireSessionID
             )
             if !messages.contains(where: { $0.id == response.id }) {
                 let transcript = (response.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -740,7 +744,10 @@ final class AppModel: ObservableObject {
                     author: .human,
                     kind: "voice",
                     text: transcript.isEmpty ? "" : "🎤 \(transcript)",
-                    meta: MessageMeta(attachments: response.attachment.map { [$0] } ?? []),
+                    meta: MessageMeta(
+                        attachments: response.attachment.map { [$0] } ?? [],
+                        apiSession: activeWireSessionID
+                    ),
                     delivery: .sent
                 ))
             }
@@ -754,7 +761,12 @@ final class AppModel: ObservableObject {
 
     func sendCallTranscript(_ text: String, callID: String) async throws -> VoiceResponse {
         let client = try requireClient()
-        let response = try await client.sendVoiceText(text, source: "ios_speech", callID: callID)
+        let response = try await client.sendVoiceText(
+            text,
+            source: "ios_speech",
+            callID: callID,
+            sessionID: activeWireSessionID
+        )
         await catchUp(using: client)
         return response
     }
@@ -770,7 +782,12 @@ final class AppModel: ObservableObject {
     ) async throws -> VoiceResponse {
         let client = try requireClient()
         let response = try await client.sendVoiceAudio(
-            data: data, name: name, mime: mime, callID: callID, text: text
+            data: data,
+            name: name,
+            mime: mime,
+            callID: callID,
+            text: text,
+            sessionID: activeWireSessionID
         )
         await catchUp(using: client)
         return response
@@ -778,13 +795,24 @@ final class AppModel: ObservableObject {
 
     func sendCallAudioSegment(data: Data, name: String, mime: String, callID: String) async throws -> VoiceResponse {
         let client = try requireClient()
-        let response = try await client.sendVoiceAudio(data: data, name: name, mime: mime, callID: callID)
+        let response = try await client.sendVoiceAudio(
+            data: data,
+            name: name,
+            mime: mime,
+            callID: callID,
+            sessionID: activeWireSessionID
+        )
         await catchUp(using: client)
         return response
     }
 
     func postCallEvent(_ action: String, callID: String, messageID: Int? = nil) async throws {
-        _ = try await requireClient().callEvent(action, callID: callID, messageID: messageID)
+        _ = try await requireClient().callEvent(
+            action,
+            callID: callID,
+            messageID: messageID,
+            sessionID: activeWireSessionID
+        )
     }
 
     private func markIncomingCallMissed(messageID: Int) async {

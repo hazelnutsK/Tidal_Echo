@@ -292,6 +292,8 @@ private struct DesireCard: View {
         let delivery: String
         if activity.bodyTarget == "loop" {
             delivery = "API 身体接管中"
+        } else if activity.bodyTarget == "codex" {
+            delivery = activity.bodyOnline ? "Codex 身体在线" : "等待 Codex 桥接上线"
         } else {
             delivery = activity.bodyOnline ? "桌面身体在线" : "等待桌面身体上线"
         }

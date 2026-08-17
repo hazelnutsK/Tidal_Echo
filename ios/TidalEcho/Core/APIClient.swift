@@ -41,10 +41,10 @@ struct APIClient {
         try decoder.decode(SessionsResponse.self, from: try await data(for: request(url: endpoint("app/sessions"))))
     }
 
-    func createSession(title: String) async throws -> SessionsResponse {
+    func createSession(title: String, body: BrainTarget) async throws -> SessionsResponse {
         var req = request(url: endpoint("app/sessions"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(SessionCreatePayload(title: title, activate: true))
+        req.httpBody = try JSONEncoder().encode(SessionCreatePayload(title: title, body: body, activate: true))
         return try decoder.decode(SessionsResponse.self, from: try await data(for: req))
     }
 
@@ -103,12 +103,14 @@ struct APIClient {
         name: String,
         mime: String,
         callID: String? = nil,
-        text: String? = nil
+        text: String? = nil,
+        sessionID: String? = nil
     ) async throws -> VoiceResponse {
         var components = URLComponents(url: endpoint("app/voice"), resolvingAgainstBaseURL: false)
         var query = [URLQueryItem(name: "name", value: name)]
         if let callID, !callID.isEmpty { query.append(URLQueryItem(name: "call_id", value: callID)) }
         if let text, !text.isEmpty { query.append(URLQueryItem(name: "text", value: text)) }
+        if let sessionID, !sessionID.isEmpty { query.append(URLQueryItem(name: "api_session", value: sessionID)) }
         components?.queryItems = query
         guard let url = components?.url else { throw APIError.invalidURL }
         var req = request(url: url, method: "POST")
@@ -117,17 +119,31 @@ struct APIClient {
         return try decoder.decode(VoiceResponse.self, from: try await self.data(for: req))
     }
 
-    func sendVoiceText(_ text: String, source: String = "ios_speech", callID: String? = nil) async throws -> VoiceResponse {
+    func sendVoiceText(
+        _ text: String,
+        source: String = "ios_speech",
+        callID: String? = nil,
+        sessionID: String? = nil
+    ) async throws -> VoiceResponse {
         var req = request(url: endpoint("app/voice"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(VoiceTextPayload(text: text, source: source, callID: callID))
+        req.httpBody = try JSONEncoder().encode(
+            VoiceTextPayload(text: text, source: source, callID: callID, apiSession: sessionID)
+        )
         return try decoder.decode(VoiceResponse.self, from: try await data(for: req))
     }
 
-    func callEvent(_ action: String, callID: String, messageID: Int? = nil) async throws -> SendResponse {
+    func callEvent(
+        _ action: String,
+        callID: String,
+        messageID: Int? = nil,
+        sessionID: String? = nil
+    ) async throws -> SendResponse {
         var req = request(url: endpoint("app/call"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(CallPayload(action: action, callID: callID, messageID: messageID))
+        req.httpBody = try JSONEncoder().encode(
+            CallPayload(action: action, callID: callID, messageID: messageID, apiSession: sessionID)
+        )
         return try decoder.decode(SendResponse.self, from: try await data(for: req))
     }
 
@@ -433,6 +449,7 @@ private struct DesireConfigPayload: Encodable {
 
 private struct SessionCreatePayload: Encodable {
     let title: String
+    let body: BrainTarget
     let activate: Bool
 }
 
@@ -448,10 +465,12 @@ private struct VoiceTextPayload: Encodable {
     let text: String
     let source: String
     let callID: String?
+    let apiSession: String?
 
     enum CodingKeys: String, CodingKey {
         case text, source
         case callID = "call_id"
+        case apiSession = "api_session"
     }
 }
 
@@ -459,11 +478,13 @@ private struct CallPayload: Encodable {
     let action: String
     let callID: String
     let messageID: Int?
+    let apiSession: String?
 
     enum CodingKeys: String, CodingKey {
         case action
         case callID = "call_id"
         case messageID = "message_id"
+        case apiSession = "api_session"
     }
 }
 

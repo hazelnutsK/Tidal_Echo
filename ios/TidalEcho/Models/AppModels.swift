@@ -257,13 +257,23 @@ struct HistoryResponse: Decodable {
 struct APISession: Codable, Hashable, Identifiable {
     let id: String
     var title: String
+    let body: BrainTarget
     let sinceID: Int
     let createdAt: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, title
+        case id, title, body
         case sinceID = "since_id"
         case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        title = try values.decodeIfPresent(String.self, forKey: .title) ?? "新对话"
+        body = try values.decodeIfPresent(BrainTarget.self, forKey: .body) ?? .loop
+        sinceID = try values.decodeIfPresent(Int.self, forKey: .sinceID) ?? 0
+        createdAt = try values.decodeIfPresent(String.self, forKey: .createdAt)
     }
 }
 
@@ -344,10 +354,17 @@ struct StreamEnvelope: Decodable {
 
 enum BrainTarget: String, Codable, CaseIterable, Identifiable {
     case desktop
+    case codex
     case loop
 
     var id: String { rawValue }
-    var title: String { self == .desktop ? "Desktop" : "API" }
+    var title: String {
+        switch self {
+        case .desktop: return "Desktop"
+        case .codex: return "Codex"
+        case .loop: return "API"
+        }
+    }
 }
 
 struct BrainResponse: Decodable {

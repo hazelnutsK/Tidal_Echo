@@ -1116,7 +1116,7 @@ private struct SessionManagerView: View {
                         sessionButton(
                             id: session.id,
                             title: session.title,
-                            subtitle: "从消息 #\(session.sinceID) 开始"
+                            subtitle: "\(session.body == .codex ? "Codex" : "API") · 从消息 #\(session.sinceID) 开始"
                         )
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) { deletingSession = session } label: {
@@ -1135,7 +1135,7 @@ private struct SessionManagerView: View {
 
                 if model.sessions.isEmpty && !model.isLoadingSessions {
                     Section {
-                        Text("API loop 没有开启时，只会显示 Claude Code；这不影响 Desktop 聊天。")
+                        Text("可以新建独立的 Codex 或 API 窗口；每个窗口保留自己的上下文。")
                             .font(.footnote)
                             .foregroundStyle(palette.secondaryText)
                     }
@@ -1149,19 +1149,23 @@ private struct SessionManagerView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("完成") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        guard !isCreating else { return }
-                        isCreating = true
-                        Task {
-                            defer { isCreating = false }
-                            do {
-                                try await model.createSession()
-                                dismiss()
-                            } catch { errorText = error.localizedDescription }
+                    if isCreating {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Menu {
+                            Button {
+                                createSession(body: .codex)
+                            } label: {
+                                Label("Codex 窗口", systemImage: "chevron.left.forwardslash.chevron.right")
+                            }
+                            Button {
+                                createSession(body: .loop)
+                            } label: {
+                                Label("API 窗口", systemImage: "network")
+                            }
+                        } label: {
+                            Image(systemName: "plus")
                         }
-                    } label: {
-                        if isCreating { ProgressView().controlSize(.small) }
-                        else { Image(systemName: "plus") }
                     }
                 }
             }
@@ -1199,7 +1203,7 @@ private struct SessionManagerView: View {
                 }
                 Button("取消", role: .cancel) { deletingSession = nil }
             } message: {
-                Text("服务器里的这个 API 窗口及聊天记录会被永久删除。")
+                Text("服务器里的这个窗口及聊天记录会被永久删除。")
             }
             .alert("对话操作失败", isPresented: Binding(
                 get: { errorText != nil },
@@ -1234,6 +1238,20 @@ private struct SessionManagerView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func createSession(body: BrainTarget) {
+        guard !isCreating else { return }
+        isCreating = true
+        Task {
+            defer { isCreating = false }
+            do {
+                try await model.createSession(body: body)
+                dismiss()
+            } catch {
+                errorText = error.localizedDescription
+            }
+        }
     }
 }
 

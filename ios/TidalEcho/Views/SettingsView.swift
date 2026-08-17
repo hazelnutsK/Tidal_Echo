@@ -828,31 +828,35 @@ private struct ModelSettingsView: View {
                 }
                 .pickerStyle(.segmented)
 
-                Text(brain == .desktop
-                     ? "Claude Code channel 正在接收消息。"
-                     : "服务器 API loop 正在接收消息。")
+                Text(bodyDescription)
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText)
             }
 
             Section("模型选择") {
-                if brain == .desktop {
-                    Button {
-                        pendingDesktopChoice = ModelChoice(title: "默认模型", desktopID: "", directAPIID: "", openRouterID: "")
-                    } label: {
-                        modelRow(title: "默认模型", id: "")
-                    }
-                }
-
-                ForEach(choices) { choice in
-                    Button {
-                        if brain == .desktop {
-                            pendingDesktopChoice = choice
-                        } else {
-                            Task { await saveAPIModel(choice) }
+                if brain == .codex {
+                    Text("Codex 跟随本机配置；可在 bridge 环境里用 CODEX_MODEL / CODEX_EFFORT 覆盖。")
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                } else {
+                    if brain == .desktop {
+                        Button {
+                            pendingDesktopChoice = ModelChoice(title: "默认模型", desktopID: "", directAPIID: "", openRouterID: "")
+                        } label: {
+                            modelRow(title: "默认模型", id: "")
                         }
-                    } label: {
-                        modelRow(title: choice.title, id: modelID(for: choice))
+                    }
+
+                    ForEach(choices) { choice in
+                        Button {
+                            if brain == .desktop {
+                                pendingDesktopChoice = choice
+                            } else {
+                                Task { await saveAPIModel(choice) }
+                            }
+                        } label: {
+                            modelRow(title: choice.title, id: modelID(for: choice))
+                        }
                     }
                 }
 
@@ -865,6 +869,10 @@ private struct ModelSettingsView: View {
             Section("连接") {
                 LabeledContent("Relay", value: model.savedServerAddress)
                     .font(.footnote)
+                if brain == .codex {
+                    LabeledContent("Codex", value: "本机 app-server")
+                        .font(.footnote)
+                }
                 if brain == .loop, !loopURL.isEmpty {
                     LabeledContent("API", value: loopURL)
                         .font(.footnote)
@@ -909,6 +917,14 @@ private struct ModelSettingsView: View {
         } message: { Text(errorText ?? "") }
     }
 
+    private var bodyDescription: String {
+        switch brain {
+        case .desktop: return "Claude Code channel 正在接收消息。"
+        case .codex: return "本机 Codex app-server 正在接收消息。"
+        case .loop: return "服务器 API loop 正在接收消息。"
+        }
+    }
+
     @ViewBuilder
     private func modelRow(title: String, id: String) -> some View {
         HStack {
@@ -922,6 +938,7 @@ private struct ModelSettingsView: View {
 
     private func modelID(for choice: ModelChoice) -> String {
         if brain == .desktop { return choice.desktopID }
+        if brain == .codex { return "" }
         return loopURL.contains("openrouter.ai") ? choice.openRouterID : choice.directAPIID
     }
 
@@ -931,7 +948,11 @@ private struct ModelSettingsView: View {
         do {
             brain = try await model.settingsBrain()
             try await loadCurrentModel()
-            notice = brain == .desktop ? "Desktop 切换模型会自动 Swap。" : "API 模型切换后立即生效。"
+            switch brain {
+            case .desktop: notice = "Desktop 切换模型会自动 Swap。"
+            case .codex: notice = "Codex 使用本机 app-server 配置。"
+            case .loop: notice = "API 模型切换后立即生效。"
+            }
         } catch {
             errorText = error.localizedDescription
         }
@@ -940,11 +961,15 @@ private struct ModelSettingsView: View {
     private func loadCurrentModel() async throws {
         if brain == .desktop {
             currentModelID = try await model.settingsDesktopModel().model
-        } else {
+        } else if brain == .loop {
             let config = try await model.settingsLoopConfig()
             loopChainCount = max(1, config.mainChain.count)
             loopURL = config.mainChain.first?.url ?? ""
             currentModelID = config.mainChain.first?.model ?? ""
+        } else {
+            currentModelID = ""
+            loopURL = ""
+            loopChainCount = 1
         }
     }
 
@@ -955,7 +980,7 @@ private struct ModelSettingsView: View {
         do {
             brain = try await model.updateSettingsBrain(target)
             try await loadCurrentModel()
-            notice = brain == .desktop ? "已切到 Desktop。" : "已切到 API。"
+            notice = "已切到 \(brain.title)。"
         } catch {
             errorText = error.localizedDescription
         }

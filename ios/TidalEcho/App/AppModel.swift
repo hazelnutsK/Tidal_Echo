@@ -1196,7 +1196,7 @@ final class AppModel: ObservableObject {
             for _ in 0..<20 {
                 let batch = try await client.history(since: cursor, limit: 500)
                 guard !batch.isEmpty else { break }
-                batch.filter { !$0.meta.hidden }.forEach(upsert)
+                batch.filter { !$0.meta.hidden }.forEach { upsert($0) }
                 guard let last = batch.last else { break }
                 cursor = max(cursor, last.id)
                 if batch.count < 500 { break }

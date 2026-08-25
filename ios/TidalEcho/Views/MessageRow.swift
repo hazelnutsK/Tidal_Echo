@@ -464,24 +464,7 @@ struct MessageRow: View {
     }
 
     private static func formatTime(_ raw: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
-        guard let date else { return "" }
-        let output = DateFormatter()
-        output.locale = Locale(identifier: "zh_CN")
-        let zone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        output.timeZone = zone
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = zone
-        if calendar.isDateInToday(date) {
-            output.dateFormat = "HH:mm"
-        } else if calendar.component(.year, from: date) == calendar.component(.year, from: Date()) {
-            output.dateFormat = "M/d HH:mm"
-        } else {
-            output.dateFormat = "yyyy/M/d HH:mm"
-        }
-        return output.string(from: date)
+        EchoDateCache.bubbleTimeLabel(raw)
     }
 }
 
@@ -503,6 +486,25 @@ struct MarkdownMessageText: View {
     }
 
     private var attributedText: AttributedString {
+        // Parsing Markdown and walking its runs is the single most expensive
+        // thing a bubble does, and SwiftUI re-evaluates this body on any
+        // ancestor change. Memoise per (text, styling) so scrolling back over
+        // an already-seen bubble costs a dictionary lookup.
+        let key = MarkdownStyleKey(
+            source: source,
+            chatFont: chatFont,
+            fontScale: fontScale,
+            chatWeight: chatWeight,
+            textColor: textColor,
+            codeBackground: palette.composer
+        )
+        if let cached = MarkdownRenderCache.shared.value(for: key) { return cached }
+        let rendered = renderAttributedText()
+        MarkdownRenderCache.shared.store(rendered, for: key)
+        return rendered
+    }
+
+    private func renderAttributedText() -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(
             // SwiftUI Text does not lay out Markdown block presentation intents;
             // `.full` therefore collapsed the overflow paragraphs in short-chat's
@@ -833,9 +835,7 @@ private struct MessageTimerCard: View {
     }
 
     private static func parseDate(_ raw: String) -> Date? {
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+        EchoDateCache.date(from: raw)
     }
 
     private static func durationText(_ total: Int) -> String {

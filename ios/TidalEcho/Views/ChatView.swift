@@ -292,7 +292,6 @@ struct ChatView: View {
                         .foregroundStyle(palette.secondaryText)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .onAppear { prependOlderHistory(using: proxy) }
                     }
 
                     if model.messages.isEmpty && !model.isLoadingHistory {
@@ -306,7 +305,8 @@ struct ChatView: View {
                         .padding(.top, 120)
                     }
 
-                    ForEach(model.messages) { message in
+                    ForEach(chatRows) { row in
+                        let message = row.message
                         MessageRow(
                             message: message,
                             palette: palette,
@@ -330,10 +330,10 @@ struct ChatView: View {
                             liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight,
                             peerName: model.peerDisplayName,
-                            showsTimestamp: shouldShowTimestamp(for: message),
-                            isGroupStart: isBubbleGroupStart(message),
-                            isTail: isBubbleTail(message),
-                            isGroupedWithPrevious: isGroupedWithPrevious(message),
+                            showsTimestamp: row.showsTimestamp,
+                            isGroupStart: row.isGroupStart,
+                            isTail: row.isTail,
+                            isGroupedWithPrevious: !row.isGroupStart,
                             isPaper: model.theme == .paper,
                             isMist: model.theme == .mist,
                             isIncomingCallActive: nativeCalls.ringingInvite?.id == message.id
@@ -460,8 +460,21 @@ struct ChatView: View {
                     geometry.contentSize.height <= geometry.containerSize.height
                         || geometry.visibleRect.maxY >= geometry.contentSize.height - 56
                 } action: { _, nextValue in
-                    if nextValue { newMessageCount = 0 }
+                    // This fires on every scroll frame. `@State` invalidates on
+                    // assignment without comparing, so writing the same value
+                    // here re-rendered the whole list ~120 times a second.
+                    if nextValue && newMessageCount != 0 { newMessageCount = 0 }
                     if nextValue != isAtBottom { isAtBottom = nextValue }
+                }
+                // Page older history off the real scroll position rather than
+                // the loader row's `onAppear`: a lazy row appearing is a layout
+                // event, not a "she scrolled up here" event.
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentSize.height > geometry.containerSize.height
+                        && geometry.visibleRect.minY <= geometry.containerSize.height
+                } action: { _, nearTop in
+                    guard nearTop, canTriggerOlderHistory, model.canLoadOlderHistory else { return }
+                    prependOlderHistory(using: proxy)
                 }
                 .onAppear { positionInitialHistoryIfNeeded(proxy) }
                 .onChange(of: model.messages.count) { count in
@@ -510,12 +523,18 @@ struct ChatView: View {
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                    // Match the PWA: focusing the composer opens enough scrollable
-                    // room and settles the latest bubble above the keyboard.
-                    isAtBottom = true
-                    newMessageCount = 0
-                    scrollToBottom(proxy, animated: true)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+                    // Match the PWA: focusing the composer settles the latest
+                    // bubble above the keyboard — but only when she was already
+                    // reading the latest bubble. Forcing it while she is up in
+                    // history is what made tapping the composer feel like the
+                    // list teleported.
+                    guard isAtBottom else { return }
+                    if newMessageCount != 0 { newMessageCount = 0 }
+                    // One settle, after the keyboard has finished raising the
+                    // safe-area inset. An animated `setContentOffset` launched
+                    // mid-animation fights UIKit's own inset adjustment.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+                        guard isAtBottom else { return }
                         scrollToBottom(proxy, animated: false)
                     }
                 }
@@ -528,54 +547,59 @@ struct ChatView: View {
                     }
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    if !isAtBottom {
-                        HStack(spacing: 8) {
-                            if newMessageCount > 0 {
+                    // Keep the implicit animation scoped to the jump button.
+                    // Hanging it off the ScrollView animated the entire message
+                    // list every time `isAtBottom` flipped mid-scroll.
+                    ZStack(alignment: .bottomTrailing) {
+                        if !isAtBottom {
+                            HStack(spacing: 8) {
+                                if newMessageCount > 0 {
+                                    Button {
+                                        newMessageCount = 0
+                                        jumpToBottom(proxy)
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Circle()
+                                                .fill(palette.accent)
+                                                .frame(width: 6, height: 6)
+                                            Text(newMessageCount > 99 ? "99+ 条新消息" : "\(newMessageCount) 条新消息")
+                                                .font(.system(size: 12, weight: .medium))
+                                        }
+                                        .foregroundStyle(palette.text)
+                                        .padding(.horizontal, 12)
+                                        .frame(height: 34)
+                                        .background(.ultraThinMaterial, in: Capsule())
+                                        .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
+                                        .shadow(color: Color.black.opacity(0.07), radius: 8, y: 3)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                                    .accessibilityLabel("\(newMessageCount) 条新消息，回到最新位置")
+                                }
+
                                 Button {
                                     newMessageCount = 0
                                     jumpToBottom(proxy)
                                 } label: {
-                                    HStack(spacing: 6) {
-                                        Circle()
-                                            .fill(palette.accent)
-                                            .frame(width: 6, height: 6)
-                                        Text(newMessageCount > 99 ? "99+ 条新消息" : "\(newMessageCount) 条新消息")
-                                            .font(.system(size: 12, weight: .medium))
-                                    }
-                                    .foregroundStyle(palette.text)
-                                    .padding(.horizontal, 12)
-                                    .frame(height: 34)
-                                    .background(.ultraThinMaterial, in: Capsule())
-                                    .overlay(Capsule().stroke(palette.hairline, lineWidth: 0.5))
-                                    .shadow(color: Color.black.opacity(0.07), radius: 8, y: 3)
+                                    Image(systemName: "arrow.down")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(palette.text)
+                                        .frame(width: 36, height: 36)
+                                        .background(.ultraThinMaterial, in: Circle())
+                                        .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
+                                        .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
                                 }
                                 .buttonStyle(.plain)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                                .accessibilityLabel("\(newMessageCount) 条新消息，回到最新位置")
+                                .accessibilityLabel("回到最新消息")
                             }
-
-                            Button {
-                                newMessageCount = 0
-                                jumpToBottom(proxy)
-                            } label: {
-                                Image(systemName: "arrow.down")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(palette.text)
-                                    .frame(width: 36, height: 36)
-                                    .background(.ultraThinMaterial, in: Circle())
-                                    .overlay(Circle().stroke(palette.hairline, lineWidth: 0.5))
-                                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("回到最新消息")
+                            .padding(.trailing, 16)
+                            .padding(.bottom, composerHeight + 12)
+                            .transition(.scale(scale: 0.88).combined(with: .opacity))
                         }
-                        .padding(.trailing, 16)
-                        .padding(.bottom, composerHeight + 12)
-                        .transition(.scale(scale: 0.88).combined(with: .opacity))
                     }
+                    .animation(.easeOut(duration: 0.18), value: isAtBottom)
+                    .animation(.easeOut(duration: 0.18), value: newMessageCount)
                 }
-                .animation(.easeOut(duration: 0.18), value: isAtBottom)
-                .animation(.easeOut(duration: 0.18), value: newMessageCount)
             }
         }
     }
@@ -586,13 +610,56 @@ struct ChatView: View {
         settleAtBottom(proxy)
     }
 
-    private func shouldShowTimestamp(for message: ChatMessage) -> Bool {
+    /// Every row needs to know how it groups with its neighbours. Deriving that
+    /// per row used to cost four `firstIndex(where:)` scans plus a handful of
+    /// freshly allocated `ISO8601DateFormatter`s — quadratic work on every body
+    /// pass, which is what made scrolling feel sticky. Build the whole plan in
+    /// one forward pass instead.
+    private var chatRows: [ChatRow] {
+        Self.buildRows(model.messages)
+    }
+
+    private static func buildRows(_ messages: [ChatMessage]) -> [ChatRow] {
+        guard !messages.isEmpty else { return [] }
+        var rows: [ChatRow] = []
+        rows.reserveCapacity(messages.count)
+        for index in messages.indices {
+            let message = messages[index]
+            let isGroupStart: Bool
+            if index > 0 {
+                isGroupStart = !messagesShareBubbleGroup(messages[index - 1], message)
+            } else {
+                isGroupStart = true
+            }
+
+            var isTail = true
+            if message.kind != "thinking", message.kind != "act", index + 1 < messages.count {
+                isTail = !messagesShareBubbleGroup(message, messages[index + 1])
+            }
+
+            rows.append(
+                ChatRow(
+                    message: message,
+                    showsTimestamp: showsTimestamp(at: index, in: messages),
+                    isGroupStart: isGroupStart,
+                    isTail: isTail
+                )
+            )
+        }
+        return rows
+    }
+
+    private static func showsTimestamp(at index: Int, in messages: [ChatMessage]) -> Bool {
+        let message = messages[index]
         if message.author == .human { return true }
         if message.kind == "thinking" || message.kind == "act" { return false }
-        guard let index = model.messages.firstIndex(where: { $0.id == message.id }) else { return true }
-        for later in model.messages.indices where later > index {
-            let next = model.messages[later]
-            if next.kind == "thinking" || next.kind == "act" { continue }
+        var cursor = index + 1
+        while cursor < messages.count {
+            let next = messages[cursor]
+            if next.kind == "thinking" || next.kind == "act" {
+                cursor += 1
+                continue
+            }
             // Short-chat parts created from one reply share the exact source
             // timestamp. Hide only those intermediate timestamps; a later
             // autonomous send has its own timestamp even without a human reply.
@@ -629,41 +696,19 @@ struct ChatView: View {
         askSheetContext = AskSheetContext(messageID: message.id, initialAsk: ask)
     }
 
-    private func isBubbleGroupStart(_ message: ChatMessage) -> Bool {
-        guard let index = model.messages.firstIndex(where: { $0.id == message.id }), index > 0 else {
-            return true
-        }
-        return !messagesShareBubbleGroup(model.messages[index - 1], message)
-    }
-
-    private func isGroupedWithPrevious(_ message: ChatMessage) -> Bool {
-        !isBubbleGroupStart(message)
-    }
-
-    private func isBubbleTail(_ message: ChatMessage) -> Bool {
-        guard message.kind != "thinking", message.kind != "act",
-              let index = model.messages.firstIndex(where: { $0.id == message.id }),
-              model.messages.indices.contains(index + 1) else { return true }
-        return !messagesShareBubbleGroup(message, model.messages[index + 1])
-    }
-
-    private func messagesShareBubbleGroup(_ first: ChatMessage, _ second: ChatMessage) -> Bool {
+    private static func messagesShareBubbleGroup(_ first: ChatMessage, _ second: ChatMessage) -> Bool {
         guard first.kind != "thinking", first.kind != "act",
               second.kind != "thinking", second.kind != "act",
               first.author == second.author,
-              let date = Self.messageDate(first.timestamp),
-              let nextDate = Self.messageDate(second.timestamp) else { return false }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        guard calendar.isDate(date, inSameDayAs: nextDate) else { return false }
+              let date = messageDate(first.timestamp),
+              let nextDate = messageDate(second.timestamp) else { return false }
+        guard EchoDateCache.shanghaiCalendar.isDate(date, inSameDayAs: nextDate) else { return false }
         let interval = nextDate.timeIntervalSince(date)
         return interval >= 0 && interval < 5 * 60
     }
 
     private static func messageDate(_ raw: String) -> Date? {
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+        EchoDateCache.date(from: raw)
     }
 
     private func settleAtBottom(_ proxy: ScrollViewProxy) {
@@ -678,7 +723,9 @@ struct ChatView: View {
     }
 
     private func prependOlderHistory(using proxy: ScrollViewProxy) {
-        guard !isPrependingHistory, !model.isLoadingOlderHistory else { return }
+        // Never page while she is pinned to the newest message: the anchor
+        // restore below would throw her back to where the old window started.
+        guard !isPrependingHistory, !model.isLoadingOlderHistory, !isAtBottom else { return }
         isPrependingHistory = true
         Task {
             let anchor = await model.loadOlderHistory()
@@ -786,6 +833,17 @@ struct ChatView: View {
             showingVoiceCall = true
         }
     }
+}
+
+/// One chat bubble plus the grouping decisions its neighbours imply, resolved
+/// once per list build instead of once per row.
+private struct ChatRow: Identifiable {
+    let message: ChatMessage
+    let showsTimestamp: Bool
+    let isGroupStart: Bool
+    let isTail: Bool
+
+    var id: Int { message.id }
 }
 
 private struct AskSheetContext: Identifiable {

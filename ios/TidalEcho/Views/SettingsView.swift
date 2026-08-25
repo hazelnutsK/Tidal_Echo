@@ -818,6 +818,7 @@ private struct ModelSettingsView: View {
         ModelChoice(title: "Opus 4.6", desktopID: "claude-opus-4-6", directAPIID: "[按量]claude-opus-4-6-thinking", openRouterID: "anthropic/claude-opus-4.6"),
         ModelChoice(title: "Opus 4.7", desktopID: "claude-opus-4-7", directAPIID: "[按量]claude-opus-4-7-thinking", openRouterID: "anthropic/claude-opus-4.7"),
         ModelChoice(title: "Opus 4.8", desktopID: "claude-opus-4-8", directAPIID: "[按量]claude-opus-4-8-thinking", openRouterID: "anthropic/claude-opus-4.8"),
+        ModelChoice(title: "Opus 5", desktopID: "claude-opus-5[1m]", directAPIID: "", openRouterID: ""),
         ModelChoice(title: "Fable 5", desktopID: "claude-fable-5[1m]", directAPIID: "[按量]claude-fable-5-thinking", openRouterID: "anthropic/claude-fable-5")
     ]
 
@@ -853,7 +854,7 @@ private struct ModelSettingsView: View {
                         }
                     }
 
-                    ForEach(choices) { choice in
+                    ForEach(choices.filter { brain == .desktop || !$0.directAPIID.isEmpty }) { choice in
                         Button {
                             if brain == .desktop {
                                 pendingDesktopChoice = choice

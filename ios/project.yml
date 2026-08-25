@@ -15,10 +15,17 @@ settings:
     MARKETING_VERSION: 0.1.0
     TARGETED_DEVICE_FAMILY: 1
 
+packages:
+  KaomojiDrawerKit:
+    url: https://github.com/Pyruslili/KaomojiDrawerKit.git
+    from: 1.0.0
+
 targets:
   TidalEcho:
     type: application
     platform: iOS
+    dependencies:
+      - package: KaomojiDrawerKit
     sources:
       - path: TidalEcho
     info:

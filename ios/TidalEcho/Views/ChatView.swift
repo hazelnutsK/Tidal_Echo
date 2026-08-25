@@ -1,4 +1,5 @@
 import AudioToolbox
+import KaomojiDrawerKit
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -1441,8 +1442,10 @@ private struct ComposerView: View {
     @ObservedObject var model: AppModel
     let onShowSessions: () -> Void
     @StateObject private var recorder = VoiceRecorder()
+    @StateObject private var kaomojiStore = KaomojiLibraryStore()
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var showingAttachmentMenu = false
+    @State private var showingKaomojiDrawer = false
     @State private var showingPhotoPicker = false
     @State private var importingAttachments = false
     @State private var importedTypes: [UTType] = [.item]
@@ -1536,6 +1539,15 @@ private struct ComposerView: View {
                 }
                 .disabled(model.isUploading)
 
+                Button { showingKaomojiDrawer = true } label: {
+                    Image(systemName: "face.smiling")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(composerAuxiliaryForeground)
+                        .frame(width: 38, height: 38)
+                        .background(composerAuxiliaryBackground, in: Circle())
+                }
+                .accessibilityLabel("打开颜文字抽屉")
+
                 Button(action: onShowSessions) {
                     HStack(spacing: 7) {
                         Circle()
@@ -1603,6 +1615,18 @@ private struct ComposerView: View {
             Button("音乐") { presentFileImporter(types: [.audio]) }
             Button("取消", role: .cancel) {}
         }
+        .sheet(isPresented: $showingKaomojiDrawer) {
+            KaomojiDrawer(
+                store: kaomojiStore,
+                title: "颜文字",
+                style: kaomojiStyle
+            ) { face in
+                draftText += face
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.hidden)
+            .presentationCornerRadius(28)
+        }
         .photosPicker(
             isPresented: $showingPhotoPicker,
             selection: $photoItems,
@@ -1626,6 +1650,18 @@ private struct ComposerView: View {
             .overlay(shape.stroke(Color.white.opacity(model.theme == .harbor ? 0.13 : 0.42), lineWidth: 0.7))
             .overlay(shape.stroke(palette.hairline, lineWidth: 0.5))
             .shadow(color: Color.black.opacity(0.08), radius: 14, y: 5)
+    }
+
+    private var kaomojiStyle: KaomojiDrawerStyle {
+        KaomojiDrawerStyle(
+            backgroundTop: palette.backgroundTop,
+            backgroundBottom: palette.backgroundBottom,
+            glow: palette.accent,
+            card: palette.aiBubble,
+            accent: palette.accent,
+            text: palette.text,
+            secondaryText: palette.secondaryText
+        )
     }
 
     private var composerAuxiliaryBackground: Color {

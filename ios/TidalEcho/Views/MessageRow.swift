@@ -220,8 +220,26 @@ struct MessageRow: View {
 
             VStack(alignment: message.author == .human ? .trailing : .leading, spacing: 4) {
                 VStack(alignment: .leading, spacing: 9) {
-                    ForEach(message.meta.attachments) { attachment in
-                        AttachmentView(attachment: attachment, request: attachmentRequest(attachment), palette: palette)
+                    if imageAttachments.count > 1 {
+                        PhotoStackAttachmentView(
+                            attachments: imageAttachments,
+                            request: attachmentRequest,
+                            palette: palette
+                        )
+                    } else if let image = imageAttachments.first {
+                        AttachmentView(
+                            attachment: image,
+                            request: attachmentRequest(image),
+                            palette: palette
+                        )
+                    }
+
+                    ForEach(nonImageAttachments) { attachment in
+                        AttachmentView(
+                            attachment: attachment,
+                            request: attachmentRequest(attachment),
+                            palette: palette
+                        )
                     }
 
                     if !message.text.isEmpty {
@@ -391,6 +409,14 @@ struct MessageRow: View {
         message.meta.reactions[message.author == .human ? "ai" : "human"]
     }
 
+    private var imageAttachments: [Attachment] {
+        message.meta.attachments.filter(\.isImage)
+    }
+
+    private var nonImageAttachments: [Attachment] {
+        message.meta.attachments.filter { !$0.isImage }
+    }
+
     private var myReaction: String? {
         message.meta.reactions["human"]
     }
@@ -459,7 +485,7 @@ struct MessageRow: View {
     }
 }
 
-private struct MarkdownMessageText: View {
+struct MarkdownMessageText: View {
     let source: String
     let palette: EchoPalette
     let textColor: Color
@@ -1616,11 +1642,18 @@ private final class AuthenticatedImageLoader: ObservableObject {
     }
 }
 
-private struct AuthenticatedImageView: View {
+struct AuthenticatedImageView: View {
     let request: URLRequest?
     let palette: EchoPalette
+    var contentMode: ContentMode = .fit
     @StateObject private var loader = AuthenticatedImageLoader()
     @State private var previewImage: ImagePreviewItem?
+
+    init(request: URLRequest?, palette: EchoPalette, contentMode: ContentMode = .fit) {
+        self.request = request
+        self.palette = palette
+        self.contentMode = contentMode
+    }
 
     var body: some View {
         Group {
@@ -1630,7 +1663,8 @@ private struct AuthenticatedImageView: View {
                 } label: {
                     Image(uiImage: image)
                         .resizable()
-                        .scaledToFit()
+                        .aspectRatio(contentMode: contentMode)
+                        .scaleEffect(imageOverscan)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1650,6 +1684,14 @@ private struct AuthenticatedImageView: View {
         .task(id: request?.url?.absoluteString) { await loader.load(request) }
         .fullScreenCover(item: $previewImage) { item in
             FullScreenImagePreview(image: item.image)
+        }
+    }
+
+    private var imageOverscan: CGFloat {
+        switch contentMode {
+        case .fit: return 1
+        case .fill: return 1.04
+        @unknown default: return 1
         }
     }
 

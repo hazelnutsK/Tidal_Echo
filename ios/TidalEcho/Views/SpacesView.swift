@@ -362,6 +362,8 @@ private struct StarsView: View {
     @State private var isLoading = true
     @State private var errorText: String?
 
+    private var palette: EchoPalette { model.theme.palette }
+
     var body: some View {
         Group {
             if isLoading && messages.isEmpty {
@@ -381,9 +383,14 @@ private struct StarsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             if !message.text.isEmpty {
-                                Text(message.text)
-                                    .font(.body)
-                                    .textSelection(.enabled)
+                                MarkdownMessageText(
+                                    source: message.text,
+                                    palette: palette,
+                                    textColor: palette.text,
+                                    chatFont: model.chatFont,
+                                    fontScale: model.fontScale,
+                                    chatWeight: model.chatWeight
+                                )
                             }
                             ForEach(message.meta.attachments.filter(\.isImage)) { attachment in
                                 if let request = model.authenticatedRequest(path: attachment.url) {
@@ -718,6 +725,11 @@ private struct MomentsView: View {
     @State private var showingComposer = false
     @State private var errorText: String?
 
+    private let journalColumns = [
+        GridItem(.flexible(minimum: 130), spacing: 12),
+        GridItem(.flexible(minimum: 130), spacing: 12)
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
             Picker("类型", selection: $kind) {
@@ -739,14 +751,37 @@ private struct MomentsView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 12) {
-                        ForEach(posts) { post in
-                            MomentCard(
-                                model: model,
-                                post: post,
-                                onLike: { Task { await toggleLike(post) } },
-                                onComment: { text, replyTo in await addComment(post, text: text, replyTo: replyTo) },
-                                onDelete: { Task { await delete(post) } }
-                            )
+                        if kind == .journal {
+                            LazyVGrid(columns: journalColumns, alignment: .leading, spacing: 12) {
+                                ForEach(posts) { post in
+                                    NavigationLink {
+                                        JournalDetailView(
+                                            model: model,
+                                            initialPost: post,
+                                            onUpdate: replacePost,
+                                            onDeleted: { postID in
+                                                posts.removeAll { $0.id == postID }
+                                            }
+                                        )
+                                    } label: {
+                                        JournalPreviewCard(
+                                            post: post,
+                                            palette: model.theme.palette
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        } else {
+                            ForEach(posts) { post in
+                                MomentCard(
+                                    model: model,
+                                    post: post,
+                                    onLike: { Task { await toggleLike(post) } },
+                                    onComment: { text, replyTo in await addComment(post, text: text, replyTo: replyTo) },
+                                    onDelete: { Task { await delete(post) } }
+                                )
+                            }
                         }
                         if hasMore {
                             Button {
@@ -836,11 +871,202 @@ private struct MomentsView: View {
             errorText = error.localizedDescription
         }
     }
+
+    private func replacePost(_ updatedPost: MomentPost) {
+        guard let index = posts.firstIndex(where: { $0.id == updatedPost.id }) else { return }
+        posts[index] = updatedPost
+    }
+}
+
+private struct JournalContent {
+    let title: String
+    let body: String
+
+    init(_ source: String) {
+        let normalized = source.replacingOccurrences(of: "\r\n", with: "\n")
+        let lines = normalized.components(separatedBy: "\n")
+        guard let titleIndex = lines.firstIndex(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else {
+            title = "未命名日志"
+            body = ""
+            return
+        }
+
+        title = Self.cleanTitle(lines[titleIndex])
+        body = lines.dropFirst(titleIndex + 1)
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func cleanTitle(_ line: String) -> String {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        let withoutHeading = String(trimmed.drop(while: { $0 == "#" }))
+            .trimmingCharacters(in: .whitespaces)
+        return withoutHeading.isEmpty ? trimmed : withoutHeading
+    }
+}
+
+private struct JournalPreviewCard: View {
+    let post: MomentPost
+    let palette: EchoPalette
+
+    private var content: JournalContent { JournalContent(post.text) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            JournalDropCapPreview(text: content.body, palette: palette)
+
+            Spacer(minLength: 8)
+
+            Rectangle()
+                .fill(palette.hairline)
+                .frame(height: 0.7)
+
+            Text(content.title)
+                .font(.system(size: 14, weight: .semibold, design: .serif))
+                .foregroundStyle(palette.text)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("写于 \(shortTimestamp(post.timestamp))")
+                .font(.system(size: 10.5, weight: .regular))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, minHeight: 218, alignment: .topLeading)
+        .background(palette.composer.opacity(0.88), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(palette.hairline, lineWidth: 0.7)
+        }
+        .shadow(color: Color.black.opacity(0.045), radius: 8, y: 3)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(content.title)，写于 \(shortTimestamp(post.timestamp))")
+        .accessibilityHint("打开阅读全文")
+    }
+}
+
+private struct JournalDropCapPreview: View {
+    let text: String
+    let palette: EchoPalette
+
+    private var cleanText: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        if let first = cleanText.first {
+            (
+                Text(String(first))
+                    .font(.system(size: 38, weight: .medium, design: .serif))
+                    .baselineOffset(-7)
+                + Text(String(cleanText.dropFirst()))
+                    .font(.system(size: 13, weight: .regular, design: .serif))
+            )
+            .foregroundStyle(palette.text)
+            .lineSpacing(3)
+            .lineLimit(6)
+            .multilineTextAlignment(.leading)
+        } else {
+            Text("尚未写下正文")
+                .font(.system(size: 13, design: .serif))
+                .foregroundStyle(palette.secondaryText)
+        }
+    }
+}
+
+private struct JournalDetailView: View {
+    @ObservedObject var model: AppModel
+    @State private var post: MomentPost
+    let onUpdate: (MomentPost) -> Void
+    let onDeleted: (Int) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var errorText: String?
+
+    init(
+        model: AppModel,
+        initialPost: MomentPost,
+        onUpdate: @escaping (MomentPost) -> Void,
+        onDeleted: @escaping (Int) -> Void
+    ) {
+        self.model = model
+        _post = State(initialValue: initialPost)
+        self.onUpdate = onUpdate
+        self.onDeleted = onDeleted
+    }
+
+    private var palette: EchoPalette { model.theme.palette }
+    private var content: JournalContent { JournalContent(post.text) }
+
+    var body: some View {
+        ScrollView {
+            MomentCard(
+                model: model,
+                post: post,
+                presentsJournalAsArticle: true,
+                onLike: { Task { await toggleLike() } },
+                onComment: addComment,
+                onDelete: { Task { await deletePost() } }
+            )
+            .padding(16)
+        }
+        .background(palette.background.ignoresSafeArea())
+        .foregroundStyle(palette.text)
+        .navigationTitle(content.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay(alignment: .bottom) {
+            if let errorText { SpaceErrorBanner(text: errorText) }
+        }
+    }
+
+    @MainActor
+    private func toggleLike() async {
+        do {
+            post.meta.likes = try await model.likeMoment(
+                id: post.id,
+                on: post.meta.likes["human"] == nil
+            )
+            onUpdate(post)
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func addComment(_ text: String, _ replyTo: MessageAuthor?) async -> Bool {
+        do {
+            let newComment = try await model.commentMoment(id: post.id, text: text, replyTo: replyTo)
+            post.meta.comments.append(newComment)
+            onUpdate(post)
+            errorText = nil
+            return true
+        } catch {
+            errorText = error.localizedDescription
+            return false
+        }
+    }
+
+    @MainActor
+    private func deletePost() async {
+        do {
+            try await model.deleteMoment(id: post.id)
+            onDeleted(post.id)
+            dismiss()
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
 }
 
 private struct MomentCard: View {
     @ObservedObject var model: AppModel
     let post: MomentPost
+    var presentsJournalAsArticle = false
     let onLike: () -> Void
     let onComment: (String, MessageAuthor?) async -> Bool
     let onDelete: () -> Void
@@ -874,10 +1100,26 @@ private struct MomentCard: View {
             }
 
             if !post.text.isEmpty {
-                Text(post.text)
-                    .font(post.kind == .journal ? .body.leading(.loose) : .body)
-                    .fixedSize(horizontal: false, vertical: true)
+                if post.kind == .journal && presentsJournalAsArticle {
+                    let content = JournalContent(post.text)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(content.title)
+                            .font(.system(size: 28, weight: .bold, design: .serif))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if !content.body.isEmpty {
+                            Text(content.body)
+                                .font(.body.leading(.loose))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     .textSelection(.enabled)
+                } else {
+                    Text(post.text)
+                        .font(post.kind == .journal ? .body.leading(.loose) : .body)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
             }
 
             ForEach(post.meta.attachments.filter(\.isImage)) { attachment in
@@ -1358,7 +1600,46 @@ private struct SpaceErrorBanner: View {
 }
 
 private func shortTimestamp(_ value: String) -> String {
-    value.replacingOccurrences(of: "T", with: " ").prefix(16).description
+    guard let date = serverDate(from: value) else {
+        return value.replacingOccurrences(of: "T", with: " ").prefix(16).description
+    }
+
+    let zone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = zone
+
+    let output = DateFormatter()
+    output.calendar = calendar
+    output.locale = Locale(identifier: "zh_Hans_CN")
+    output.timeZone = zone
+    output.dateFormat = calendar.component(.year, from: date) == calendar.component(.year, from: Date())
+        ? "M月d日 HH:mm"
+        : "yyyy年M月d日 HH:mm"
+    return output.string(from: date)
+}
+
+private func serverDate(from value: String) -> Date? {
+    let precise = ISO8601DateFormatter()
+    precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = precise.date(from: value) { return date }
+
+    let standard = ISO8601DateFormatter()
+    if let date = standard.date(from: value) { return date }
+
+    let parser = DateFormatter()
+    parser.calendar = Calendar(identifier: .gregorian)
+    parser.locale = Locale(identifier: "en_US_POSIX")
+    parser.timeZone = TimeZone(secondsFromGMT: 0)
+    for format in [
+        "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
+        "yyyy-MM-dd'T'HH:mm:ss.SSS",
+        "yyyy-MM-dd'T'HH:mm:ss",
+        "yyyy-MM-dd HH:mm:ss"
+    ] {
+        parser.dateFormat = format
+        if let date = parser.date(from: value) { return date }
+    }
+    return nil
 }
 
 private func dateKey(_ date: Date) -> String {

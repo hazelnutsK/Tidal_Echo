@@ -1666,29 +1666,41 @@ struct AuthenticatedImageView: View {
     let request: URLRequest?
     let palette: EchoPalette
     var contentMode: ContentMode = .fit
+    var allowsPreview = true
     @StateObject private var loader = AuthenticatedImageLoader()
     @State private var previewImage: ImagePreviewItem?
 
-    init(request: URLRequest?, palette: EchoPalette, contentMode: ContentMode = .fit) {
+    init(
+        request: URLRequest?,
+        palette: EchoPalette,
+        contentMode: ContentMode = .fit,
+        allowsPreview: Bool = true
+    ) {
         self.request = request
         self.palette = palette
         self.contentMode = contentMode
+        self.allowsPreview = allowsPreview
     }
 
     var body: some View {
         Group {
             if let image = loader.image {
-                Button {
-                    previewImage = ImagePreviewItem(image: image)
-                } label: {
-                    Image(uiImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: contentMode)
-                        .scaleEffect(imageOverscan)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("打开图片预览")
+                Image(uiImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: contentMode)
+                    .scaleEffect(imageOverscan)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        guard allowsPreview else { return }
+                        previewImage = ImagePreviewItem(image: image)
+                    }
+                    .accessibilityElement()
+                    .accessibilityLabel("打开图片预览")
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction {
+                        guard allowsPreview else { return }
+                        previewImage = ImagePreviewItem(image: image)
+                    }
             } else if loader.failed {
                 Label("图片加载失败", systemImage: "photo.badge.exclamationmark")
                     .font(.caption)

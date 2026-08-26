@@ -17,6 +17,8 @@ struct PhotoStackAttachmentView: View {
     @State private var dragProgress: CGFloat = 0
     @State private var isHorizontalDrag = false
     @State private var isSettling = false
+    @State private var suppressesPreview = false
+    @State private var gestureSequence = 0
 
     init(
         attachments: [Attachment],
@@ -50,7 +52,8 @@ struct PhotoStackAttachmentView: View {
                 AuthenticatedImageView(
                     request: request(attachment),
                     palette: palette,
-                    contentMode: .fill
+                    contentMode: .fill,
+                    allowsPreview: !suppressesPreview
                 )
                 .frame(width: Metrics.cardWidth, height: Metrics.cardHeight)
                 .clipped()
@@ -100,6 +103,8 @@ struct PhotoStackAttachmentView: View {
                 if !isHorizontalDrag {
                     guard abs(dx) > 8, abs(dx) > abs(dy) else { return }
                     isHorizontalDrag = true
+                    gestureSequence += 1
+                    suppressesPreview = true
                 }
 
                 dragDirection = dx < 0 ? -1 : 1
@@ -150,6 +155,7 @@ struct PhotoStackAttachmentView: View {
                     dragDirection = 0
                     isSettling = false
                 }
+                releasePreviewSuppression()
             }
         } else {
             let duration = reduceMotion ? 0.01 : 0.24
@@ -159,7 +165,17 @@ struct PhotoStackAttachmentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + duration) {
                 dragDirection = 0
                 isSettling = false
+                releasePreviewSuppression()
             }
+        }
+    }
+
+    private func releasePreviewSuppression() {
+        guard suppressesPreview else { return }
+        let sequence = gestureSequence
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            guard sequence == gestureSequence, !isHorizontalDrag, !isSettling else { return }
+            suppressesPreview = false
         }
     }
 

@@ -1512,7 +1512,7 @@ private struct ComposerView: View {
     private var palette: EchoPalette { model.theme.palette }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 7) {
             if recorder.isRecording || recorder.hasRecording {
                 HStack(spacing: 11) {
                     Button { recorder.cancel() } label: {
@@ -1587,43 +1587,46 @@ private struct ComposerView: View {
                 .padding(.top, 3)
                 .padding(.bottom, 2)
 
-            HStack(alignment: .center, spacing: 9) {
+            HStack(alignment: .center, spacing: 7) {
                 Button { showingAttachmentMenu = true } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(composerAuxiliaryForeground)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 35, height: 35)
                         .background(composerAuxiliaryBackground, in: Circle())
                 }
                 .disabled(model.isUploading)
 
                 Button { showingKaomojiDrawer = true } label: {
                     Image(systemName: "face.smiling")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(composerAuxiliaryForeground)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 35, height: 35)
                         .background(composerAuxiliaryBackground, in: Circle())
                 }
                 .accessibilityLabel("打开颜文字抽屉")
 
                 Button(action: onShowSessions) {
-                    HStack(spacing: 7) {
+                    HStack(spacing: 6) {
                         Circle()
                             .fill(model.isStreamConnected ? Color.green.opacity(0.86) : palette.secondaryText.opacity(0.72))
-                            .frame(width: 7, height: 7)
+                            .frame(width: 6, height: 6)
                         Text(model.activeSessionTitle)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
+                            .minimumScaleFactor(0.9)
+                            .layoutPriority(1)
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(palette.secondaryText)
                     }
                     .foregroundStyle(palette.text)
-                    .padding(.horizontal, 13)
-                    .frame(height: 38)
+                    .padding(.horizontal, 10)
+                    .frame(height: 35)
                     .background(composerAuxiliaryBackground.opacity(0.86), in: Capsule())
                 }
                 .buttonStyle(.plain)
+                .layoutPriority(1)
                 .accessibilityLabel(
                     "切换对话窗口，当前为 \(model.activeSessionTitle)，\(model.isStreamConnected ? "在线" : "离线")"
                 )
@@ -1634,9 +1637,9 @@ private struct ComposerView: View {
                     toggleRecording()
                 } label: {
                     Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(recorder.isRecording ? Color.white : composerAuxiliaryForeground)
-                        .frame(width: 38, height: 38)
+                        .frame(width: 35, height: 35)
                         .background(
                             recorder.isRecording ? Color.red.opacity(0.82) : composerAuxiliaryBackground,
                             in: Circle()
@@ -1648,19 +1651,19 @@ private struct ComposerView: View {
                     send()
                 } label: {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 17, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.white.opacity(canSend ? 1 : 0.72))
-                        .frame(width: 39, height: 39)
+                        .frame(width: 36, height: 36)
                         .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
                 }
                 .disabled(!canSend)
             }
         }
-        .padding(12)
+        .padding(10)
         .background { composerContainerGlass }
         .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .padding(.bottom, 8)
+        .padding(.top, 7)
+        .padding(.bottom, 7)
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
             guard !items.isEmpty else { return }

@@ -395,7 +395,8 @@ struct MessageRow: View {
     }
 
     private var usesCompactGroupSpacing: Bool {
-        bubbleStyle == .classic || bubbleStyle == .frosted
+        bubbleShapeStyle == .telegram
+            && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
     private var usesTelegramShape: Bool {
@@ -717,7 +718,13 @@ private struct TelegramBubbleShape: Shape {
     func path(in rect: CGRect) -> Path {
         // Keep the rounded body on the same alignment line for every row.
         // The tail grows outward instead of reserving space inside the bubble.
-        let tailWidth: CGFloat = 7
+        // Telegram's lower tail edge briefly curves back into the bubble before
+        // meeting the baseline. That shallow notch keeps the tail from reading
+        // as a flat triangle and lets its point lean slightly downward.
+        let tailWidth: CGFloat = 10
+        let tailDrop: CGFloat = 2
+        let tailShoulder: CGFloat = 12
+        let tailNotchRise: CGFloat = 5
         let body = rect
         let limit = min(body.width, body.height) / 2
         let full = min(max(0, radius), limit)
@@ -737,16 +744,16 @@ private struct TelegramBubbleShape: Shape {
         )
 
         if author == .human && isTail {
-            path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - 11))
+            path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - tailShoulder))
             path.addCurve(
-                to: CGPoint(x: rect.maxX + tailWidth, y: rect.maxY - 1),
+                to: CGPoint(x: rect.maxX + tailWidth, y: rect.maxY + tailDrop),
                 control1: CGPoint(x: body.maxX, y: body.maxY - 5),
-                control2: CGPoint(x: rect.maxX + tailWidth - 3, y: rect.maxY - 1)
+                control2: CGPoint(x: rect.maxX + tailWidth - 4, y: rect.maxY + tailDrop - 1)
             )
             path.addCurve(
-                to: CGPoint(x: body.maxX - 10, y: body.maxY),
-                control1: CGPoint(x: rect.maxX + tailWidth - 4, y: rect.maxY),
-                control2: CGPoint(x: body.maxX - 5, y: body.maxY)
+                to: CGPoint(x: body.maxX - tailShoulder, y: body.maxY),
+                control1: CGPoint(x: rect.maxX + 3, y: rect.maxY + tailDrop),
+                control2: CGPoint(x: body.maxX - 7, y: body.maxY - tailNotchRise)
             )
         } else {
             path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - bottomRight))
@@ -758,15 +765,15 @@ private struct TelegramBubbleShape: Shape {
         }
 
         if author == .ai && isTail {
-            path.addLine(to: CGPoint(x: body.minX + 10, y: body.maxY))
+            path.addLine(to: CGPoint(x: body.minX + tailShoulder, y: body.maxY))
             path.addCurve(
-                to: CGPoint(x: rect.minX - tailWidth, y: rect.maxY - 1),
-                control1: CGPoint(x: body.minX + 5, y: body.maxY),
-                control2: CGPoint(x: rect.minX - tailWidth + 3, y: rect.maxY - 1)
+                to: CGPoint(x: rect.minX - tailWidth, y: rect.maxY + tailDrop),
+                control1: CGPoint(x: body.minX + 7, y: body.maxY - tailNotchRise),
+                control2: CGPoint(x: rect.minX - 3, y: rect.maxY + tailDrop)
             )
             path.addCurve(
-                to: CGPoint(x: body.minX, y: body.maxY - 11),
-                control1: CGPoint(x: rect.minX - tailWidth + 4, y: rect.maxY),
+                to: CGPoint(x: body.minX, y: body.maxY - tailShoulder),
+                control1: CGPoint(x: rect.minX - tailWidth + 4, y: rect.maxY + tailDrop - 1),
                 control2: CGPoint(x: body.minX, y: body.maxY - 5)
             )
         } else {
@@ -1344,9 +1351,8 @@ private struct AvatarBadge: View {
                     .background(palette.aiBubble)
             }
         }
-        .frame(width: 27, height: 27)
+        .frame(width: 30, height: 30)
         .clipShape(Circle())
-        .overlay(Circle().stroke(palette.hairline))
     }
 }
 
@@ -1880,4 +1886,3 @@ private struct FullScreenImagePreview: View {
         .statusBarHidden()
     }
 }
-

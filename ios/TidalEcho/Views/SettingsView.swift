@@ -105,6 +105,9 @@ struct SettingsView: View {
                             HubNavigationTile(icon: "chart.bar", title: "Claude 额度", subtitle: "限额与用量", palette: palette, isMist: model.theme == .mist) {
                                 ClaudeQuotaView(model: model)
                             }
+                            HubNavigationTile(icon: "gauge.with.dots.needle.50percent", title: "Codex 额度", subtitle: "本机账号限额", palette: palette, isMist: model.theme == .mist) {
+                                CodexQuotaView(model: model)
+                            }
                         }
                         .buttonStyle(.plain)
 
@@ -891,6 +894,9 @@ private struct ModelSettingsView: View {
                 NavigationLink("Claude 额度") {
                     ClaudeQuotaView(model: model)
                 }
+                NavigationLink("Codex 额度") {
+                    CodexQuotaView(model: model)
+                }
                 NavigationLink("API 接口与用量") {
                     APIControlView(model: model)
                 }
@@ -1146,6 +1152,160 @@ private struct ClaudeQuotaView: View {
             .firstIndex(of: key) ?? 99
     }
 
+}
+
+private struct CodexQuotaWindow: Identifiable {
+    let id: String
+    let title: String
+    let percent: Double
+    let resetsAt: String
+}
+
+private struct CodexQuotaView: View {
+    @ObservedObject var model: AppModel
+    @State private var windows: [CodexQuotaWindow] = []
+    @State private var isLoading = false
+    @State private var errorText: String?
+    @State private var statusText = "等待本机 Codex bridge 上报额度"
+    @State private var resetCredits = 0
+    private var palette: EchoPalette { model.theme.palette }
+
+    var body: some View {
+        List {
+            if isLoading && windows.isEmpty {
+                ProgressView("读取 Codex 账号额度…").tint(palette.accent)
+            }
+            ForEach(windows) { window in
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack {
+                        Text(window.title)
+                        Spacer()
+                        Text("\(Int(window.percent.rounded()))%")
+                            .font(.headline.monospacedDigit())
+                    }
+                    ProgressView(value: window.percent, total: 100)
+                        .tint(window.percent >= 90 ? .red : (window.percent >= 70 ? .orange : palette.accent))
+                    if !window.resetsAt.isEmpty {
+                        QuotaResetCountdown(resetsAt: window.resetsAt, palette: palette)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            if !isLoading && windows.isEmpty {
+                Text(statusText).foregroundStyle(palette.secondaryText)
+            } else if !statusText.isEmpty {
+                Text(statusText)
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+            }
+            if resetCredits > 0 {
+                LabeledContent("可用额度重置", value: "\(resetCredits) 次")
+            }
+            Button("刷新额度") { Task { await load() } }
+        }
+        .scrollContentBackground(.hidden)
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
+        .navigationTitle("Codex 额度")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .alert("额度读取失败", isPresented: Binding(
+            get: { errorText != nil },
+            set: { if !$0 { errorText = nil } }
+        )) {
+            Button("好", role: .cancel) { errorText = nil }
+        } message: { Text(errorText ?? "") }
+    }
+
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let response = try await model.settingsCodexQuota()
+            guard response.ok, let raw = response.raw else {
+                windows = []
+                resetCredits = 0
+                statusText = "等待本机 Codex bridge 上报额度"
+                return
+            }
+            windows = parseWindows(raw)
+            resetCredits = parseResetCredits(raw)
+            let age = max(0, Int((response.ageSeconds ?? 0).rounded()))
+            let fresh = age < 90 ? "刚刚更新" : "\(max(1, age / 60)) 分钟前更新"
+            statusText = response.online == false ? "bridge 可能已离线 · \(fresh)" : fresh
+            if windows.isEmpty { statusText = "没有解析出可显示的 Codex 额度窗口" }
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func parseWindows(_ value: JSONValue) -> [CodexQuotaWindow] {
+        guard case .object(let root) = value else { return [] }
+        var buckets: [(String, [String: JSONValue])] = []
+        if let byID = object(root["rateLimitsByLimitId"] ?? root["rate_limits_by_limit_id"]) {
+            for (key, value) in byID {
+                if let bucket = object(value) { buckets.append((key, bucket)) }
+            }
+        }
+        if buckets.isEmpty,
+           let bucket = object(root["rateLimits"] ?? root["rate_limits"]) {
+            buckets.append((string(bucket["limitId"] ?? bucket["limit_id"]) ?? "codex", bucket))
+        }
+        let names = Set(buckets.map { string($0.1["limitName"] ?? $0.1["limit_name"]) ?? $0.0 })
+        var rows: [CodexQuotaWindow] = []
+        for (bucketID, bucket) in buckets {
+            let bucketName = string(bucket["limitName"] ?? bucket["limit_name"]) ?? bucketID
+            for kind in ["primary", "secondary"] {
+                guard let detail = object(bucket[kind]),
+                      let used = number(detail["usedPercent"] ?? detail["used_percent"]) else { continue }
+                let minutes = Int(number(detail["windowDurationMins"] ?? detail["window_duration_mins"]) ?? 0)
+                let windowName = durationLabel(minutes)
+                let title = names.count > 1 ? "\(bucketName) · \(windowName)" : windowName
+                let resetSeconds = number(detail["resetsAt"] ?? detail["resets_at"]) ?? 0
+                let reset = resetSeconds > 0
+                    ? ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: resetSeconds))
+                    : ""
+                rows.append(CodexQuotaWindow(
+                    id: "\(bucketID)-\(kind)",
+                    title: title,
+                    percent: min(max(used, 0), 100),
+                    resetsAt: reset
+                ))
+            }
+        }
+        return rows.sorted { lhs, rhs in
+            if lhs.title == rhs.title { return lhs.id < rhs.id }
+            return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    private func parseResetCredits(_ value: JSONValue) -> Int {
+        guard case .object(let root) = value,
+              let credits = object(root["rateLimitResetCredits"] ?? root["rate_limit_reset_credits"]) else { return 0 }
+        return Int(number(credits["availableCount"] ?? credits["available_count"]) ?? 0)
+    }
+
+    private func object(_ value: JSONValue?) -> [String: JSONValue]? {
+        guard case .object(let object)? = value else { return nil }
+        return object
+    }
+
+    private func number(_ value: JSONValue?) -> Double? {
+        guard case .number(let number)? = value else { return nil }
+        return number
+    }
+
+    private func string(_ value: JSONValue?) -> String? {
+        guard case .string(let string)? = value, !string.isEmpty else { return nil }
+        return string
+    }
+
+    private func durationLabel(_ minutes: Int) -> String {
+        guard minutes > 0 else { return "额度窗口" }
+        if minutes.isMultiple(of: 1_440) { return "\(minutes / 1_440) 天窗口" }
+        if minutes.isMultiple(of: 60) { return "\(minutes / 60) 小时窗口" }
+        return "\(minutes) 分钟窗口"
+    }
 }
 
 private struct QuotaResetCountdown: View {

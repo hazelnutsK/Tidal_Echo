@@ -218,6 +218,10 @@ struct APIClient {
         try decoder.decode(QuotaResponse.self, from: try await data(for: request(url: endpoint("app/quota"))))
     }
 
+    func codexQuota() async throws -> CodexQuotaResponse {
+        try decoder.decode(CodexQuotaResponse.self, from: try await data(for: request(url: endpoint("app/codex_quota"))))
+    }
+
     func loopStats() async throws -> APIUsageStats {
         try decoder.decode(APIUsageStats.self, from: try await data(for: request(url: endpoint("app/loop_stats"))))
     }

@@ -143,6 +143,8 @@ struct MessageMeta: Decodable, Hashable {
     var bookRef: BookRef?
     var callStatus: String?
     var album: [MessageAlbumEntry]
+    /// 这轮自动浮起了几条旧记忆（relay 的 recall 挂上来的）。思维卡拿它显示一行提示。
+    var recalled: Int?
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -153,7 +155,7 @@ struct MessageMeta: Decodable, Hashable {
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
         case callStatus = "call_status"
-        case starred, timer, ask, edited, glyph, steps, act, album
+        case starred, timer, ask, edited, glyph, steps, act, album, recalled
     }
 
     init(
@@ -179,26 +181,40 @@ struct MessageMeta: Decodable, Hashable {
         self.bookRef = nil
         self.callStatus = nil
         self.album = []
+        self.recalled = nil
+    }
+
+    /// meta 是个松散口袋，relay 侧偶尔会往同名键塞别的形状（2026-08-21：hidden 的
+    /// timer-event 帧把 meta.timer 写成了字符串 "event"）。严格解码会让**整段**
+    /// history 抛 typeMismatch → App 只剩「数据格式不正确」。所以这些结构化字段
+    /// 一律容错：形状不对就当没有，别连累同一批的其它消息。
+    private static func lenient<T: Decodable>(
+        _ type: T.Type,
+        _ values: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> T? {
+        (try? values.decodeIfPresent(type, forKey: key)) ?? nil
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        attachments = try values.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
-        reactions = try values.decodeIfPresent([String: String].self, forKey: .reactions) ?? [:]
-        hidden = try values.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
-        apiSession = try values.decodeIfPresent(String.self, forKey: .apiSession)
-        streamID = try values.decodeIfPresent(String.self, forKey: .streamID)
-        sortAfter = try values.decodeIfPresent(Int.self, forKey: .sortAfter)
-        starred = try values.decodeIfPresent(String.self, forKey: .starred)
-        timer = try values.decodeIfPresent(MessageTimer.self, forKey: .timer)
-        ask = try values.decodeIfPresent(MessageAsk.self, forKey: .ask)
-        edited = try values.decodeIfPresent(Bool.self, forKey: .edited) ?? false
-        bookRef = try values.decodeIfPresent(BookRef.self, forKey: .bookRef)
-        callStatus = try values.decodeIfPresent(String.self, forKey: .callStatus)
-        album = try values.decodeIfPresent([MessageAlbumEntry].self, forKey: .album) ?? []
-        let nestedAct = try values.decodeIfPresent(ActMeta.self, forKey: .act)
-        glyph = try values.decodeIfPresent(String.self, forKey: .glyph) ?? nestedAct?.glyph
-        steps = try values.decodeIfPresent([ToolStep].self, forKey: .steps) ?? nestedAct?.steps ?? []
+        attachments = Self.lenient([Attachment].self, values, .attachments) ?? []
+        reactions = Self.lenient([String: String].self, values, .reactions) ?? [:]
+        hidden = Self.lenient(Bool.self, values, .hidden) ?? false
+        apiSession = Self.lenient(String.self, values, .apiSession)
+        streamID = Self.lenient(String.self, values, .streamID)
+        sortAfter = Self.lenient(Int.self, values, .sortAfter)
+        starred = Self.lenient(String.self, values, .starred)
+        timer = Self.lenient(MessageTimer.self, values, .timer)
+        ask = Self.lenient(MessageAsk.self, values, .ask)
+        edited = Self.lenient(Bool.self, values, .edited) ?? false
+        bookRef = Self.lenient(BookRef.self, values, .bookRef)
+        callStatus = Self.lenient(String.self, values, .callStatus)
+        album = Self.lenient([MessageAlbumEntry].self, values, .album) ?? []
+        recalled = Self.lenient(Int.self, values, .recalled)
+        let nestedAct = Self.lenient(ActMeta.self, values, .act)
+        glyph = Self.lenient(String.self, values, .glyph) ?? nestedAct?.glyph
+        steps = Self.lenient([ToolStep].self, values, .steps) ?? nestedAct?.steps ?? []
     }
 }
 
@@ -449,6 +465,20 @@ indirect enum JSONValue: Decodable {
 
 struct QuotaResponse: Decodable {
     let raw: JSONValue
+}
+
+struct CodexQuotaResponse: Decodable {
+    let ok: Bool
+    let raw: JSONValue?
+    let updatedAt: String?
+    let ageSeconds: Double?
+    let online: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case ok, raw, online
+        case updatedAt = "updated_at"
+        case ageSeconds = "age_seconds"
+    }
 }
 
 struct APIUsageNumbers: Decodable {

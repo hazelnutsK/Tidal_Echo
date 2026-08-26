@@ -1064,6 +1064,10 @@ final class AppModel: ObservableObject {
         try await requireClient().quota()
     }
 
+    func settingsCodexQuota() async throws -> CodexQuotaResponse {
+        try await requireClient().codexQuota()
+    }
+
     func settingsAPIUsage() async throws -> APIUsageStats {
         try await requireClient().loopStats()
     }

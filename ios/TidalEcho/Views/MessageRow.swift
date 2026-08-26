@@ -883,6 +883,8 @@ private struct ProcessRow: View {
             }
             .buttonStyle(.plain)
 
+            recallHint
+
             if expanded && !isMist {
                 if isHarbor {
                     harborProcessCard
@@ -903,6 +905,18 @@ private struct ProcessRow: View {
 
     private var isThinking: Bool { message.kind == "thinking" }
     private var canExpand: Bool { isThinking ? !message.text.isEmpty : !message.meta.steps.isEmpty }
+
+    /// 「这轮我想起了东西」——浮现本身是隐形的（旧记忆只垫在他眼前），
+    /// 这一行是她唯一能看见的痕迹。收起状态也在，不用展开才看得到。
+    @ViewBuilder
+    private var recallHint: some View {
+        if isThinking, let count = message.meta.recalled, count > 0 {
+            Text("✧ 浮现 \(count) 条旧记忆")
+                .font(chatFont.font(size: 11 * fontScale, weight: .regular))
+                .foregroundStyle(palette.secondaryText.opacity(0.7))
+                .padding(.top, -3)
+        }
+    }
     private var isHarbor: Bool { !isPaper && !isMist }
     private var processFontSize: Double {
         PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.16 : 1)

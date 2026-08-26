@@ -253,6 +253,15 @@ struct MessageRow: View {
                         )
                     }
 
+                    if let card = message.meta.xhs {
+                        XHSNoteCard(
+                            card: card,
+                            palette: palette,
+                            fontScale: fontScale,
+                            request: attachmentRequest
+                        )
+                    }
+
                     if let timer = message.meta.timer {
                         MessageTimerCard(
                             timer: timer,
@@ -410,12 +419,17 @@ struct MessageRow: View {
         message.meta.reactions[message.author == .human ? "ai" : "human"]
     }
 
+    /// 小红书笔记的配图归预览卡管，从普通附件里摘掉（不然图会出现两次）。
+    private var ownAttachments: [Attachment] {
+        message.meta.attachments.filter { !$0.isXHS }
+    }
+
     private var imageAttachments: [Attachment] {
-        message.meta.attachments.filter(\.isImage)
+        ownAttachments.filter(\.isImage)
     }
 
     private var nonImageAttachments: [Attachment] {
-        message.meta.attachments.filter { !$0.isImage }
+        ownAttachments.filter { !$0.isImage }
     }
 
     private var myReaction: String? {
@@ -578,6 +592,167 @@ private struct MessageAlbumChip: View {
     private var displayTitle: String {
         let title = entries.first?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return title.isEmpty ? (entries.count > 1 ? "这些照片" : "这张照片") : title
+    }
+}
+
+/// 小红书预览卡：她丢来一条链接，relay 把那篇笔记读回来了（backend/xhs.py）。
+/// 抓的那两三秒里先立一张骨架，抓完原地换成真卡；点一下去小红书看原文。
+/// 笔记配图挂在卡上（MessageRow 已把它们从普通附件里摘掉），不再单独铺一排。
+private struct XHSNoteCard: View {
+    let card: XHSCard
+    let palette: EchoPalette
+    let fontScale: Double
+    let request: (Attachment) -> URLRequest?
+
+    @Environment(\.openURL) private var openURL
+    @State private var pulse = false
+
+    private let cardWidth: CGFloat = 252
+    private let radius: CGFloat = 15
+    private var coverHeight: CGFloat { cardWidth * 0.625 }
+    private var brand: Color { Color(hex: 0xFF3C5A) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            cover
+            VStack(alignment: .leading, spacing: 5) {
+                if card.isLoading {
+                    skeletonLine(width: cardWidth - 22)
+                    skeletonLine(width: (cardWidth - 22) * 0.58)
+                } else {
+                    Text(displayTitle)
+                        .font(.system(size: CGFloat(13.5 * fontScale), weight: .semibold))
+                        .foregroundStyle(palette.text)
+                        .lineLimit(2)
+                    if let desc = displayDesc {
+                        Text(desc)
+                            .font(.system(size: CGFloat(12 * fontScale)))
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(3)
+                    }
+                }
+                footer
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 11)
+            .padding(.top, 9)
+            .padding(.bottom, 10)
+        }
+        .frame(width: cardWidth)
+        .background(palette.composer.opacity(0.72), in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .stroke(brand.opacity(0.24), lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        .onTapGesture {
+            if let link = card.link { openURL(link) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(card.isLoading ? "正在读取小红书笔记" : "小红书笔记：\(displayTitle)")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    @ViewBuilder private var cover: some View {
+        if card.isLoading {
+            Rectangle()
+                .fill(palette.hairline.opacity(0.55))
+                .frame(width: cardWidth, height: coverHeight)
+                .opacity(pulse ? 0.5 : 1)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulse = true }
+                }
+        } else if let first = card.images.first {
+            ZStack(alignment: .bottomTrailing) {
+                AuthenticatedImageView(
+                    request: request(Attachment(url: first, name: "小红书配图", kind: "image")),
+                    palette: palette,
+                    contentMode: .fill,
+                    allowsPreview: false   // 点卡片是去看原文，别被图片预览截胡
+                )
+                .frame(width: cardWidth, height: coverHeight)
+                .clipped()
+                if totalImages > 1 {
+                    Text("🖼 \(totalImages)")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(.black.opacity(0.45), in: Capsule())
+                        .padding(8)
+                }
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Text("小红书")
+                .font(.system(size: CGFloat(11 * fontScale), weight: .semibold))
+                .foregroundStyle(brand)
+            if card.isLoading {
+                Text("正在读这篇笔记…")
+                    .font(.system(size: CGFloat(11 * fontScale)))
+                    .foregroundStyle(palette.secondaryText)
+            } else if !card.isReady {
+                Text("点开看原文")
+                    .font(.system(size: CGFloat(11 * fontScale)))
+                    .foregroundStyle(palette.secondaryText)
+            } else {
+                if let who = trimmed(card.author) {
+                    Text(who)
+                        .font(.system(size: CGFloat(11 * fontScale)))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if let stats = statsLine {
+                    Text(stats)
+                        .font(.system(size: CGFloat(11 * fontScale)))
+                        .foregroundStyle(palette.secondaryText.opacity(0.85))
+                        .fixedSize()
+                }
+            }
+        }
+        .padding(.top, 3)
+    }
+
+    private func skeletonLine(width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(palette.hairline.opacity(0.55))
+            .frame(width: width, height: 11)
+            .opacity(pulse ? 0.5 : 1)
+    }
+
+    private var totalImages: Int { max(card.imageCount ?? card.images.count, card.images.count) }
+
+    private var displayTitle: String {
+        guard card.isReady else { return "这篇笔记没读到" }
+        return trimmed(card.title) ?? "无标题笔记"
+    }
+
+    private var displayDesc: String? {
+        guard card.isReady else { return nil }
+        return trimmed(card.desc)
+    }
+
+    private var statsLine: String? {
+        var parts: [String] = []
+        if let liked = card.liked, liked > 0 { parts.append("♡ " + compact(liked)) }
+        if let commented = card.commented, commented > 0 { parts.append("💬 " + compact(commented)) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func trimmed(_ value: String?) -> String? {
+        let text = (value ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    private func compact(_ n: Int) -> String {
+        guard n >= 10000 else { return "\(n)" }
+        let value = Double(n) / 10000
+        let text = n >= 100000 ? String(format: "%.0f", value) : String(format: "%.1f", value)
+        return text.replacingOccurrences(of: ".0", with: "") + "万"
     }
 }
 

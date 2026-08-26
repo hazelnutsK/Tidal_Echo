@@ -82,10 +82,51 @@ struct Attachment: Codable, Hashable, Identifiable {
     var width: Double?
     var height: Double?
     var voice: Bool?
+    /// 小红书笔记的配图（relay 展开链接时下载的）。归预览卡管，不再单独铺一排。
+    var xhs: Bool?
 
     var id: String { "\(url)#\(name)" }
     var isImage: Bool { kind == "image" || mime?.hasPrefix("image/") == true }
     var isAudio: Bool { voice == true || kind == "audio" || mime?.hasPrefix("audio/") == true }
+    var isXHS: Bool { xhs == true }
+}
+
+/// 她丢来的小红书链接，relay 替她读回来的那篇笔记（backend/xhs.py）。
+/// 抓取要几秒，先到的是 status=loading 的空卡；抓不到就是 failed，只剩 url。
+struct XHSCard: Decodable, Hashable {
+    var status: String?
+    var url: String?
+    var title: String?
+    var desc: String?
+    var author: String?
+    var images: [String]
+    var imageCount: Int?
+    var liked: Int?
+    var commented: Int?
+    var collected: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case status, url, title, desc, author, images, liked, commented, collected
+        case imageCount = "image_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let v = try decoder.container(keyedBy: CodingKeys.self)
+        status = (try? v.decodeIfPresent(String.self, forKey: .status)) ?? nil
+        url = (try? v.decodeIfPresent(String.self, forKey: .url)) ?? nil
+        title = (try? v.decodeIfPresent(String.self, forKey: .title)) ?? nil
+        desc = (try? v.decodeIfPresent(String.self, forKey: .desc)) ?? nil
+        author = (try? v.decodeIfPresent(String.self, forKey: .author)) ?? nil
+        images = ((try? v.decodeIfPresent([String].self, forKey: .images)) ?? nil) ?? []
+        imageCount = (try? v.decodeIfPresent(Int.self, forKey: .imageCount)) ?? nil
+        liked = (try? v.decodeIfPresent(Int.self, forKey: .liked)) ?? nil
+        commented = (try? v.decodeIfPresent(Int.self, forKey: .commented)) ?? nil
+        collected = (try? v.decodeIfPresent(Int.self, forKey: .collected)) ?? nil
+    }
+
+    var isLoading: Bool { status == "loading" }
+    var isReady: Bool { status == "ok" }
+    var link: URL? { URL(string: url ?? "") }
 }
 
 struct MessageAskAnswer: Decodable, Hashable {
@@ -145,6 +186,8 @@ struct MessageMeta: Decodable, Hashable {
     var album: [MessageAlbumEntry]
     /// 这轮自动浮起了几条旧记忆（relay 的 recall 挂上来的）。思维卡拿它显示一行提示。
     var recalled: Int?
+    /// 她这条消息里那条小红书链接展开出来的笔记。
+    var xhs: XHSCard?
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -155,7 +198,7 @@ struct MessageMeta: Decodable, Hashable {
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
         case callStatus = "call_status"
-        case starred, timer, ask, edited, glyph, steps, act, album, recalled
+        case starred, timer, ask, edited, glyph, steps, act, album, recalled, xhs
     }
 
     init(
@@ -182,6 +225,7 @@ struct MessageMeta: Decodable, Hashable {
         self.callStatus = nil
         self.album = []
         self.recalled = nil
+        self.xhs = nil
     }
 
     /// meta 是个松散口袋，relay 侧偶尔会往同名键塞别的形状（2026-08-21：hidden 的
@@ -212,6 +256,7 @@ struct MessageMeta: Decodable, Hashable {
         callStatus = Self.lenient(String.self, values, .callStatus)
         album = Self.lenient([MessageAlbumEntry].self, values, .album) ?? []
         recalled = Self.lenient(Int.self, values, .recalled)
+        xhs = Self.lenient(XHSCard.self, values, .xhs)
         let nestedAct = Self.lenient(ActMeta.self, values, .act)
         glyph = Self.lenient(String.self, values, .glyph) ?? nestedAct?.glyph
         steps = Self.lenient([ToolStep].self, values, .steps) ?? nestedAct?.steps ?? []

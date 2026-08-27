@@ -892,13 +892,11 @@ private struct TelegramBubbleShape: Shape {
     func path(in rect: CGRect) -> Path {
         // Keep the rounded body on the same alignment line for every row.
         // The tail grows outward instead of reserving space inside the bubble.
-        // Telegram's lower tail edge briefly curves back into the bubble before
-        // meeting the baseline. That shallow notch keeps the tail from reading
-        // as a flat triangle and lets its point lean slightly downward.
-        let tailWidth: CGFloat = 10
-        let tailDrop: CGFloat = 2
-        let tailShoulder: CGFloat = 12
-        let tailNotchRise: CGFloat = 5
+        // Both sides share one tail: short, level with the baseline, resolving
+        // into a clean cusp. The outgoing side is an exact mirror of it, so the
+        // two columns read as the same bubble facing opposite directions.
+        let tailWidth: CGFloat = 7
+        let tailShoulder: CGFloat = 9
         let body = rect
         let limit = min(body.width, body.height) / 2
         let full = min(max(0, radius), limit)
@@ -918,16 +916,20 @@ private struct TelegramBubbleShape: Shape {
         )
 
         if author == .human && isTail {
+            // Mirror of the incoming tail below, traversed in reverse: this
+            // edge runs down the right side into the baseline, the other runs
+            // along the baseline out to the left, so the control points swap
+            // order as well as sign.
             path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - tailShoulder))
             path.addCurve(
-                to: CGPoint(x: rect.maxX + tailWidth, y: rect.maxY + tailDrop),
-                control1: CGPoint(x: body.maxX, y: body.maxY - 5),
-                control2: CGPoint(x: rect.maxX + tailWidth - 4, y: rect.maxY + tailDrop - 1)
+                to: CGPoint(x: rect.maxX + tailWidth, y: rect.maxY - 0.5),
+                control1: CGPoint(x: body.maxX, y: body.maxY - 5.5),
+                control2: CGPoint(x: rect.maxX + 4, y: rect.maxY - 0.75)
             )
             path.addCurve(
                 to: CGPoint(x: body.maxX - tailShoulder, y: body.maxY),
-                control1: CGPoint(x: rect.maxX + 3, y: rect.maxY + tailDrop),
-                control2: CGPoint(x: body.maxX - 7, y: body.maxY - tailNotchRise)
+                control1: CGPoint(x: rect.maxX + 1.5, y: rect.maxY - 2.25),
+                control2: CGPoint(x: body.maxX - 5, y: body.maxY)
             )
         } else {
             path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - bottomRight))
@@ -942,16 +944,14 @@ private struct TelegramBubbleShape: Shape {
             // Keep the incoming tail short and level with the baseline. The
             // first control point preserves the bottom edge's horizontal
             // tangent; the shallow inset then resolves into a clean cusp.
-            let incomingTailWidth: CGFloat = 7
-            let incomingTailShoulder: CGFloat = 9
-            path.addLine(to: CGPoint(x: body.minX + incomingTailShoulder, y: body.maxY))
+            path.addLine(to: CGPoint(x: body.minX + tailShoulder, y: body.maxY))
             path.addCurve(
-                to: CGPoint(x: rect.minX - incomingTailWidth, y: rect.maxY - 0.5),
+                to: CGPoint(x: rect.minX - tailWidth, y: rect.maxY - 0.5),
                 control1: CGPoint(x: body.minX + 5, y: body.maxY),
                 control2: CGPoint(x: rect.minX - 1.5, y: rect.maxY - 2.25)
             )
             path.addCurve(
-                to: CGPoint(x: body.minX, y: body.maxY - incomingTailShoulder),
+                to: CGPoint(x: body.minX, y: body.maxY - tailShoulder),
                 control1: CGPoint(x: rect.minX - 4, y: rect.maxY - 0.75),
                 control2: CGPoint(x: body.minX, y: body.maxY - 5.5)
             )
@@ -1576,9 +1576,16 @@ struct StreamingReplyRow: View {
     private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
 }
 
-/// A quiet, backdrop-sampling glass surface: stronger frost than the previous
-/// ultra-thin material, a restrained tint wash, a directional highlight and a
-/// soft depth shadow. Keeping the caller's Shape preserves Telegram tails.
+/// Rebuilt to match Operit's chat bubbles (`ui/theme/LiquidGlass.kt`), whose
+/// surface is a bare backdrop — `vibrancy()` then `blur(28.dp)`, no refraction,
+/// since the bubbles pass `enableLens = false` — under a light tint wash and a
+/// thin, bright, slightly softened rim.
+///
+/// `.thinMaterial` cannot reach that look: a system material paints its own
+/// gray/white veil over the sample, which is what makes an iOS "frosted" panel
+/// read as milky plastic instead of glass. Sampling the backdrop directly and
+/// applying every layer above it explicitly is the whole difference.
+/// Keeping the caller's Shape preserves Telegram tails.
 private struct FrostedGlassBubbleBackground<BubbleShape: Shape>: View {
     let shape: BubbleShape
     let tint: Color
@@ -1590,26 +1597,42 @@ private struct FrostedGlassBubbleBackground<BubbleShape: Shape>: View {
     var body: some View {
         let isLight = colorScheme == .light
         let clampedTint = max(0, min(1, tintOpacity))
+        // Operit tints the surface at 0.16 (light) / 0.23 (dark) plus a 0.10
+        // overlay boost. Past that the wash starts hiding the backdrop and the
+        // glass turns back into translucent plastic.
         let surfaceTintOpacity = min(
-            isLight ? 0.28 : 0.36,
-            (isLight ? 0.08 : 0.12) + clampedTint * (isLight ? 0.18 : 0.22)
+            isLight ? 0.26 : 0.33,
+            (isLight ? 0.07 : 0.11) + clampedTint * (isLight ? 0.19 : 0.22)
         )
 
         Group {
             if reduceTransparency {
                 shape.fill(tint.opacity(isLight ? 0.30 : 0.38))
             } else {
-                shape.fill(.thinMaterial)
+                // A Shape fill happily paints outside the view's bounds, but a
+                // UIKit backdrop only samples its own frame — and the Telegram
+                // tail is drawn past the edge on purpose. Oversizing the blur
+                // keeps the tail from coming out hollow; `clipShape` still cuts
+                // to the real path, which may itself extend past the bounds.
+                Color.clear
+                    .overlay {
+                        VariableBackdropBlur(radius: 26, mask: .solid, saturation: 1.7)
+                            .padding(-14)
+                    }
+                    .clipShape(shape)
             }
         }
         .overlay(shape.fill(tint.opacity(surfaceTintOpacity)))
         .overlay {
+            // A faint directional gloss. Operit's fallback washes flat white
+            // over the surface; angling it keeps the bubble from looking like a
+            // sticker without implying a light source the rim contradicts.
             shape.fill(
                 LinearGradient(
                     colors: [
-                        Color.white.opacity(isLight ? 0.12 : 0.065),
-                        Color.white.opacity(isLight ? 0.025 : 0.012),
-                        Color.black.opacity(isLight ? 0.008 : 0.025)
+                        Color.white.opacity(isLight ? 0.10 : 0.055),
+                        Color.white.opacity(isLight ? 0.02 : 0.01),
+                        Color.clear
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -1617,22 +1640,31 @@ private struct FrostedGlassBubbleBackground<BubbleShape: Shape>: View {
             )
         }
         .overlay {
-            shape.stroke(
-                LinearGradient(
-                    colors: [
-                        Color.white.opacity(isLight ? 0.58 : 0.42),
-                        Color.white.opacity(isLight ? 0.20 : 0.12),
-                        Color.black.opacity(isLight ? 0.035 : 0.12)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ),
-                lineWidth: 0.55
-            )
+            // Operit's Highlight is 0.28dp wide but blurred at 2.4x that and
+            // drawn at alpha 0.62: a thin bright edge that fades inward rather
+            // than a drawn outline. Clipping after the blur discards the outer
+            // half, so the rim lands at roughly half this line width and the
+            // shape stays crisp. No dark side — the Compose highlight has none,
+            // and a black lower edge is what made this read as a drawn border.
+            shape
+                .stroke(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(isLight ? 0.62 : 0.50),
+                            Color.white.opacity(isLight ? 0.26 : 0.20),
+                            Color.white.opacity(isLight ? 0.10 : 0.08)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.9
+                )
+                .blur(radius: 0.7)
+                .clipShape(shape)
         }
         .shadow(
             color: Color.black.opacity(isLight ? 0.10 : 0.18),
-            radius: 10,
+            radius: 12,
             y: 3
         )
     }

@@ -20,13 +20,28 @@ struct VariableBackdropBlur: UIViewRepresentable {
     /// clear for the rest of the view. Both endpoints stay inside the frame.
     var fadeFrom: CGFloat = 0
     var fadeTo: CGFloat = 1
+    /// Saturation applied to the backdrop *before* it is blurred, matching the
+    /// Compose `vibrancy()` effect. 1 leaves colors untouched.
+    var saturation: CGFloat = 1
 
     func makeUIView(context: Context) -> VariableBackdropUIView {
-        VariableBackdropUIView(radius: radius, mask: mask, fadeFrom: fadeFrom, fadeTo: fadeTo)
+        VariableBackdropUIView(
+            radius: radius,
+            mask: mask,
+            fadeFrom: fadeFrom,
+            fadeTo: fadeTo,
+            saturation: saturation
+        )
     }
 
     func updateUIView(_ uiView: VariableBackdropUIView, context: Context) {
-        uiView.update(radius: radius, mask: mask, fadeFrom: fadeFrom, fadeTo: fadeTo)
+        uiView.update(
+            radius: radius,
+            mask: mask,
+            fadeFrom: fadeFrom,
+            fadeTo: fadeTo,
+            saturation: saturation
+        )
     }
 }
 
@@ -34,16 +49,25 @@ final class VariableBackdropUIView: UIVisualEffectView {
     private static let imageContext = CIContext(options: [.cacheIntermediates: true])
 
     private var variableBlurFilter: NSObject?
+    private var saturationFilter: NSObject?
     private var blurRadius: CGFloat
     private var blurMask: VariableBlurMask
     private var fadeFrom: CGFloat
     private var fadeTo: CGFloat
+    private var saturation: CGFloat
 
-    init(radius: CGFloat, mask: VariableBlurMask, fadeFrom: CGFloat, fadeTo: CGFloat) {
+    init(
+        radius: CGFloat,
+        mask: VariableBlurMask,
+        fadeFrom: CGFloat,
+        fadeTo: CGFloat,
+        saturation: CGFloat = 1
+    ) {
         blurRadius = radius
         blurMask = mask
         self.fadeFrom = fadeFrom
         self.fadeTo = fadeTo
+        self.saturation = saturation
         super.init(effect: UIBlurEffect(style: .regular))
         isUserInteractionEnabled = false
         installFilterIfPossible()
@@ -54,13 +78,32 @@ final class VariableBackdropUIView: UIVisualEffectView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(radius: CGFloat, mask: VariableBlurMask, fadeFrom: CGFloat, fadeTo: CGFloat) {
-        guard radius != blurRadius || mask != blurMask || fadeFrom != self.fadeFrom || fadeTo != self.fadeTo else { return }
+    func update(
+        radius: CGFloat,
+        mask: VariableBlurMask,
+        fadeFrom: CGFloat,
+        fadeTo: CGFloat,
+        saturation: CGFloat
+    ) {
+        let saturationChanged = saturation != self.saturation
+        guard radius != blurRadius
+            || mask != blurMask
+            || fadeFrom != self.fadeFrom
+            || fadeTo != self.fadeTo
+            || saturationChanged
+        else { return }
         blurRadius = radius
         blurMask = mask
         self.fadeFrom = fadeFrom
         self.fadeTo = fadeTo
-        applyFilterValues()
+        self.saturation = saturation
+        // Crossing the 1.0 boundary adds or removes a filter, so the chain has
+        // to be rebuilt rather than just re-valued.
+        if saturationChanged {
+            installFilterIfPossible()
+        } else {
+            applyFilterValues()
+        }
     }
 
     override func layoutSubviews() {
@@ -80,24 +123,42 @@ final class VariableBackdropUIView: UIVisualEffectView {
         installFilterIfPossible()
     }
 
+    private func makeFilter(named name: String) -> NSObject? {
+        let className = String("retliFAC".reversed())
+        let selectorName = String(":epyThtiWretlif".reversed())
+        guard
+            let filterClass = NSClassFromString(className) as? NSObject.Type,
+            let filter = filterClass
+                .perform(NSSelectorFromString(selectorName), with: name)?
+                .takeUnretainedValue() as? NSObject
+        else { return nil }
+        return filter
+    }
+
     private func installFilterIfPossible() {
         guard let backdropLayer = subviews.first?.layer else { return }
 
         if variableBlurFilter == nil {
-            let className = String("retliFAC".reversed())
-            let selectorName = String(":epyThtiWretlif".reversed())
-            guard
-                let filterClass = NSClassFromString(className) as? NSObject.Type,
-                let filter = filterClass
-                    .perform(NSSelectorFromString(selectorName), with: "variableBlur")?
-                    .takeUnretainedValue() as? NSObject
-            else { return }
-            variableBlurFilter = filter
+            variableBlurFilter = makeFilter(named: "variableBlur")
+        }
+        if saturationFilter == nil, saturation != 1 {
+            saturationFilter = makeFilter(named: "colorSaturate")
         }
 
         applyFilterValues()
+
+        // Saturate before blurring, mirroring the Compose backdrop's
+        // `vibrancy()` → `blur()` order: boosting afterwards would amplify the
+        // averaged mush instead of the colors that fed it.
+        var chain: [NSObject] = []
+        if saturation != 1, let saturationFilter {
+            chain.append(saturationFilter)
+        }
         if let variableBlurFilter {
-            backdropLayer.filters = [variableBlurFilter]
+            chain.append(variableBlurFilter)
+        }
+        if !chain.isEmpty {
+            backdropLayer.filters = chain
         }
 
         // Remove UIVisualEffectView's system gray/tint layers. Only the live
@@ -108,6 +169,7 @@ final class VariableBackdropUIView: UIVisualEffectView {
     }
 
     private func applyFilterValues() {
+        saturationFilter?.setValue(saturation, forKey: "inputAmount")
         guard let variableBlurFilter else { return }
         variableBlurFilter.setValue(blurRadius, forKey: "inputRadius")
         variableBlurFilter.setValue(makeMaskImage(), forKey: "inputMaskImage")

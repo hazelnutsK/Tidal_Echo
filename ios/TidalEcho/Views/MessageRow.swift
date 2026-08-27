@@ -1616,8 +1616,17 @@ private struct FrostedGlassBubbleBackground<BubbleShape: Shape>: View {
                 // to the real path, which may itself extend past the bounds.
                 Color.clear
                     .overlay {
-                        VariableBackdropBlur(radius: 26, mask: .solid, saturation: 1.7)
-                            .padding(-14)
+                        VariableBackdropBlur(
+                            radius: 26,
+                            mask: .solid,
+                            saturation: 1.7,
+                            // One live backdrop per bubble is only affordable
+                            // in a scrolling list at 1x. At the screen's own 3x
+                            // this drops frames, and a 26pt blur has no detail
+                            // left to lose by being sampled coarsely.
+                            resolutionScale: 1
+                        )
+                        .padding(-14)
                     }
                     .clipShape(shape)
             }

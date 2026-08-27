@@ -23,6 +23,12 @@ struct VariableBackdropBlur: UIViewRepresentable {
     /// Saturation applied to the backdrop *before* it is blurred, matching the
     /// Compose `vibrancy()` effect. 1 leaves colors untouched.
     var saturation: CGFloat = 1
+    /// Pixel density the backdrop is sampled at, or nil for the screen's own
+    /// scale. A blur is a low-frequency signal, so sampling a heavily blurred
+    /// surface at 1x instead of 3x costs 9x fewer pixels for no visible loss —
+    /// which is what makes a per-item backdrop affordable in a scrolling list.
+    /// Keep full scale for lightly blurred surfaces, where downsampling shows.
+    var resolutionScale: CGFloat?
 
     func makeUIView(context: Context) -> VariableBackdropUIView {
         VariableBackdropUIView(
@@ -30,7 +36,8 @@ struct VariableBackdropBlur: UIViewRepresentable {
             mask: mask,
             fadeFrom: fadeFrom,
             fadeTo: fadeTo,
-            saturation: saturation
+            saturation: saturation,
+            resolutionScale: resolutionScale
         )
     }
 
@@ -40,7 +47,8 @@ struct VariableBackdropBlur: UIViewRepresentable {
             mask: mask,
             fadeFrom: fadeFrom,
             fadeTo: fadeTo,
-            saturation: saturation
+            saturation: saturation,
+            resolutionScale: resolutionScale
         )
     }
 }
@@ -55,19 +63,22 @@ final class VariableBackdropUIView: UIVisualEffectView {
     private var fadeFrom: CGFloat
     private var fadeTo: CGFloat
     private var saturation: CGFloat
+    private var resolutionScale: CGFloat?
 
     init(
         radius: CGFloat,
         mask: VariableBlurMask,
         fadeFrom: CGFloat,
         fadeTo: CGFloat,
-        saturation: CGFloat = 1
+        saturation: CGFloat = 1,
+        resolutionScale: CGFloat? = nil
     ) {
         blurRadius = radius
         blurMask = mask
         self.fadeFrom = fadeFrom
         self.fadeTo = fadeTo
         self.saturation = saturation
+        self.resolutionScale = resolutionScale
         super.init(effect: UIBlurEffect(style: .regular))
         isUserInteractionEnabled = false
         installFilterIfPossible()
@@ -83,20 +94,27 @@ final class VariableBackdropUIView: UIVisualEffectView {
         mask: VariableBlurMask,
         fadeFrom: CGFloat,
         fadeTo: CGFloat,
-        saturation: CGFloat
+        saturation: CGFloat,
+        resolutionScale: CGFloat?
     ) {
         let saturationChanged = saturation != self.saturation
+        let scaleChanged = resolutionScale != self.resolutionScale
         guard radius != blurRadius
             || mask != blurMask
             || fadeFrom != self.fadeFrom
             || fadeTo != self.fadeTo
             || saturationChanged
+            || scaleChanged
         else { return }
         blurRadius = radius
         blurMask = mask
         self.fadeFrom = fadeFrom
         self.fadeTo = fadeTo
         self.saturation = saturation
+        self.resolutionScale = resolutionScale
+        if scaleChanged {
+            applyBackdropScale()
+        }
         // Crossing the 1.0 boundary adds or removes a filter, so the chain has
         // to be rebuilt rather than just re-valued.
         if saturationChanged {
@@ -106,6 +124,12 @@ final class VariableBackdropUIView: UIVisualEffectView {
         }
     }
 
+    private func applyBackdropScale() {
+        guard let backdropLayer = subviews.first?.layer else { return }
+        let fallback = window?.traitCollection.displayScale ?? traitCollection.displayScale
+        backdropLayer.setValue(resolutionScale ?? fallback, forKey: "scale")
+    }
+
     override func layoutSubviews() {
         super.layoutSubviews()
         installFilterIfPossible()
@@ -113,8 +137,8 @@ final class VariableBackdropUIView: UIVisualEffectView {
 
     override func didMoveToWindow() {
         super.didMoveToWindow()
-        guard let window, let backdropLayer = subviews.first?.layer else { return }
-        backdropLayer.setValue(window.traitCollection.displayScale, forKey: "scale")
+        guard window != nil else { return }
+        applyBackdropScale()
     }
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -146,6 +170,9 @@ final class VariableBackdropUIView: UIVisualEffectView {
         }
 
         applyFilterValues()
+        // The backdrop subview can appear after init, so claim the sampling
+        // scale here too rather than only on the window transition.
+        applyBackdropScale()
 
         // Saturate before blurring, mirroring the Compose backdrop's
         // `vibrancy()` → `blur()` order: boosting afterwards would amplify the

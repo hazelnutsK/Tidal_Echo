@@ -6,12 +6,13 @@ import UIKit
 @MainActor
 final class AppModel: ObservableObject {
     enum Phase: Equatable {
+        case launching
         case signedOut
         case connecting
         case connected
     }
 
-    @Published var phase: Phase = .signedOut
+    @Published var phase: Phase = .launching
     @Published var messages: [ChatMessage] = []
     @Published var pendingAttachments: [Attachment] = []
     @Published var isTyping = false
@@ -1108,7 +1109,11 @@ final class AppModel: ObservableObject {
     }
 
     private func connect(url: URL, secret: String, persist: Bool) async {
-        phase = .connecting
+        // Automatic keychain authentication stays behind the launch animation.
+        // A manual login still keeps the form visible with its progress state.
+        if phase != .launching {
+            phase = .connecting
+        }
         errorMessage = nil
         let nextClient = APIClient(baseURL: url, secret: secret)
         do {

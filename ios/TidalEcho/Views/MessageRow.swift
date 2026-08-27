@@ -364,12 +364,11 @@ struct MessageRow: View {
             } else {
                 let shape = bubbleShape
                 if bubbleStyle == .frosted {
-                    shape
-                        .fill(.ultraThinMaterial)
-                        // Keep backdrop sampling at full strength. The slider controls
-                        // only the color wash, so zero still looks like real glass.
-                        .overlay(shape.fill(color.opacity(bubbleOpacity * 0.55)))
-                        .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
+                    FrostedGlassBubbleBackground(
+                        shape: shape,
+                        tint: color,
+                        tintOpacity: bubbleOpacity
+                    )
                 } else {
                     shape
                         .fill(color.opacity(bubbleOpacity))
@@ -1522,10 +1521,11 @@ struct StreamingReplyRow: View {
                         } else {
                             let shape = streamingBubbleShape
                             if bubbleStyle == .frosted {
-                                shape
-                                    .fill(.ultraThinMaterial)
-                                    .overlay(shape.fill(aiBubbleColor.opacity(bubbleOpacity * 0.55)))
-                                    .shadow(color: Color.black.opacity(0.04), radius: 9, y: 3)
+                                FrostedGlassBubbleBackground(
+                                    shape: shape,
+                                    tint: aiBubbleColor,
+                                    tintOpacity: bubbleOpacity
+                                )
                             } else {
                                 shape
                                     .fill(aiBubbleColor.opacity(bubbleOpacity))
@@ -1574,6 +1574,68 @@ struct StreamingReplyRow: View {
 
     private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
     private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
+}
+
+/// A quiet, backdrop-sampling glass surface: stronger frost than the previous
+/// ultra-thin material, a restrained tint wash, a directional highlight and a
+/// soft depth shadow. Keeping the caller's Shape preserves Telegram tails.
+private struct FrostedGlassBubbleBackground<BubbleShape: Shape>: View {
+    let shape: BubbleShape
+    let tint: Color
+    let tintOpacity: Double
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        let isLight = colorScheme == .light
+        let clampedTint = max(0, min(1, tintOpacity))
+        let surfaceTintOpacity = min(
+            isLight ? 0.28 : 0.36,
+            (isLight ? 0.08 : 0.12) + clampedTint * (isLight ? 0.18 : 0.22)
+        )
+
+        Group {
+            if reduceTransparency {
+                shape.fill(tint.opacity(isLight ? 0.30 : 0.38))
+            } else {
+                shape.fill(.thinMaterial)
+            }
+        }
+        .overlay(shape.fill(tint.opacity(surfaceTintOpacity)))
+        .overlay {
+            shape.fill(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(isLight ? 0.12 : 0.065),
+                        Color.white.opacity(isLight ? 0.025 : 0.012),
+                        Color.black.opacity(isLight ? 0.008 : 0.025)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+        }
+        .overlay {
+            shape.stroke(
+                LinearGradient(
+                    colors: [
+                        Color.white.opacity(isLight ? 0.58 : 0.42),
+                        Color.white.opacity(isLight ? 0.20 : 0.12),
+                        Color.black.opacity(isLight ? 0.035 : 0.12)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                lineWidth: 0.55
+            )
+        }
+        .shadow(
+            color: Color.black.opacity(isLight ? 0.10 : 0.18),
+            radius: 10,
+            y: 3
+        )
+    }
 }
 
 private struct AvatarBadge: View {

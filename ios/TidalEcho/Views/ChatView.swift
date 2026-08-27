@@ -1623,7 +1623,7 @@ private struct ComposerView: View {
                     .foregroundStyle(palette.text)
                     .padding(.horizontal, 10)
                     .frame(height: 35)
-                    .background(composerAuxiliaryBackground.opacity(0.86), in: Capsule())
+                    .background(sessionSelectorBackground, in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .layoutPriority(1)
@@ -1731,6 +1731,10 @@ private struct ComposerView: View {
 
     private var composerAuxiliaryForeground: Color {
         model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
+    }
+
+    private var sessionSelectorBackground: Color {
+        model.theme == .mist ? .white : composerAuxiliaryBackground.opacity(0.86)
     }
 
     private var composerSendBackground: Color {

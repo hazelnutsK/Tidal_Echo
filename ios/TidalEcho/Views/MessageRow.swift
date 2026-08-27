@@ -940,16 +940,21 @@ private struct TelegramBubbleShape: Shape {
         }
 
         if author == .ai && isTail {
-            path.addLine(to: CGPoint(x: body.minX + tailShoulder, y: body.maxY))
+            // Keep the incoming tail short and level with the baseline. The
+            // first control point preserves the bottom edge's horizontal
+            // tangent; the shallow inset then resolves into a clean cusp.
+            let incomingTailWidth: CGFloat = 7
+            let incomingTailShoulder: CGFloat = 9
+            path.addLine(to: CGPoint(x: body.minX + incomingTailShoulder, y: body.maxY))
             path.addCurve(
-                to: CGPoint(x: rect.minX - tailWidth, y: rect.maxY + tailDrop),
-                control1: CGPoint(x: body.minX + 7, y: body.maxY - tailNotchRise),
-                control2: CGPoint(x: rect.minX - 3, y: rect.maxY + tailDrop)
+                to: CGPoint(x: rect.minX - incomingTailWidth, y: rect.maxY - 0.5),
+                control1: CGPoint(x: body.minX + 5, y: body.maxY),
+                control2: CGPoint(x: rect.minX - 1.5, y: rect.maxY - 2.25)
             )
             path.addCurve(
-                to: CGPoint(x: body.minX, y: body.maxY - tailShoulder),
-                control1: CGPoint(x: rect.minX - tailWidth + 4, y: rect.maxY + tailDrop - 1),
-                control2: CGPoint(x: body.minX, y: body.maxY - 5)
+                to: CGPoint(x: body.minX, y: body.maxY - incomingTailShoulder),
+                control1: CGPoint(x: rect.minX - 4, y: rect.maxY - 0.75),
+                control2: CGPoint(x: body.minX, y: body.maxY - 5.5)
             )
         } else {
             path.addLine(to: CGPoint(x: body.minX + bottomLeft, y: body.maxY))
@@ -1158,18 +1163,18 @@ private struct ProcessRow: View {
     }
 
     @ViewBuilder
-    private var processContent: some View {
+    private func processContent(textColor: Color) -> some View {
         if isThinking {
-            Text(message.text)
-                .font(chatFont.font(
-                    size: processFontSize,
-                    numericWeight: chatWeight
-                ).italic())
-                .lineSpacing(PWAChatMetrics.lineSpacing(
+            SelectableThinkingText(
+                text: message.text,
+                font: chatFont.uiFont(size: processFontSize, numericWeight: chatWeight),
+                textColor: textColor,
+                selectionColor: palette.accent,
+                lineSpacing: PWAChatMetrics.lineSpacing(
                     font: chatFont,
                     size: processFontSize
-                ))
-                .textSelection(.enabled)
+                )
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 8) {
@@ -1198,7 +1203,7 @@ private struct ProcessRow: View {
                     .foregroundStyle(palette.secondaryText)
             }
             Divider().overlay(palette.hairline)
-            processContent
+            processContent(textColor: palette.secondaryText)
                 .foregroundStyle(palette.secondaryText)
         }
         .padding(12)
@@ -1213,7 +1218,7 @@ private struct ProcessRow: View {
     private var mistProcessSheet: some View {
         NavigationStack {
             ScrollView {
-                processContent
+                processContent(textColor: palette.text.opacity(0.84))
                     .foregroundStyle(palette.text.opacity(0.84))
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
@@ -1237,7 +1242,7 @@ private struct ProcessRow: View {
 
     @ViewBuilder
     private var processDetail: some View {
-        processContent
+        processContent(textColor: palette.secondaryText)
             .foregroundStyle(palette.secondaryText)
             .italic(isPaper)
             .padding(.leading, isPaper ? 15 : 12)
@@ -1257,6 +1262,69 @@ private struct ProcessRow: View {
                         .frame(width: 1.5)
                 }
             }
+    }
+}
+
+/// SwiftUI `Text` can collapse to a whole-view Copy/Share menu inside the
+/// expandable process card. A non-editable `UITextView` keeps native insertion
+/// points and draggable selection handles while sizing like ordinary text.
+private struct SelectableThinkingText: UIViewRepresentable {
+    let text: String
+    let font: UIFont
+    let textColor: Color
+    let selectionColor: Color
+    let lineSpacing: CGFloat
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = .zero
+        textView.textContainer.lineFragmentPadding = 0
+        textView.textContainer.lineBreakMode = .byWordWrapping
+        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textView.setContentHuggingPriority(.required, for: .vertical)
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        let attributedText = makeAttributedText()
+        if !textView.attributedText.isEqual(to: attributedText) {
+            textView.attributedText = attributedText
+        }
+        textView.tintColor = UIColor(selectionColor)
+    }
+
+    func sizeThatFits(
+        _ proposal: ProposedViewSize,
+        uiView: UITextView,
+        context: Context
+    ) -> CGSize? {
+        guard let width = proposal.width, width.isFinite, width > 0 else { return nil }
+        let fittingSize = uiView.sizeThatFits(
+            CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        return CGSize(width: width, height: ceil(fittingSize.height))
+    }
+
+    private func makeAttributedText() -> NSAttributedString {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = lineSpacing
+
+        let traits = font.fontDescriptor.symbolicTraits.union(.traitItalic)
+        let italicDescriptor = font.fontDescriptor.withSymbolicTraits(traits)
+        let renderedFont = italicDescriptor.map { UIFont(descriptor: $0, size: font.pointSize) } ?? font
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: renderedFont,
+            .foregroundColor: UIColor(textColor),
+            .paragraphStyle: paragraphStyle
+        ]
+        if italicDescriptor == nil {
+            attributes[.obliqueness] = 0.14
+        }
+        return NSAttributedString(string: text, attributes: attributes)
     }
 }
 

@@ -126,6 +126,32 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
                                       weight: Self.continuousWeight(numericWeight)))
     }
 
+    /// UIKit counterpart used by native selectable text without changing the
+    /// chat typography selected in settings.
+    func uiFont(size: Double, numericWeight: Double) -> UIFont {
+        let pointSize = CGFloat(size)
+        let weight = Self.continuousWeight(numericWeight)
+
+        switch self {
+        case .system:
+            return Self.variableSans(size: pointSize, weight: numericWeight)
+                ?? UIFont.systemFont(ofSize: pointSize, weight: weight)
+        case .serif:
+            let base = UIFont(name: "Songti SC", size: pointSize)
+                ?? UIFont.systemFont(ofSize: pointSize, weight: weight)
+            let descriptor = base.fontDescriptor.addingAttributes([
+                .traits: [UIFontDescriptor.TraitKey.weight: weight]
+            ])
+            return UIFont(descriptor: descriptor, size: pointSize)
+        case .rounded:
+            let base = UIFont.systemFont(ofSize: pointSize, weight: weight)
+            guard let descriptor = base.fontDescriptor.withDesign(.rounded) else { return base }
+            return UIFont(descriptor: descriptor, size: pointSize)
+        case .monospaced:
+            return UIFont.monospacedSystemFont(ofSize: pointSize, weight: weight)
+        }
+    }
+
     /// CSS 字重(100…900) → UIFont.Weight 的连续标度，按系统命名字重分段线性插值。
     static func continuousWeight(_ css: Double) -> UIFont.Weight {
         let stops: [(css: Double, value: CGFloat)] = [

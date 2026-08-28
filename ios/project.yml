@@ -42,6 +42,7 @@ targets:
           - voip
         UIAppFonts:
           - AnthropicSerifVariable.ttf
+          - Sacramento-Regular.ttf
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations: {}

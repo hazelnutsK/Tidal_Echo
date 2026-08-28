@@ -11,7 +11,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
 
     var title: String {
         switch self {
-        case .mist: return "雾绣"
+        case .mist: return "墨白"
         case .paper: return "纸白"
         case .harbor: return "夜港"
         }
@@ -19,7 +19,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .mist: return "冷雾、银蓝与柔光"
+        case .mist: return "墨线、素纸与留白"
         case .paper: return "安静、克制的纸张质感"
         case .harbor: return "深海蓝与夜间微光"
         }
@@ -33,8 +33,8 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .mist:
             return EchoPalette(
-                backgroundTop: Color(hex: 0xE8EDF2),
-                backgroundBottom: Color(hex: 0xF7FAFC),
+                backgroundTop: Color(hex: 0xEDEDED),
+                backgroundBottom: Color(hex: 0xFAFAFA),
                 text: Color(hex: 0x292929),
                 secondaryText: Color.black.opacity(0.54),
                 aiBubble: Color(hex: 0xEBEBEB).opacity(0.92),

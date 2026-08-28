@@ -32,7 +32,9 @@ struct RootView: View {
             }
 
             async let bootstrapTask: Void = model.bootstrap()
-            let minimumPresentation: Duration = reduceMotion ? .milliseconds(250) : .milliseconds(850)
+            // 星图开屏把关键叙事（星芒→星图→月相成环→扭转→pulse→标题）讲完约 3.1s。
+            // bootstrap 更慢时开屏自然停在 idle（月相沿轨道缓慢流动），不会有突兀的收尾。
+            let minimumPresentation: Duration = reduceMotion ? .milliseconds(250) : .milliseconds(3200)
             try? await Task.sleep(for: minimumPresentation)
             launchPresentationComplete = true
             await bootstrapTask

@@ -1881,7 +1881,7 @@ private struct ContextSettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 Text(chatMode == .short
-                     ? "回复会按段落拆成最多五条气泡连发。"
+                     ? "回复会按全部非空段落拆成多条气泡连发。"
                      : "一整段回复显示为一条气泡。")
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText)

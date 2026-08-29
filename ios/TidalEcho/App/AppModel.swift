@@ -1061,8 +1061,8 @@ final class AppModel: ObservableObject {
         try await requireClient().setChatMode(mode)
     }
 
-    func updateShortChatStripTerminalPeriods(_ enabled: Bool) async throws -> ChatModeResponse {
-        try await requireClient().setShortChatStripTerminalPeriods(enabled)
+    func updateShortChatStripTerminalPeriods(_ enabled: Bool, mode: ChatMode) async throws -> ChatModeResponse {
+        try await requireClient().setShortChatStripTerminalPeriods(enabled, mode: mode)
     }
 
     func settingsQuota() async throws -> QuotaResponse {

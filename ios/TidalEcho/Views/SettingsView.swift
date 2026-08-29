@@ -2017,7 +2017,7 @@ private struct ContextSettingsView: View {
         isBusy = true
         defer { isBusy = false }
         do {
-            let settings = try await model.updateShortChatStripTerminalPeriods(enabled)
+            let settings = try await model.updateShortChatStripTerminalPeriods(enabled, mode: chatMode)
             chatMode = settings.mode
             stripsShortChatTerminalPeriods = settings.stripTerminalPeriods
             notice = settings.stripTerminalPeriods ? "短聊句号样式已开启。" : "短聊句号样式已关闭。"

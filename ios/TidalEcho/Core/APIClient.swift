@@ -214,11 +214,11 @@ struct APIClient {
         return try decoder.decode(ChatModeResponse.self, from: try await data(for: req)).mode
     }
 
-    func setShortChatStripTerminalPeriods(_ enabled: Bool) async throws -> ChatModeResponse {
+    func setShortChatStripTerminalPeriods(_ enabled: Bool, mode: ChatMode) async throws -> ChatModeResponse {
         var req = request(url: endpoint("app/chat_mode"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(
-            ChatModePayload(mode: nil, stripTerminalPeriods: enabled)
+            ChatModePayload(mode: mode, stripTerminalPeriods: enabled)
         )
         return try decoder.decode(ChatModeResponse.self, from: try await data(for: req))
     }

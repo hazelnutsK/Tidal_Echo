@@ -48,8 +48,8 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         shouldPlayInAppRingtone = false
 
         let update = CXCallUpdate()
-        update.remoteHandle = CXHandle(type: .generic, value: "小克")
-        update.localizedCallerName = "小克"
+        update.remoteHandle = CXHandle(type: .generic, value: "Altair")
+        update.localizedCallerName = "Altair"
         update.hasVideo = false
         update.supportsHolding = false
         update.supportsGrouping = false
@@ -245,7 +245,7 @@ final class NativeNotificationCenter: ObservableObject {
     func scheduleMessage(_ message: ChatMessage) {
         guard enabled else { return }
         let content = UNMutableNotificationContent()
-        content.title = "小克"
+        content.title = "Altair"
         let clean = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
         content.body = clean.isEmpty ? "给你发来一条消息" : String(clean.prefix(140))
         content.sound = .default
@@ -258,7 +258,7 @@ final class NativeNotificationCenter: ObservableObject {
     func scheduleIncomingCall(_ invite: IncomingCallInvite) {
         guard enabled else { return }
         let content = UNMutableNotificationContent()
-        content.title = "小克来电"
+        content.title = "Altair来电"
         content.body = invite.text
         content.sound = .defaultRingtone
         content.categoryIdentifier = Self.callCategory
@@ -270,7 +270,7 @@ final class NativeNotificationCenter: ObservableObject {
     func scheduleTest() {
         guard enabled else { return }
         let content = UNMutableNotificationContent()
-        content.title = "小克"
+        content.title = "Altair"
         content.body = "原生通知已经准备好了。"
         content.sound = .default
         content.categoryIdentifier = Self.messageCategory
@@ -284,7 +284,7 @@ final class NativeNotificationCenter: ObservableObject {
         let info = response.notification.request.content.userInfo
         guard (info["type"] as? String) == "call" else { return }
         let messageID = info["message_id"] as? Int ?? 0
-        let text = info["text"] as? String ?? "小克想和你语音通话。"
+        let text = info["text"] as? String ?? "Altair想和你语音通话。"
         if response.actionIdentifier == Self.declineAction {
             NativeCallCoordinator.shared.declineFromNotification(messageID: messageID)
         } else {

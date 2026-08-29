@@ -30,6 +30,7 @@ final class AppModel: ObservableObject {
     @Published var isUploadingVoice = false
     @Published var isSynthesizingMessageID: Int?
     @Published var errorMessage: String?
+    @Published private(set) var chatMode: ChatMode = .long
     @Published private(set) var giftUnreadCount = 0
     @Published private(set) var momentsUnreadCount = 0
     /// 小克在书页边留了一句话：正开着那一章的阅读页会当场把它长出来。
@@ -372,6 +373,9 @@ final class AppModel: ObservableObject {
 
     func refresh() async {
         guard client != nil else { return }
+        if let settings = try? await settingsChatMode() {
+            chatMode = settings.mode
+        }
         await loadHistory()
     }
 
@@ -1054,15 +1058,21 @@ final class AppModel: ObservableObject {
     }
 
     func settingsChatMode() async throws -> ChatModeResponse {
-        try await requireClient().chatMode()
+        let settings = try await requireClient().chatMode()
+        chatMode = settings.mode
+        return settings
     }
 
     func updateChatMode(_ mode: ChatMode) async throws -> ChatMode {
-        try await requireClient().setChatMode(mode)
+        let savedMode = try await requireClient().setChatMode(mode)
+        chatMode = savedMode
+        return savedMode
     }
 
     func updateShortChatStripTerminalPeriods(_ enabled: Bool, mode: ChatMode) async throws -> ChatModeResponse {
-        try await requireClient().setShortChatStripTerminalPeriods(enabled, mode: mode)
+        let settings = try await requireClient().setShortChatStripTerminalPeriods(enabled, mode: mode)
+        chatMode = settings.mode
+        return settings
     }
 
     func settingsQuota() async throws -> QuotaResponse {
@@ -1123,6 +1133,9 @@ final class AppModel: ObservableObject {
         do {
             _ = try await nextClient.history(since: 0, limit: 1)
             client = nextClient
+            if let settings = try? await nextClient.chatMode() {
+                chatMode = settings.mode
+            }
             if persist {
                 UserDefaults.standard.set(url.absoluteString, forKey: Keys.relayURL)
                 try KeychainStore.save(secret, account: Keys.relaySecret)

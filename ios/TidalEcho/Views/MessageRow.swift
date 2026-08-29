@@ -1491,6 +1491,7 @@ struct StreamingReplyRow: View {
     let bubbleShapeStyle: EchoBubbleShapeStyle
     let liquidGlass: LiquidGlassSettings
     let chatWeight: Double
+    let isTail: Bool
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -1564,7 +1565,7 @@ struct StreamingReplyRow: View {
             author: .ai,
             radius: CGFloat(bubbleRadius),
             isGroupStart: true,
-            isTail: true
+            isTail: isTail
         )
     }
 

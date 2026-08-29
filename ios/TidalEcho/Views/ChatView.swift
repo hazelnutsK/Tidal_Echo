@@ -86,8 +86,7 @@ struct ChatView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView(
                 model: model,
-                onSearch: { showingSearch = true },
-                onCall: { showingVoiceCall = true }
+                onSearch: { showingSearch = true }
             )
                 .presentationDetents([.medium, .large])
         }

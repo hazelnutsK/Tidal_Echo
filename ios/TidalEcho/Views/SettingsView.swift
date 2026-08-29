@@ -24,7 +24,6 @@ private func settingsRowBackground(theme: EchoTheme, palette: EchoPalette) -> Co
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let onSearch: () -> Void
-    let onCall: () -> Void
     @State private var anniversary: AnniversarySummary?
     @State private var greeting: String?
     @Environment(\.dismiss) private var dismiss
@@ -97,20 +96,20 @@ struct SettingsView: View {
                             HubNavigationTile(icon: "gauge.with.dots.needle.50percent", title: "会话与上下文", subtitle: "窗口与切换", palette: palette, isMist: model.theme == .mist) {
                                 ContextSettingsView(model: model)
                             }
-                            HubNavigationTile(icon: "bell.badge", title: "通知与后台", subtitle: "提醒与音频", palette: palette, isMist: model.theme == .mist) {
-                                NotificationSettingsView(model: model)
-                            }
-                            HubNavigationTile(icon: "faceid", title: "隐私与系统", subtitle: "Face ID 与权限", palette: palette, isMist: model.theme == .mist) {
-                                PrivacySystemSettingsView(model: model)
-                            }
-                            Button { leaveHub(for: onCall) } label: {
-                                HubTile(icon: "phone", title: "打电话", subtitle: model.peerDisplayName, palette: palette, isMist: model.theme == .mist)
+                            HubNavigationTile(icon: "terminal", title: "终端", subtitle: "实时会话流", palette: palette, isMist: model.theme == .mist) {
+                                TerminalView(model: model)
                             }
                             HubNavigationTile(icon: "chart.bar", title: "Claude 额度", subtitle: "限额与用量", palette: palette, isMist: model.theme == .mist) {
                                 ClaudeQuotaView(model: model)
                             }
                             HubNavigationTile(icon: "gauge.with.dots.needle.50percent", title: "Codex 额度", subtitle: "本机账号限额", palette: palette, isMist: model.theme == .mist) {
                                 CodexQuotaView(model: model)
+                            }
+                            HubNavigationTile(icon: "bell.badge", title: "通知与后台", subtitle: "提醒与音频", palette: palette, isMist: model.theme == .mist) {
+                                NotificationSettingsView(model: model)
+                            }
+                            HubNavigationTile(icon: "faceid", title: "隐私与系统", subtitle: "Face ID 与权限", palette: palette, isMist: model.theme == .mist) {
+                                PrivacySystemSettingsView(model: model)
                             }
                         }
                         .buttonStyle(.plain)

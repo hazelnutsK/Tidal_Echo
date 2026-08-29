@@ -231,6 +231,18 @@ struct APIClient {
         try decoder.decode(CodexQuotaResponse.self, from: try await data(for: request(url: endpoint("app/codex_quota"))))
     }
 
+    /// 终端页尾读。`after < 0` = 冷启动（服务端自适应回溯到至少含一句她的话），
+    /// 否则按上一帧返回的字节偏移续读。
+    func terminalTail(body: String, after: Int) async throws -> TerminalTailResponse {
+        var components = URLComponents(url: endpoint("app/tgterm/tail"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "body", value: body),
+            URLQueryItem(name: "after", value: String(after))
+        ]
+        guard let url = components?.url else { throw APIError.invalidURL }
+        return try decoder.decode(TerminalTailResponse.self, from: try await data(for: request(url: url)))
+    }
+
     func loopStats() async throws -> APIUsageStats {
         try decoder.decode(APIUsageStats.self, from: try await data(for: request(url: endpoint("app/loop_stats"))))
     }

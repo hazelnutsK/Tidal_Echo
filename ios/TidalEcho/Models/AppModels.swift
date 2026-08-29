@@ -538,6 +538,43 @@ struct CodexQuotaResponse: Decodable {
     }
 }
 
+/// 终端页：relay 把某个身体的 transcript 重建成"终端画面"后的一帧。
+/// 后端逻辑在 backend/tgterm.py，端点 `/app/tgterm/tail`。
+struct TerminalEvent: Decodable {
+    let t: String
+    let ts: String?
+    let text: String?
+    let name: String?
+    let brief: String?
+    let said: String?
+    let hidden: Int?
+    let isError: Bool?
+    let source: String?
+
+    enum CodingKeys: String, CodingKey {
+        case t, ts, text, name, brief, said, hidden, source
+        case isError = "is_error"
+    }
+}
+
+struct TerminalStatus: Decodable {
+    let model: String?
+    let ctx: Int?
+    let limit: Int?
+    let pct: Double?
+    let sid: String?
+}
+
+struct TerminalTailResponse: Decodable {
+    let body: String?
+    let alive: Bool?
+    let events: [TerminalEvent]
+    let offset: Int
+    let size: Int?
+    let dropped: Bool?
+    let status: TerminalStatus?
+}
+
 struct APIUsageNumbers: Decodable {
     let input: Int
     let output: Int

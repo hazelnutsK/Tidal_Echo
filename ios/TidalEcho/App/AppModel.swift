@@ -1087,6 +1087,10 @@ final class AppModel: ObservableObject {
         try await requireClient().loopStats()
     }
 
+    func terminalTail(body: String, after: Int) async throws -> TerminalTailResponse {
+        try await requireClient().terminalTail(body: body, after: after)
+    }
+
     func settingsDesktopModel() async throws -> DesktopModelResponse {
         try await requireClient().desktopModel()
     }

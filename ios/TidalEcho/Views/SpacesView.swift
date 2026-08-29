@@ -1470,6 +1470,7 @@ private struct CalendarEventRow: View {
 
 private struct CalendarComposer: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var nativeEvents = NativeEventStore.shared
     let date: Date
     let onCreated: (CalendarEvent) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -1481,7 +1482,10 @@ private struct CalendarComposer: View {
     @State private var isVisible = true
     @State private var shouldRemind = false
     @State private var isSaving = false
+    @State private var isRequestingSystemAccess = false
     @State private var errorText: String?
+    @AppStorage("tidalEcho.calendar.syncToSystemCalendar") private var syncToSystemCalendar = false
+    @AppStorage("tidalEcho.calendar.addToSystemReminders") private var addToSystemReminders = false
 
     init(model: AppModel, date: Date, onCreated: @escaping (CalendarEvent) -> Void) {
         self.model = model
@@ -1508,6 +1512,14 @@ private struct CalendarComposer: View {
                     Toggle("让小克也能看到", isOn: $isVisible)
                     Toggle("提醒我", isOn: $shouldRemind)
                 }
+                Section {
+                    Toggle("同时加入 iOS 日历", isOn: $syncToSystemCalendar)
+                    Toggle("同时加入提醒事项", isOn: $addToSystemReminders)
+                } header: {
+                    Text("系统 App")
+                } footer: {
+                    Text("系统副本由你单独控制；Tidal Echo 不会读取已有日历内容。")
+                }
                 if isAnniversary {
                     Section { Text("纪念日会默认每年重复，并显示已经一起走过的天数。") }.font(.footnote).foregroundStyle(.secondary)
                 }
@@ -1519,11 +1531,23 @@ private struct CalendarComposer: View {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") { Task { await save() } }
-                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                        .disabled(
+                            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                || isSaving
+                                || isRequestingSystemAccess
+                        )
                 }
             }
         }
         .tint(model.theme.palette.accent)
+        .onChange(of: syncToSystemCalendar) { _, enabled in
+            guard enabled else { return }
+            Task { await ensureCalendarAccess() }
+        }
+        .onChange(of: addToSystemReminders) { _, enabled in
+            guard enabled else { return }
+            Task { await ensureReminderAccess() }
+        }
     }
 
     @MainActor
@@ -1540,11 +1564,61 @@ private struct CalendarComposer: View {
         )
         do {
             let event = try await model.createCalendarEvent(payload)
+            let nativeDraft = NativeScheduleDraft(
+                title: payload.title,
+                date: eventDate,
+                time: eventTime,
+                isAllDay: isAllDay,
+                isAnniversary: isAnniversary,
+                shouldRemind: shouldRemind
+            )
+            var nativeFailures: [String] = []
+            if syncToSystemCalendar {
+                do {
+                    try nativeEvents.addCalendarEvent(nativeDraft)
+                } catch {
+                    nativeFailures.append("系统日历：\(error.localizedDescription)")
+                }
+            }
+            if addToSystemReminders {
+                do {
+                    try nativeEvents.addReminder(nativeDraft)
+                } catch {
+                    nativeFailures.append("提醒事项：\(error.localizedDescription)")
+                }
+            }
             onCreated(event)
             dismiss()
+            if !nativeFailures.isEmpty {
+                model.errorMessage = "日程已保存到 Tidal Echo，但系统副本没有全部写入。\n" + nativeFailures.joined(separator: "\n")
+            }
         } catch {
             errorText = error.localizedDescription
         }
+    }
+
+    @MainActor
+    private func ensureCalendarAccess() async {
+        isRequestingSystemAccess = true
+        defer { isRequestingSystemAccess = false }
+        guard await nativeEvents.requestCalendarAccess() else {
+            syncToSystemCalendar = false
+            errorText = "没有获得系统日历写入权限，可在系统设置里重新允许。"
+            return
+        }
+        errorText = nil
+    }
+
+    @MainActor
+    private func ensureReminderAccess() async {
+        isRequestingSystemAccess = true
+        defer { isRequestingSystemAccess = false }
+        guard await nativeEvents.requestReminderAccess() else {
+            addToSystemReminders = false
+            errorText = "没有获得提醒事项权限，可在系统设置里重新允许。"
+            return
+        }
+        errorText = nil
     }
 }
 

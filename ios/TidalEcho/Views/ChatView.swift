@@ -1,4 +1,5 @@
 import AudioToolbox
+@preconcurrency import AVFoundation
 import KaomojiDrawerKit
 import PhotosUI
 import SwiftUI
@@ -1514,6 +1515,8 @@ private struct ComposerView: View {
     @State private var showingAttachmentMenu = false
     @State private var showingKaomojiDrawer = false
     @State private var showingPhotoPicker = false
+    @State private var showingCamera = false
+    @State private var cameraPermissionDenied = false
     @State private var importingAttachments = false
     @State private var importedTypes: [UTType] = [.item]
     @State private var draftText = ""
@@ -1680,6 +1683,7 @@ private struct ComposerView: View {
             Task { await uploadPhotos(items) }
         }
         .confirmationDialog("添加附件", isPresented: $showingAttachmentMenu, titleVisibility: .visible) {
+            Button("相机") { presentCamera() }
             Button("照片") { presentPhotoPicker() }
             Button("文件") { presentFileImporter(types: [.item]) }
             Button("音乐") { presentFileImporter(types: [.audio]) }
@@ -1703,12 +1707,31 @@ private struct ComposerView: View {
             maxSelectionCount: 9,
             matching: .images
         )
+        .fullScreenCover(isPresented: $showingCamera) {
+            CameraCaptureView(
+                onCapture: { image in
+                    showingCamera = false
+                    uploadCapturedPhoto(image)
+                },
+                onCancel: { showingCamera = false }
+            )
+            .ignoresSafeArea()
+        }
         .fileImporter(
             isPresented: $importingAttachments,
             allowedContentTypes: importedTypes,
             allowsMultipleSelection: true
         ) { result in
             importURLs(result)
+        }
+        .alert("无法使用相机", isPresented: $cameraPermissionDenied) {
+            Button("打开系统设置") {
+                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                UIApplication.shared.open(url)
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("请在系统设置中允许 Tidal Echo 使用相机。")
         }
     }
 
@@ -1759,6 +1782,31 @@ private struct ComposerView: View {
         }
     }
 
+    private func presentCamera() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                model.errorMessage = "这台设备当前没有可用的相机。"
+                return
+            }
+            Task {
+                let status = AVCaptureDevice.authorizationStatus(for: .video)
+                let allowed: Bool
+                if status == .authorized {
+                    allowed = true
+                } else if status == .notDetermined {
+                    allowed = await AVCaptureDevice.requestAccess(for: .video)
+                } else {
+                    allowed = false
+                }
+                if allowed {
+                    showingCamera = true
+                } else {
+                    cameraPermissionDenied = true
+                }
+            }
+        }
+    }
+
     private func presentFileImporter(types: [UTType]) {
         importedTypes = types
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
@@ -1784,6 +1832,20 @@ private struct ComposerView: View {
                 data: data,
                 name: "photo-\(UUID().uuidString.prefix(8)).\(ext)",
                 mime: type.preferredMIMEType ?? "image/jpeg"
+            )
+        }
+    }
+
+    private func uploadCapturedPhoto(_ image: UIImage) {
+        guard let data = image.jpegData(compressionQuality: 0.9) else {
+            model.errorMessage = "刚拍的照片没有保存成功。"
+            return
+        }
+        Task {
+            await model.uploadAttachment(
+                data: data,
+                name: "camera-\(UUID().uuidString.prefix(8)).jpg",
+                mime: "image/jpeg"
             )
         }
     }

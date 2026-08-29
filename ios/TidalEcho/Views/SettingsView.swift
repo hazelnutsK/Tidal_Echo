@@ -1,3 +1,4 @@
+@preconcurrency import AVFoundation
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -98,6 +99,9 @@ struct SettingsView: View {
                             }
                             HubNavigationTile(icon: "bell.badge", title: "通知与后台", subtitle: "提醒与音频", palette: palette, isMist: model.theme == .mist) {
                                 NotificationSettingsView(model: model)
+                            }
+                            HubNavigationTile(icon: "faceid", title: "隐私与系统", subtitle: "Face ID 与权限", palette: palette, isMist: model.theme == .mist) {
+                                PrivacySystemSettingsView(model: model)
                             }
                             Button { leaveHub(for: onCall) } label: {
                                 HubTile(icon: "phone", title: "打电话", subtitle: model.peerDisplayName, palette: palette, isMist: model.theme == .mist)
@@ -322,6 +326,189 @@ private struct NotificationSettingsView: View {
         .navigationTitle("通知与后台")
         .navigationBarTitleDisplayMode(.inline)
         .task { await notifications.refreshAuthorizationStatus() }
+    }
+}
+
+private struct PrivacySystemSettingsView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var appLock = AppLockController.shared
+    @ObservedObject private var nativeEvents = NativeEventStore.shared
+    @State private var isChangingLock = false
+    @State private var isRequestingPermission = false
+    @State private var errorText: String?
+
+    private var palette: EchoPalette { model.theme.palette }
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("使用 \(appLock.biometryName) 锁定 App", isOn: Binding(
+                    get: { appLock.isEnabled },
+                    set: { enabled in
+                        Task { await changeAppLock(enabled) }
+                    }
+                ))
+                .disabled(
+                    isChangingLock
+                        || (!appLock.isBiometryAvailable && !appLock.isEnabled)
+                )
+                LabeledContent("状态", value: appLock.statusText)
+                    .foregroundStyle(palette.secondaryText)
+            } header: {
+                Text("App 锁")
+            } footer: {
+                Text("开启后，冷启动和每次从后台回来都需要验证；关闭时也会先确认身份。解锁允许设备密码兜底。")
+            }
+
+            Section("系统日历与提醒事项") {
+                PermissionStatusRow(
+                    title: "iOS 日历",
+                    subtitle: "仅添加，不读取已有日程",
+                    icon: "calendar.badge.plus",
+                    status: nativeEvents.calendarStatusText,
+                    palette: palette
+                )
+                Button(nativeEvents.canWriteEvents ? "日历权限已就绪" : "允许添加到系统日历") {
+                    Task { await requestCalendarAccess() }
+                }
+                .disabled(nativeEvents.canWriteEvents || isRequestingPermission)
+
+                PermissionStatusRow(
+                    title: "提醒事项",
+                    subtitle: "把选中的日程建立为提醒",
+                    icon: "checklist",
+                    status: nativeEvents.reminderStatusText,
+                    palette: palette
+                )
+                Button(nativeEvents.canWriteReminders ? "提醒事项权限已就绪" : "允许添加到提醒事项") {
+                    Task { await requestReminderAccess() }
+                }
+                .disabled(nativeEvents.canWriteReminders || isRequestingPermission)
+            }
+
+            Section {
+                PermissionStatusRow(
+                    title: "相机",
+                    subtitle: "从聊天输入栏的 + 菜单拍照",
+                    icon: "camera",
+                    status: cameraStatusText,
+                    palette: palette
+                )
+                if hasDeniedPermission {
+                    Button("打开系统设置") {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                        UIApplication.shared.open(url)
+                    }
+                }
+            } header: {
+                Text("相机")
+            } footer: {
+                Text("相机权限只会在你第一次点“相机”时请求。拍下的照片先作为待发送附件，不会自动发出。")
+            }
+        }
+        .tint(palette.accent)
+        .scrollContentBackground(.hidden)
+        .background(SettingsPageBackground(theme: model.theme, palette: palette).ignoresSafeArea())
+        .listRowBackground(settingsRowBackground(theme: model.theme, palette: palette))
+        .navigationTitle("隐私与系统")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            appLock.refreshBiometryName()
+            nativeEvents.refreshAuthorizationStatus()
+        }
+        .alert(
+            "系统权限",
+            isPresented: Binding(
+                get: { errorText != nil || appLock.errorMessage != nil },
+                set: {
+                    if !$0 {
+                        errorText = nil
+                        appLock.errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            if hasDeniedPermission {
+                Button("打开系统设置") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("好", role: .cancel) {
+                errorText = nil
+                appLock.errorMessage = nil
+            }
+        } message: {
+            Text(errorText ?? appLock.errorMessage ?? "")
+        }
+    }
+
+    private var cameraStatusText: String {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .notDetermined: return "使用时询问"
+        case .restricted: return "受系统限制"
+        case .denied: return "系统已拒绝"
+        case .authorized: return "已允许"
+        @unknown default: return "未知"
+        }
+    }
+
+    private var hasDeniedPermission: Bool {
+        cameraStatusText == "系统已拒绝"
+            || nativeEvents.calendarStatusText == "系统已拒绝"
+            || nativeEvents.reminderStatusText == "系统已拒绝"
+    }
+
+    @MainActor
+    private func changeAppLock(_ enabled: Bool) async {
+        isChangingLock = true
+        defer { isChangingLock = false }
+        _ = await appLock.setEnabled(enabled)
+    }
+
+    @MainActor
+    private func requestCalendarAccess() async {
+        isRequestingPermission = true
+        defer { isRequestingPermission = false }
+        if !(await nativeEvents.requestCalendarAccess()) {
+            errorText = "没有获得系统日历写入权限。"
+        }
+    }
+
+    @MainActor
+    private func requestReminderAccess() async {
+        isRequestingPermission = true
+        defer { isRequestingPermission = false }
+        if !(await nativeEvents.requestReminderAccess()) {
+            errorText = "没有获得提醒事项权限。"
+        }
+    }
+}
+
+private struct PermissionStatusRow: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let status: String
+    let palette: EchoPalette
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .foregroundStyle(palette.accent)
+                .frame(width: 30, height: 30)
+                .background(palette.accent.opacity(0.11), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+            }
+            Spacer()
+            Text(status)
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText)
+        }
     }
 }
 

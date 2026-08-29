@@ -2,7 +2,9 @@ import SwiftUI
 
 struct RootView: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var appLock = AppLockController.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var launchPresentationComplete = false
 
     var body: some View {
@@ -18,10 +20,20 @@ struct RootView: View {
                     case .signedOut, .connecting:
                         LoginView(model: model)
                     case .connected:
-                        ChatView(model: model)
+                        if appLock.isEnabled && !appLock.isUnlocked {
+                            AppLockView(model: model, appLock: appLock)
+                        } else {
+                            ChatView(model: model)
+                        }
                     }
                 }
                 .transition(.opacity)
+            }
+
+            if appLock.isEnabled && scenePhase != .active && !showsLaunchView {
+                AppPrivacyCover(theme: model.theme)
+                    .transition(.opacity)
+                    .zIndex(10)
             }
         }
         .animation(.easeOut(duration: reduceMotion ? 0.12 : 0.34), value: showsLaunchView)
@@ -38,6 +50,22 @@ struct RootView: View {
             try? await Task.sleep(for: minimumPresentation)
             launchPresentationComplete = true
             await bootstrapTask
+            if model.phase == .connected {
+                await appLock.unlockIfNeeded()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background:
+                appLock.lockForBackground()
+            case .active:
+                guard launchPresentationComplete, model.phase == .connected else { return }
+                Task { await appLock.unlockIfNeeded() }
+            case .inactive:
+                break
+            @unknown default:
+                break
+            }
         }
         .alert(
             "Tidal Echo",
@@ -56,4 +84,3 @@ struct RootView: View {
         !launchPresentationComplete || model.phase == .launching
     }
 }
-

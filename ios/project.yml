@@ -33,6 +33,10 @@ targets:
       properties:
         CFBundleDisplayName: Tidal Echo
         LSApplicationCategoryType: public.app-category.social-networking
+        NSCameraUsageDescription: 用于在聊天中拍摄照片并作为附件发送。
+        NSCalendarsWriteOnlyAccessUsageDescription: 用于把你在 Tidal Echo 创建的日程添加到系统日历，不会读取现有日历内容。
+        NSRemindersFullAccessUsageDescription: 用于把你选择的日程添加到系统提醒事项。
+        NSFaceIDUsageDescription: 用于解锁 Tidal Echo，保护聊天与私人内容。
         NSPhotoLibraryUsageDescription: 选择图片发送到你自己的 Tidal Echo 频道。
         NSMicrophoneUsageDescription: 用于录制语音消息和进行实时语音通话。
         NSSpeechRecognitionUsageDescription: 用于在语音通话中把你的话实时分段转成文字。

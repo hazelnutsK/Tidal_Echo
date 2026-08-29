@@ -64,11 +64,11 @@ struct TerminalView: View {
                             .padding(.vertical, 3)
                             .background(
                                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .fill(target == item ? TerminalPalette.user.opacity(0.12) : Color.clear)
+                                    .fill(target == item ? TerminalPalette.userBlock : Color.clear)
                             )
                             .overlay(
                                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                    .stroke(target == item ? TerminalPalette.user.opacity(0.7) : TerminalPalette.line)
+                                    .stroke(target == item ? TerminalPalette.dim : TerminalPalette.line)
                             )
                     }
                     .buttonStyle(.plain)
@@ -173,14 +173,14 @@ struct TerminalView: View {
                     } label: {
                         Text("↓ 回到最新")
                             .font(.system(size: 11.5, design: .monospaced))
-                            .foregroundStyle(TerminalPalette.user)
+                            .foregroundStyle(TerminalPalette.foreground)
                             .padding(.horizontal, 13)
                             .padding(.vertical, 5)
                             .background(
                                 Capsule().fill(TerminalPalette.bar)
                             )
                             .overlay(
-                                Capsule().stroke(TerminalPalette.user.opacity(0.75))
+                                Capsule().stroke(TerminalPalette.dim)
                             )
                     }
                     .buttonStyle(.plain)
@@ -244,7 +244,7 @@ struct TerminalView: View {
     private var dotColor: Color {
         if errorText != nil { return TerminalPalette.error }
         if !alive || !hasLoadedOnce { return TerminalPalette.faint }
-        return TerminalPalette.tool
+        return TerminalPalette.bright
     }
 
     private var metaText: String {
@@ -268,7 +268,7 @@ struct TerminalView: View {
         let value = contextFraction
         if value >= 0.9 { return TerminalPalette.error }
         if value >= 0.7 { return TerminalPalette.warn }
-        return TerminalPalette.tool
+        return TerminalPalette.dim
     }
 
     private var contextText: String {
@@ -313,60 +313,78 @@ private struct TerminalRow: View {
     private var content: some View {
         switch event.t {
         case "user":
+            // 她那一行：垫一条灰底，像终端里被回显的输入
             glyphLine(
                 glyph: ">",
-                glyphColor: TerminalPalette.user.opacity(0.7),
+                glyphColor: TerminalPalette.faint,
                 text: event.text ?? "",
-                color: TerminalPalette.user,
+                color: TerminalPalette.foreground,
                 size: 12.5
+            )
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(TerminalPalette.userBlock)
             )
         case "system":
             Text(TerminalFormat.clip(event.text ?? "", limit: 240))
-                .font(.system(size: 11.5, design: .monospaced))
+                .font(.system(size: 12.5, design: .monospaced))
                 .foregroundStyle(TerminalPalette.faint)
                 .fixedSize(horizontal: false, vertical: true)
         case "thinking":
             glyphLine(
                 glyph: "✻",
-                glyphColor: TerminalPalette.thinking.opacity(0.6),
+                glyphColor: TerminalPalette.faint,
                 text: event.text ?? "",
-                color: TerminalPalette.thinking.opacity(0.88),
-                size: 12
+                color: TerminalPalette.dim,
+                size: 12.5
             )
         case "assistant":
-            Text(event.text ?? "")
-                .font(.system(size: 12.5, design: .monospaced))
-                .foregroundStyle(TerminalPalette.foreground)
-                .fixedSize(horizontal: false, vertical: true)
+            // 说出口的那句 —— 前面一颗白色实心圆
+            glyphLine(
+                glyph: "●",
+                glyphColor: TerminalPalette.bright,
+                text: event.text ?? "",
+                color: TerminalPalette.bright,
+                size: 12.5
+            )
         case "tool_use":
             if let said = event.said, !said.isEmpty {
                 // 发出去的话 —— 那不是调用参数，是他说出口的一句
-                HStack(alignment: .top, spacing: 8) {
-                    Rectangle()
-                        .fill(TerminalPalette.user.opacity(0.32))
-                        .frame(width: 2)
-                    Text(said)
-                        .font(.system(size: 12.5, design: .monospaced))
-                        .foregroundStyle(TerminalPalette.said)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                glyphLine(
+                    glyph: "●",
+                    glyphColor: TerminalPalette.bright,
+                    text: said,
+                    color: TerminalPalette.bright,
+                    size: 12.5
+                )
             } else {
-                HStack(alignment: .top, spacing: 0) {
-                    Text("● " + TerminalFormat.shortTool(event.name ?? ""))
-                        .font(.system(size: 12.5, design: .monospaced))
-                        .foregroundStyle(TerminalPalette.tool)
-                    if let brief = event.brief, !brief.isEmpty {
-                        Text("(" + brief + ")")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(TerminalPalette.dim)
-                    }
-                }
-                .fixedSize(horizontal: false, vertical: true)
+                toolCallLine
             }
         case "tool_result":
             resultBlock
         default:
             EmptyView()
+        }
+    }
+
+    /// `● Read(app.py)` —— 名字和参数拼在同一个文本流里，长参数才会像终端那样
+    /// 顺着往下折，而不是把工具名先挤到下一行。
+    private var toolCallLine: some View {
+        let name = TerminalFormat.shortTool(event.name ?? "")
+        let brief = event.brief ?? ""
+        let label = Text(name).foregroundStyle(TerminalPalette.foreground)
+            + Text(brief.isEmpty ? "" : "(" + brief + ")").foregroundStyle(TerminalPalette.dim)
+
+        return HStack(alignment: .top, spacing: 5) {
+            Text("●")
+                .font(.system(size: 12.5, design: .monospaced))
+                .foregroundStyle(TerminalPalette.dim)
+            label
+                .font(.system(size: 12.5, design: .monospaced))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -377,18 +395,18 @@ private struct TerminalRow: View {
         let tail = allLines.count > 2 ? allLines.dropFirst(2).joined(separator: "\n") : ""
         let truncated = event.hidden ?? 0
         let restCount = max(0, allLines.count - 2) + truncated
-        let color = (event.isError ?? false) ? TerminalPalette.error : TerminalPalette.dim
+        let color = (event.isError ?? false) ? TerminalPalette.error : TerminalPalette.faint
 
         return VStack(alignment: .leading, spacing: 3) {
-            Text("⎿ " + head)
-                .font(.system(size: 11.5, design: .monospaced))
+            Text("⎿  " + head)
+                .font(.system(size: 12.5, design: .monospaced))
                 .foregroundStyle(color)
                 .fixedSize(horizontal: false, vertical: true)
 
             if restCount > 0 {
                 Button(action: onToggle) {
                     Text(isExpanded ? "⌃ 收起" : "… +\(restCount) 行")
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(TerminalPalette.faint)
                         .underline()
                 }
@@ -396,12 +414,14 @@ private struct TerminalRow: View {
 
                 if isExpanded {
                     Text(tail + (truncated > 0 ? "\n… 服务端截断了 \(truncated) 行" : ""))
-                        .font(.system(size: 11.5, design: .monospaced))
+                        .font(.system(size: 12.5, design: .monospaced))
                         .foregroundStyle(color)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+        // 结果行在真终端里是缩在工具那一行下面的
+        .padding(.leading, 12)
     }
 
     private func glyphLine(
@@ -451,19 +471,24 @@ private struct TerminalLine: Identifiable {
     let event: TerminalEvent
 }
 
+/// 终端就是终端：一片灰阶，没有配色主题。只有出错的工具结果留一点红
+/// （stderr 在真终端里本来就是红的）和上下文快满时的黄/红。
 private enum TerminalPalette {
     static let background = Color(hex: 0x0d0f12)
     static let bar = Color(hex: 0x14171c)
     static let line = Color(hex: 0x232830)
-    static let foreground = Color(hex: 0xd4d7dd)
-    static let dim = Color(hex: 0x7b8494)
-    static let faint = Color(hex: 0x525a68)
-    static let user = Color(hex: 0x7aa2f7)
-    static let thinking = Color(hex: 0xa78bfa)
-    static let tool = Color(hex: 0x8bd49c)
-    static let error = Color(hex: 0xe5707b)
-    static let warn = Color(hex: 0xe0af68)
-    static let said = Color(hex: 0xc8d3e8)
+    /// 说出口的那句话，和它前面那颗白色实心圆
+    static let bright = Color(hex: 0xe9ebee)
+    /// 她的话
+    static let foreground = Color(hex: 0xd2d5da)
+    /// 思考、工具参数
+    static let dim = Color(hex: 0x8a9199)
+    /// 工具结果、时间、系统帧
+    static let faint = Color(hex: 0x5c636e)
+    static let error = Color(hex: 0xc4646d)
+    static let warn = Color(hex: 0xc9a24f)
+    /// 她那一行垫在底下的灰条
+    static let userBlock = Color.white.opacity(0.055)
 }
 
 private enum TerminalFormat {

@@ -486,6 +486,18 @@ enum ChatMode: String, Codable, CaseIterable, Identifiable {
 
 struct ChatModeResponse: Decodable {
     let mode: ChatMode
+    let stripTerminalPeriods: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case stripTerminalPeriods = "strip_terminal_periods"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try values.decode(ChatMode.self, forKey: .mode)
+        stripTerminalPeriods = try values.decodeIfPresent(Bool.self, forKey: .stripTerminalPeriods) ?? false
+    }
 }
 
 indirect enum JSONValue: Decodable {

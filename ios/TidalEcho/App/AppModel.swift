@@ -1053,12 +1053,16 @@ final class AppModel: ObservableObject {
         try await requireClient().replaceAPIPresets(presets)
     }
 
-    func settingsChatMode() async throws -> ChatMode {
+    func settingsChatMode() async throws -> ChatModeResponse {
         try await requireClient().chatMode()
     }
 
     func updateChatMode(_ mode: ChatMode) async throws -> ChatMode {
         try await requireClient().setChatMode(mode)
+    }
+
+    func updateShortChatStripTerminalPeriods(_ enabled: Bool) async throws -> ChatModeResponse {
+        try await requireClient().setShortChatStripTerminalPeriods(enabled)
     }
 
     func settingsQuota() async throws -> QuotaResponse {

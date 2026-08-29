@@ -1812,6 +1812,7 @@ private struct ContextSettingsView: View {
     @State private var notice: String?
     @State private var pendingCommand: ContextCommand?
     @State private var chatMode: ChatMode = .long
+    @State private var stripsShortChatTerminalPeriods = false
 
     private var palette: EchoPalette { model.theme.palette }
     private var usageK: Double { Double(status?.usageTokens ?? 0) / 1000 }
@@ -1884,6 +1885,17 @@ private struct ContextSettingsView: View {
                      : "一整段回复显示为一条气泡。")
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText)
+                Toggle("去掉短聊段尾句号", isOn: Binding(
+                    get: { stripsShortChatTerminalPeriods },
+                    set: { enabled in
+                        stripsShortChatTerminalPeriods = enabled
+                        Task { await saveTerminalPeriodStyle(enabled) }
+                    }
+                ))
+                .disabled(isBusy)
+                Text(terminalPeriodStyleHelp)
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
             }
 
             Section("会话操作") {
@@ -1942,7 +1954,10 @@ private struct ContextSettingsView: View {
             status = next
             triggerK = Double(next.triggerK)
             autoSwap = next.auto
-            if let mode = try? await model.settingsChatMode() { chatMode = mode }
+            if let settings = try? await model.settingsChatMode() {
+                chatMode = settings.mode
+                stripsShortChatTerminalPeriods = settings.stripTerminalPeriods
+            }
         } catch {
             errorText = error.localizedDescription
         }
@@ -1983,6 +1998,31 @@ private struct ContextSettingsView: View {
             notice = chatMode == .short ? "短聊已开启。" : "长聊已开启。"
         } catch {
             chatMode = mode == .short ? .long : .short
+            errorText = error.localizedDescription
+        }
+    }
+
+    private var terminalPeriodStyleHelp: String {
+        if chatMode != .short {
+            return stripsShortChatTerminalPeriods
+                ? "设置已保留，切换到短聊后才生效。"
+                : "只在短聊时生效；问号、感叹号和省略号都会保留。"
+        }
+        return stripsShortChatTerminalPeriods
+            ? "每段末尾的句号会省略，其他语气标点保持不变。"
+            : "开启后只省略每段末尾的句号。"
+    }
+
+    private func saveTerminalPeriodStyle(_ enabled: Bool) async {
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let settings = try await model.updateShortChatStripTerminalPeriods(enabled)
+            chatMode = settings.mode
+            stripsShortChatTerminalPeriods = settings.stripTerminalPeriods
+            notice = settings.stripTerminalPeriods ? "短聊句号样式已开启。" : "短聊句号样式已关闭。"
+        } catch {
+            stripsShortChatTerminalPeriods.toggle()
             errorText = error.localizedDescription
         }
     }

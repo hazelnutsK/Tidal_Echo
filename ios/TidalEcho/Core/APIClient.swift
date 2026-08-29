@@ -202,16 +202,25 @@ struct APIClient {
         return try decoder.decode(LoopConfigResponse.self, from: try await data(for: req))
     }
 
-    func chatMode() async throws -> ChatMode {
+    func chatMode() async throws -> ChatModeResponse {
         let responseData = try await data(for: request(url: endpoint("app/chat_mode")))
-        return try decoder.decode(ChatModeResponse.self, from: responseData).mode
+        return try decoder.decode(ChatModeResponse.self, from: responseData)
     }
 
     func setChatMode(_ mode: ChatMode) async throws -> ChatMode {
         var req = request(url: endpoint("app/chat_mode"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(ChatModePayload(mode: mode))
+        req.httpBody = try JSONEncoder().encode(ChatModePayload(mode: mode, stripTerminalPeriods: nil))
         return try decoder.decode(ChatModeResponse.self, from: try await data(for: req)).mode
+    }
+
+    func setShortChatStripTerminalPeriods(_ enabled: Bool) async throws -> ChatModeResponse {
+        var req = request(url: endpoint("app/chat_mode"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(
+            ChatModePayload(mode: nil, stripTerminalPeriods: enabled)
+        )
+        return try decoder.decode(ChatModeResponse.self, from: try await data(for: req))
     }
 
     func quota() async throws -> QuotaResponse {
@@ -519,7 +528,15 @@ private struct LoopPresetPayload: Encodable {
     }
 }
 
-private struct ChatModePayload: Encodable { let mode: ChatMode }
+private struct ChatModePayload: Encodable {
+    let mode: ChatMode?
+    let stripTerminalPeriods: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case mode
+        case stripTerminalPeriods = "strip_terminal_periods"
+    }
+}
 
 private struct StarPayload: Encodable { let on: Bool }
 private struct AskAnswerPayload: Encodable {

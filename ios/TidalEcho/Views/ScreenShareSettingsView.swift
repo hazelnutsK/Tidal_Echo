@@ -1,7 +1,5 @@
 import ReplayKit
 import SwiftUI
-import UniformTypeIdentifiers
-import UIKit
 
 struct ScreenShareSettingsView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -36,7 +34,7 @@ struct ScreenShareSettingsView: View {
                 if let preparation {
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text("临时票据已复制")
+                            Text("临时票据已写入")
                                 .font(.subheadline.weight(.semibold))
                             Text("约 \(max(1, preparation.expiresIn / 60)) 分钟内有效")
                                 .font(.caption)
@@ -83,8 +81,7 @@ struct ScreenShareSettingsView: View {
             Section("怎么用") {
                 Label("先点“准备一次共享”", systemImage: "1.circle")
                 Label("点右侧系统广播按钮，再选 Tidal Echo", systemImage: "2.circle")
-                Label("在配置页点“粘贴票据并开始”", systemImage: "3.circle")
-                Label("倒计时后切到想给我看的页面", systemImage: "4.circle")
+                Label("倒计时后切到想给我看的页面，不需要配置页", systemImage: "3.circle")
             }
 
             Section("你始终看得见") {
@@ -119,16 +116,11 @@ struct ScreenShareSettingsView: View {
     @MainActor
     private func prepare() async {
         isPreparing = true
+        preparation = nil
+        probeStatus = nil
         defer { isPreparing = false }
         do {
             let value = try await model.prepareScreenShare()
-            UIPasteboard.general.setItems(
-                [[UTType.utf8PlainText.identifier: value.pastePayload]],
-                options: [
-                    .localOnly: true,
-                    .expirationDate: Date().addingTimeInterval(TimeInterval(value.expiresIn))
-                ]
-            )
             preparation = value
             probeStatus = try? await model.screenShareProbeStatus(probeID: value.probeID)
         } catch is CancellationError {

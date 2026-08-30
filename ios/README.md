@@ -65,9 +65,9 @@ open TidalEcho.xcodeproj
 ## ReplayKit 屏幕共享
 
 设置页的“屏幕共享”会先向 relay 申请一张 3 分钟、只可用一次的临时票据，
-再通过系统广播 Setup UI 把票据交给 Upload Extension。扩展不会读取主 App
-的 Keychain，也不会把长期 `RELAY_SECRET` 打进 IPA。票据仍通过系统粘贴板交接，
-App Group 只用于验证免费签名是否真的允许主 App 与 Upload Extension 共享数据。
+再把票据写进 App Group。点系统广播按钮并选择 Tidal Echo 后，Upload Extension
+会直接从共享容器读取票据，不需要配置页或粘贴操作。扩展不会读取主 App 的
+Keychain，也不会把长期 `RELAY_SECRET` 打进 IPA。
 
 共享开始后会留 3 秒给你切到目标页面，只上传一张最长边 720 px 的 JPEG，
 成功后立即结束广播。系统的红色录制标记和手动停止入口始终保留。
@@ -78,8 +78,8 @@ App Group 只用于验证免费签名是否真的允许主 App 与 Upload Extens
 才显示绿色“验证通过”。因此仅仅能生成工程或能打开 App 都不算通过，必须完成
 一次共享看到绿色结果。
 
-这个功能会让 IPA 内包含主 App、Setup UI、Upload Extension 三个 bundle。
-免费 Personal Team / AltStore 签名时会占用 3 个 App ID，并跟主 App 一样需要
+这个功能会让 IPA 内包含主 App 和 Upload Extension 两个 bundle。
+免费 Personal Team / AltStore 签名时会占用 2 个 App ID，并跟主 App 一样需要
 按免费签名的有效期刷新。验证结果按下面理解：
 
 - AltStore 在签名或安装阶段报 App Groups entitlement 错误：该免费签名链路没有

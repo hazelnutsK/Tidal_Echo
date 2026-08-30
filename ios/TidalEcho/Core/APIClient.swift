@@ -97,8 +97,9 @@ struct APIClient {
     }
 
     func prepareScreenShare(sessionID: String? = nil) async throws -> ScreenSharePreparation {
+        ScreenShareAppGroupProbe.clearHandoff()
         let probeMarker = UUID().uuidString
-        let localWriteSucceeded = ScreenShareAppGroupProbe.write(marker: probeMarker)
+        let markerWriteSucceeded = ScreenShareAppGroupProbe.write(marker: probeMarker)
         var req = request(url: endpoint("app/screen-share/session"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(
@@ -115,15 +116,15 @@ struct APIClient {
             expiresAt: response.expiresAt
         )
         guard let payloadData = try? JSONEncoder().encode(handoff),
-              let pastePayload = String(data: payloadData, encoding: .utf8) else {
+              let handoffPayload = String(data: payloadData, encoding: .utf8) else {
             throw APIError.invalidResponse
         }
+        let handoffWriteSucceeded = ScreenShareAppGroupProbe.writeHandoff(handoffPayload)
         return ScreenSharePreparation(
-            pastePayload: pastePayload,
             expiresAt: response.expiresAt,
             expiresIn: response.expiresIn,
             probeID: response.probeID,
-            localWriteSucceeded: localWriteSucceeded
+            localWriteSucceeded: markerWriteSucceeded && handoffWriteSucceeded
         )
     }
 
@@ -501,7 +502,6 @@ private struct SendPayload: Encodable {
 }
 
 struct ScreenSharePreparation: Hashable {
-    let pastePayload: String
     let expiresAt: String
     let expiresIn: Int
     let probeID: String

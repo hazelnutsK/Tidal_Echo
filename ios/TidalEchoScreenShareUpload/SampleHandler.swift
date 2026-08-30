@@ -23,28 +23,39 @@ final class SampleHandler: RPBroadcastSampleHandler {
         startedAt = Date()
         didStartUpload = false
         appGroupProbe = "__missing__"
-        guard let relayString = setupInfo?["relayURL"] as? String,
+
+        let groupIdentifier = Bundle.main.object(
+            forInfoDictionaryKey: "TidalEchoAppGroupIdentifier"
+        ) as? String ?? ""
+        var groupHandoff: ScreenShareHandoff?
+        if !groupIdentifier.isEmpty,
+           let defaults = UserDefaults(suiteName: groupIdentifier) {
+            if let marker = defaults.string(forKey: "tidalEcho.screenShare.appGroupProbe"),
+               !marker.isEmpty {
+                appGroupProbe = marker
+            }
+            if let payload = defaults.string(forKey: "tidalEcho.screenShare.handoff"),
+               let data = payload.data(using: .utf8) {
+                groupHandoff = try? JSONDecoder().decode(ScreenShareHandoff.self, from: data)
+                defaults.removeObject(forKey: "tidalEcho.screenShare.handoff")
+                defaults.synchronize()
+            }
+        }
+
+        let relayString = setupInfo?["relayURL"] as? String ?? groupHandoff?.relayURL
+        let handoffTicket = setupInfo?["ticket"] as? String ?? groupHandoff?.ticket
+        guard let relayString,
               let relayURL = URL(string: relayString),
               relayURL.scheme?.lowercased() == "https",
-              let ticket = setupInfo?["ticket"] as? String,
+              let ticket = handoffTicket,
               !ticket.isEmpty else {
-            finish("临时票据无效，请回到 Tidal Echo 重新准备。", code: 2)
+            finish("录屏扩展没有读到共享票据。请回到 Tidal Echo 重新点“准备一次共享”；若仍失败，App Group 可能没有签入。", code: 2)
             return
         }
         self.uploadURL = ["app", "screen-share", "frame"].reduce(relayURL) {
             $0.appendingPathComponent($1)
         }
         self.ticket = ticket
-
-        let groupIdentifier = Bundle.main.object(
-            forInfoDictionaryKey: "TidalEchoAppGroupIdentifier"
-        ) as? String ?? ""
-        if !groupIdentifier.isEmpty,
-           let defaults = UserDefaults(suiteName: groupIdentifier),
-           let marker = defaults.string(forKey: "tidalEcho.screenShare.appGroupProbe"),
-           !marker.isEmpty {
-            appGroupProbe = marker
-        }
     }
 
     override func processSampleBuffer(
@@ -114,4 +125,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
             userInfo: [NSLocalizedDescriptionKey: message]
         ))
     }
+}
+
+private struct ScreenShareHandoff: Decodable {
+    let relayURL: String
+    let ticket: String
 }

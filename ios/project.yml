@@ -26,7 +26,6 @@ targets:
     platform: iOS
     dependencies:
       - package: KaomojiDrawerKit
-      - target: TidalEchoScreenShareSetup
       - target: TidalEchoScreenShareUpload
     sources:
       - path: TidalEcho
@@ -70,25 +69,6 @@ targets:
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
     scheme:
       gatherCoverageData: false
-
-  TidalEchoScreenShareSetup:
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: TidalEchoScreenShareSetup
-    info:
-      path: TidalEchoScreenShareSetup/Info.plist
-      properties:
-        CFBundleDisplayName: Tidal Echo
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.broadcast-services-setupui
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).BroadcastSetupViewController
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal.ScreenShareSetup
-        PRODUCT_NAME: Tidal Echo Screen Setup
-        SKIP_INSTALL: YES
-        APPLICATION_EXTENSION_API_ONLY: YES
 
   TidalEchoScreenShareUpload:
     type: app-extension

@@ -96,6 +96,44 @@ struct APIClient {
         return try decoder.decode(Attachment.self, from: responseData)
     }
 
+    func prepareScreenShare(sessionID: String? = nil) async throws -> ScreenSharePreparation {
+        let probeMarker = UUID().uuidString
+        let localWriteSucceeded = ScreenShareAppGroupProbe.write(marker: probeMarker)
+        var req = request(url: endpoint("app/screen-share/session"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(
+            ScreenShareSessionPayload(apiSession: sessionID, appGroupProbe: probeMarker)
+        )
+        let response = try decoder.decode(
+            ScreenShareSessionResponse.self,
+            from: try await data(for: req)
+        )
+        let handoff = ScreenShareHandoffPayload(
+            version: 1,
+            relayURL: baseURL.absoluteString,
+            ticket: response.ticket,
+            expiresAt: response.expiresAt
+        )
+        guard let payloadData = try? JSONEncoder().encode(handoff),
+              let pastePayload = String(data: payloadData, encoding: .utf8) else {
+            throw APIError.invalidResponse
+        }
+        return ScreenSharePreparation(
+            pastePayload: pastePayload,
+            expiresAt: response.expiresAt,
+            expiresIn: response.expiresIn,
+            probeID: response.probeID,
+            localWriteSucceeded: localWriteSucceeded
+        )
+    }
+
+    func screenShareProbeStatus(probeID: String) async throws -> ScreenShareProbeStatus {
+        try decoder.decode(
+            ScreenShareProbeStatus.self,
+            from: try await data(for: request(url: endpoint("app/screen-share/probe/\(probeID)")))
+        )
+    }
+
     /// `text` 是手机端现场转好的字。带上它，服务器就不用再转一遍，
     /// 耳朵那边只听语气（快得多），这段录音也会挂在她自己的气泡上。
     func sendVoiceAudio(
@@ -460,6 +498,58 @@ private struct SendPayload: Encodable {
         case text, attachments
         case apiSession = "api_session"
     }
+}
+
+struct ScreenSharePreparation: Hashable {
+    let pastePayload: String
+    let expiresAt: String
+    let expiresIn: Int
+    let probeID: String
+    let localWriteSucceeded: Bool
+}
+
+private struct ScreenShareSessionPayload: Encodable {
+    let apiSession: String?
+    let appGroupProbe: String
+
+    enum CodingKeys: String, CodingKey {
+        case apiSession = "api_session"
+        case appGroupProbe = "app_group_probe"
+    }
+}
+
+private struct ScreenShareSessionResponse: Decodable {
+    let ticket: String
+    let probeID: String
+    let expiresAt: String
+    let expiresIn: Int
+
+    enum CodingKeys: String, CodingKey {
+        case ticket
+        case probeID = "probe_id"
+        case expiresAt = "expires_at"
+        case expiresIn = "expires_in"
+    }
+}
+
+struct ScreenShareProbeStatus: Decodable, Hashable {
+    let probeID: String
+    let status: String
+    let reason: String
+    let checkedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case probeID = "probe_id"
+        case status, reason
+        case checkedAt = "checked_at"
+    }
+}
+
+private struct ScreenShareHandoffPayload: Encodable {
+    let version: Int
+    let relayURL: String
+    let ticket: String
+    let expiresAt: String
 }
 
 private struct DesireConfigPayload: Encodable {

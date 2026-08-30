@@ -26,12 +26,15 @@ targets:
     platform: iOS
     dependencies:
       - package: KaomojiDrawerKit
+      - target: TidalEchoScreenShareSetup
+      - target: TidalEchoScreenShareUpload
     sources:
       - path: TidalEcho
     info:
       path: TidalEcho/Info.plist
       properties:
         CFBundleDisplayName: Tidal Echo
+        TidalEchoAppGroupIdentifier: group.com.tidalecho.personal.screenshare
         LSApplicationCategoryType: public.app-category.social-networking
         NSCameraUsageDescription: 用于在聊天中拍摄照片并作为附件发送。
         NSCalendarsWriteOnlyAccessUsageDescription: 用于把你在 Tidal Echo 创建的日程添加到系统日历，不会读取现有日历内容。
@@ -54,6 +57,11 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+    entitlements:
+      path: TidalEcho/TidalEcho.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.tidalecho.personal.screenshare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal
@@ -62,3 +70,49 @@ targets:
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
     scheme:
       gatherCoverageData: false
+
+  TidalEchoScreenShareSetup:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: TidalEchoScreenShareSetup
+    info:
+      path: TidalEchoScreenShareSetup/Info.plist
+      properties:
+        CFBundleDisplayName: Tidal Echo
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-setupui
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).BroadcastSetupViewController
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal.ScreenShareSetup
+        PRODUCT_NAME: Tidal Echo Screen Setup
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+
+  TidalEchoScreenShareUpload:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: TidalEchoScreenShareUpload
+    info:
+      path: TidalEchoScreenShareUpload/Info.plist
+      properties:
+        CFBundleDisplayName: Tidal Echo
+        TidalEchoAppGroupIdentifier: group.com.tidalecho.personal.screenshare
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.broadcast-services-upload
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
+          NSExtensionAttributes:
+            RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
+    entitlements:
+      path: TidalEchoScreenShareUpload/TidalEchoScreenShareUpload.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.tidalecho.personal.screenshare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal.ScreenShareUpload
+        PRODUCT_NAME: Tidal Echo Screen Share
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES

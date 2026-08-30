@@ -619,6 +619,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func prepareScreenShare() async throws -> ScreenSharePreparation {
+        try await requireClient().prepareScreenShare(
+            sessionID: activeSessionID == Self.legacySessionID ? nil : activeSessionID
+        )
+    }
+
+    func screenShareProbeStatus(probeID: String) async throws -> ScreenShareProbeStatus {
+        try await requireClient().screenShareProbeStatus(probeID: probeID)
+    }
+
     func removePendingAttachment(_ attachment: Attachment) {
         pendingAttachments.removeAll { $0.id == attachment.id }
     }

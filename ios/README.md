@@ -9,6 +9,7 @@
 - 拉取并显示聊天记录
 - SSE 实时消息、输入状态、流式回复预览
 - 发送文字与图片
+- ReplayKit 单帧屏幕共享（一次性票据 + App Group 实机体检）
 - 多图消息以可拖拽、快甩翻页的三层照片堆展示
 - 内置颜文字抽屉，支持分类浏览、自定义添加与删除
 - Thinking / Action 折叠卡片
@@ -60,3 +61,31 @@ open TidalEcho.xcodeproj
 ```
 
 项目文件由 XcodeGen 生成，不提交到 Git。
+
+## ReplayKit 屏幕共享
+
+设置页的“屏幕共享”会先向 relay 申请一张 3 分钟、只可用一次的临时票据，
+再通过系统广播 Setup UI 把票据交给 Upload Extension。扩展不会读取主 App
+的 Keychain，也不会把长期 `RELAY_SECRET` 打进 IPA。票据仍通过系统粘贴板交接，
+App Group 只用于验证免费签名是否真的允许主 App 与 Upload Extension 共享数据。
+
+共享开始后会留 3 秒给你切到目标页面，只上传一张最长边 720 px 的 JPEG，
+成功后立即结束广播。系统的红色录制标记和手动停止入口始终保留。
+
+工程给主 App 和 Upload Extension 都声明了
+`group.com.tidalecho.personal.screenshare`。每次点“准备一次共享”，主 App 会把随机
+暗号写进这个共享容器；扩展上传截图时再读出暗号，relay 比对完全一致后，设置页
+才显示绿色“验证通过”。因此仅仅能生成工程或能打开 App 都不算通过，必须完成
+一次共享看到绿色结果。
+
+这个功能会让 IPA 内包含主 App、Setup UI、Upload Extension 三个 bundle。
+免费 Personal Team / AltStore 签名时会占用 3 个 App ID，并跟主 App 一样需要
+按免费签名的有效期刷新。验证结果按下面理解：
+
+- AltStore 在签名或安装阶段报 App Groups entitlement 错误：该免费签名链路没有
+  正确签入这个能力。
+- App 能打开，但体检显示扩展读不到共享容器：主 App 与扩展没有拿到同一 App Group。
+- 完成一次共享后显示绿色：这个账号、签名工具和当前设备组合已实测可用。
+
+App Group 标识符是全局命名空间。如果错误明确表示标识符已被其他 Team 占用，
+应先换成自己唯一的 group 标识符；这种冲突本身不能用来判断免费账号是否支持。

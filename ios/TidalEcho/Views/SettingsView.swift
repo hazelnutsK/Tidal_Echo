@@ -111,6 +111,9 @@ struct SettingsView: View {
                             HubNavigationTile(icon: "faceid", title: "隐私与系统", subtitle: "Face ID 与权限", palette: palette, isMist: model.theme == .mist) {
                                 PrivacySystemSettingsView(model: model)
                             }
+                            HubNavigationTile(icon: "rectangle.inset.filled.and.person.filled", title: "屏幕共享", subtitle: "只给我看一眼", palette: palette, isMist: model.theme == .mist) {
+                                ScreenShareSettingsView(model: model)
+                            }
                         }
                         .buttonStyle(.plain)
 

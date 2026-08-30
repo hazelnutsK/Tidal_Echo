@@ -103,8 +103,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         }
         return context.jpegRepresentation(
             of: image,
-            colorSpace: CGColorSpaceCreateDeviceRGB(),
-            options: [.lossyCompressionQuality: 0.72]
+            colorSpace: CGColorSpaceCreateDeviceRGB()
         )
     }
 

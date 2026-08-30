@@ -51,7 +51,7 @@ struct ScreenShareSettingsView: View {
                 }
             }
 
-            Section("App Group 体检") {
+            Section {
                 if let preparation {
                     if preparation.localWriteSucceeded {
                         probeStatusLabel
@@ -74,6 +74,8 @@ struct ScreenShareSettingsView: View {
                     Text("点“准备一次共享”后，主 App 会写入一个随机暗号。录屏扩展必须读到同一个暗号，才算 App Group 真的可用。")
                         .foregroundStyle(palette.secondaryText)
                 }
+            } header: {
+                Text("App Group 体检")
             } footer: {
                 Text("如果 AltStore 在安装阶段就因 App Groups entitlement 报错，说明这条免费签名路径没有把能力签进去；若能安装，请完成一次共享再看这里。")
             }

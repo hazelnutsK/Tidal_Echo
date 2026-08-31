@@ -33,7 +33,6 @@ targets:
       path: TidalEcho/Info.plist
       properties:
         CFBundleDisplayName: Tidal Echo
-        TidalEchoAppGroupIdentifier: group.com.tidalecho.personal.screenshare
         LSApplicationCategoryType: public.app-category.social-networking
         NSCameraUsageDescription: 用于在聊天中拍摄照片并作为附件发送。
         NSCalendarsWriteOnlyAccessUsageDescription: 用于把你在 Tidal Echo 创建的日程添加到系统日历，不会读取现有日历内容。
@@ -56,11 +55,6 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
-    entitlements:
-      path: TidalEcho/TidalEcho.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.tidalecho.personal.screenshare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal
@@ -79,17 +73,11 @@ targets:
       path: TidalEchoScreenShareUpload/Info.plist
       properties:
         CFBundleDisplayName: Tidal Echo
-        TidalEchoAppGroupIdentifier: group.com.tidalecho.personal.screenshare
         NSExtension:
           NSExtensionPointIdentifier: com.apple.broadcast-services-upload
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).SampleHandler
           NSExtensionAttributes:
             RPBroadcastProcessMode: RPBroadcastProcessModeSampleBuffer
-    entitlements:
-      path: TidalEchoScreenShareUpload/TidalEchoScreenShareUpload.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.tidalecho.personal.screenshare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal.ScreenShareUpload

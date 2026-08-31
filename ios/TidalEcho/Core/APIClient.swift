@@ -97,9 +97,7 @@ struct APIClient {
     }
 
     func prepareScreenShare(sessionID: String? = nil) async throws -> ScreenSharePreparation {
-        ScreenShareAppGroupProbe.clearHandoff()
         let probeMarker = UUID().uuidString
-        let markerWriteSucceeded = ScreenShareAppGroupProbe.write(marker: probeMarker)
         var req = request(url: endpoint("app/screen-share/session"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONEncoder().encode(
@@ -113,18 +111,22 @@ struct APIClient {
             version: 1,
             relayURL: baseURL.absoluteString,
             ticket: response.ticket,
-            expiresAt: response.expiresAt
+            expiresAt: response.expiresAt,
+            probeMarker: probeMarker
         )
         guard let payloadData = try? JSONEncoder().encode(handoff),
               let handoffPayload = String(data: payloadData, encoding: .utf8) else {
             throw APIError.invalidResponse
         }
-        let handoffWriteSucceeded = ScreenShareAppGroupProbe.writeHandoff(handoffPayload)
+        let localHandoffReady = await ScreenShareLocalHandoff.publish(
+            handoffPayload,
+            expiresIn: response.expiresIn
+        )
         return ScreenSharePreparation(
             expiresAt: response.expiresAt,
             expiresIn: response.expiresIn,
             probeID: response.probeID,
-            localWriteSucceeded: markerWriteSucceeded && handoffWriteSucceeded
+            localHandoffReady: localHandoffReady
         )
     }
 
@@ -505,7 +507,7 @@ struct ScreenSharePreparation: Hashable {
     let expiresAt: String
     let expiresIn: Int
     let probeID: String
-    let localWriteSucceeded: Bool
+    let localHandoffReady: Bool
 }
 
 private struct ScreenShareSessionPayload: Encodable {
@@ -550,6 +552,7 @@ private struct ScreenShareHandoffPayload: Encodable {
     let relayURL: String
     let ticket: String
     let expiresAt: String
+    let probeMarker: String
 }
 
 private struct DesireConfigPayload: Encodable {

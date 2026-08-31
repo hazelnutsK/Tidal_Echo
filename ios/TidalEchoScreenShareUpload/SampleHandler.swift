@@ -1,6 +1,7 @@
 import CoreImage
 import CoreMedia
 import Foundation
+import Network
 import ReplayKit
 
 final class SampleHandler: RPBroadcastSampleHandler {
@@ -19,43 +20,23 @@ final class SampleHandler: RPBroadcastSampleHandler {
     private var appGroupProbe = "__missing__"
     private var didStartUpload = false
 
-    override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
-        startedAt = Date()
+    override func broadcastStarted(withSetupInfo _: [String: NSObject]?) {
         didStartUpload = false
         appGroupProbe = "__missing__"
-
-        let groupIdentifier = Bundle.main.object(
-            forInfoDictionaryKey: "TidalEchoAppGroupIdentifier"
-        ) as? String ?? ""
-        var groupHandoff: ScreenShareHandoff?
-        if !groupIdentifier.isEmpty,
-           let defaults = UserDefaults(suiteName: groupIdentifier) {
-            if let marker = defaults.string(forKey: "tidalEcho.screenShare.appGroupProbe"),
-               !marker.isEmpty {
-                appGroupProbe = marker
-            }
-            if let payload = defaults.string(forKey: "tidalEcho.screenShare.handoff"),
-               let data = payload.data(using: .utf8) {
-                groupHandoff = try? JSONDecoder().decode(ScreenShareHandoff.self, from: data)
-                defaults.removeObject(forKey: "tidalEcho.screenShare.handoff")
-                defaults.synchronize()
-            }
-        }
-
-        let relayString = setupInfo?["relayURL"] as? String ?? groupHandoff?.relayURL
-        let handoffTicket = setupInfo?["ticket"] as? String ?? groupHandoff?.ticket
-        guard let relayString,
-              let relayURL = URL(string: relayString),
+        guard let handoff = fetchLocalHandoff(),
+              handoff.version == 1,
+              let relayURL = URL(string: handoff.relayURL),
               relayURL.scheme?.lowercased() == "https",
-              let ticket = handoffTicket,
-              !ticket.isEmpty else {
-            finish("录屏扩展没有读到共享票据。请回到 Tidal Echo 重新点“准备一次共享”；若仍失败，App Group 可能没有签入。", code: 2)
+              !handoff.ticket.isEmpty else {
+            finish("录屏扩展没有从 Tidal Echo 取到本机票据。请回到 App 重新点“准备一次共享”，并在十分钟内开始。", code: 2)
             return
         }
+        startedAt = Date()
         self.uploadURL = ["app", "screen-share", "frame"].reduce(relayURL) {
             $0.appendingPathComponent($1)
         }
-        self.ticket = ticket
+        self.ticket = handoff.ticket
+        self.appGroupProbe = handoff.probeMarker
     }
 
     override func processSampleBuffer(
@@ -96,6 +77,54 @@ final class SampleHandler: RPBroadcastSampleHandler {
         session.invalidateAndCancel()
     }
 
+    private func fetchLocalHandoff() -> ScreenShareHandoff? {
+        let queue = DispatchQueue(label: "TidalEcho.ScreenShareClaim")
+        let connection = NWConnection(
+            host: "127.0.0.1",
+            port: NWEndpoint.Port(rawValue: 49_271)!,
+            using: .tcp
+        )
+        let finished = DispatchSemaphore(value: 0)
+        var received = Data()
+        var didFinish = false
+
+        func finish() {
+            guard !didFinish else { return }
+            didFinish = true
+            finished.signal()
+        }
+
+        func receiveNext() {
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) {
+                data, _, isComplete, error in
+                if let data { received.append(data) }
+                if isComplete || error != nil {
+                    finish()
+                } else {
+                    receiveNext()
+                }
+            }
+        }
+
+        connection.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                receiveNext()
+            case .failed, .cancelled:
+                finish()
+            default:
+                break
+            }
+        }
+        connection.start(queue: queue)
+        guard finished.wait(timeout: .now() + 3) == .success else {
+            connection.cancel()
+            return nil
+        }
+        connection.cancel()
+        return try? JSONDecoder().decode(ScreenShareHandoff.self, from: received)
+    }
+
     private func makeJPEG(from sampleBuffer: CMSampleBuffer) -> Data? {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
         var image = CIImage(cvPixelBuffer: pixelBuffer)
@@ -128,6 +157,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
 }
 
 private struct ScreenShareHandoff: Decodable {
+    let version: Int
     let relayURL: String
     let ticket: String
+    let expiresAt: String
+    let probeMarker: String
 }

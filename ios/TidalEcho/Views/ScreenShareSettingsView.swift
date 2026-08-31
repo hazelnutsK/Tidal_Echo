@@ -51,10 +51,10 @@ struct ScreenShareSettingsView: View {
 
             Section {
                 if let preparation {
-                    if preparation.localWriteSucceeded {
+                    if preparation.localHandoffReady {
                         probeStatusLabel
                     } else {
-                        Label("主 App 无法写入共享容器", systemImage: "xmark.circle.fill")
+                        Label("无法开启本机票据通道", systemImage: "xmark.circle.fill")
                             .foregroundStyle(.red)
                     }
 
@@ -69,13 +69,13 @@ struct ScreenShareSettingsView: View {
                     }
                     .disabled(isCheckingProbe)
                 } else {
-                    Text("点“准备一次共享”后，主 App 会写入一个随机暗号。录屏扩展必须读到同一个暗号，才算 App Group 真的可用。")
+                    Text("点“准备一次共享”后，App 会短暂开启一个仅限本机的一次性票据通道。")
                         .foregroundStyle(palette.secondaryText)
                 }
             } header: {
-                Text("App Group 体检")
+                Text("共享通道体检")
             } footer: {
-                Text("如果 AltStore 在安装阶段就因 App Groups entitlement 报错，说明这条免费签名路径没有把能力签进去；若能安装，请完成一次共享再看这里。")
+                Text("不依赖 App Group 或长期 Relay 密钥；票据被扩展取走后，本机通道会立即关闭。")
             }
 
             Section("怎么用") {
@@ -134,13 +134,13 @@ struct ScreenShareSettingsView: View {
     private var probeStatusLabel: some View {
         switch probeStatus?.status {
         case "passed":
-            Label("验证通过：主 App 和录屏扩展读到了同一暗号", systemImage: "checkmark.seal.fill")
+            Label("验证通过：主 App 与录屏扩展完成了一次性交接", systemImage: "checkmark.seal.fill")
                 .foregroundStyle(.green)
         case "failed":
             Label(probeFailureText, systemImage: "xmark.seal.fill")
                 .foregroundStyle(.red)
         default:
-            Label("主 App 已写入暗号，等待录屏扩展读取", systemImage: "hourglass")
+            Label("本机通道已准备，等待录屏扩展取走票据", systemImage: "hourglass")
                 .foregroundStyle(palette.secondaryText)
         }
     }
@@ -148,13 +148,13 @@ struct ScreenShareSettingsView: View {
     private var probeFailureText: String {
         switch probeStatus?.reason {
         case "extension_could_not_read_group":
-            return "验证失败：录屏扩展读不到共享容器"
+            return "验证失败：录屏扩展没有收到交接探针"
         case "marker_mismatch":
             return "验证失败：主 App 与扩展读到的暗号不同"
         case "main_app_did_not_supply_marker":
             return "验证失败：主 App 没有生成暗号"
         default:
-            return "验证失败：App Group 没有正确共享"
+            return "验证失败：本机票据交接没有完成"
         }
     }
 

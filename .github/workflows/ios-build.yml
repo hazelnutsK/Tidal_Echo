@@ -59,26 +59,17 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             build
 
-      - name: Embed requested entitlements for sideloading
+      - name: Ad-hoc sign nested code for sideloading
         working-directory: ios
         run: |
           set -euo pipefail
           APP_PATH="DerivedData-Device/Build/Products/Release-iphoneos/Tidal Echo.app"
           UPLOAD_APPEX="$APP_PATH/PlugIns/Tidal Echo Screen Share.appex"
 
-          # The build above is certificate-free. Add an ad-hoc signature so a
-          # sideloading signer can discover and re-provision the requested App
-          # Group entitlements instead of receiving an entitlement-free binary.
-          codesign --force --sign - --generate-entitlement-der \
-            --entitlements TidalEchoScreenShareUpload/TidalEchoScreenShareUpload.entitlements \
-            "$UPLOAD_APPEX"
-          codesign --force --sign - --generate-entitlement-der \
-            --entitlements TidalEcho/TidalEcho.entitlements \
-            "$APP_PATH"
+          codesign --force --sign - --generate-entitlement-der "$UPLOAD_APPEX"
+          codesign --force --sign - --generate-entitlement-der "$APP_PATH"
 
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          codesign --display --entitlements :- "$APP_PATH"
-          codesign --display --entitlements :- "$UPLOAD_APPEX"
 
       - name: Package unsigned IPA
         working-directory: ios

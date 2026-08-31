@@ -28,7 +28,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
               let relayURL = URL(string: handoff.relayURL),
               relayURL.scheme?.lowercased() == "https",
               !handoff.ticket.isEmpty else {
-            finish("录屏扩展没有从 Tidal Echo 取到本机票据。请回到 App 重新点“准备一次共享”，并在十分钟内开始。", code: 2)
+            finish("录屏扩展没有从 Tidal Echo 取到本机票据。请回到 App 重新点“准备一次共享”，并在票据有效期内开始。", code: 2)
             return
         }
         startedAt = Date()

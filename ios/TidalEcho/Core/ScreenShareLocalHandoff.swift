@@ -2,6 +2,53 @@ import Foundation
 import Network
 import UIKit
 
+struct ScreenShareLocalHandoffResult: Hashable {
+    let isReady: Bool
+    let diagnostic: String?
+}
+
+private final class ScreenShareListenerReadiness: @unchecked Sendable {
+    let signal = DispatchSemaphore(value: 0)
+
+    private let lock = NSLock()
+    private var didFinish = false
+    private var ready = false
+    private var message: String?
+
+    func markReady() {
+        finish(isReady: true, diagnostic: nil)
+    }
+
+    func markWaiting(_ error: NWError) {
+        lock.lock()
+        if !didFinish { message = "等待本机端口：\(error)" }
+        lock.unlock()
+    }
+
+    func markFailed(_ error: NWError) {
+        finish(isReady: false, diagnostic: "监听本机端口失败：\(error)")
+    }
+
+    func snapshot() -> (isReady: Bool, diagnostic: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (ready, message)
+    }
+
+    private func finish(isReady: Bool, diagnostic: String?) {
+        lock.lock()
+        guard !didFinish else {
+            lock.unlock()
+            return
+        }
+        didFinish = true
+        ready = isReady
+        message = diagnostic
+        lock.unlock()
+        signal.signal()
+    }
+}
+
 @MainActor
 enum ScreenShareLocalHandoff {
     static let port = NWEndpoint.Port(rawValue: 49_271)!
@@ -12,18 +59,18 @@ enum ScreenShareLocalHandoff {
     private static var expirationTask: Task<Void, Never>?
     private static var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
-    static func publish(_ text: String, expiresIn: Int) -> Bool {
+    static func publish(_ text: String, expiresIn: Int) -> ScreenShareLocalHandoffResult {
         stop()
-        guard let data = text.data(using: .utf8) else { return false }
+        guard let data = text.data(using: .utf8) else {
+            return .init(isReady: false, diagnostic: "票据无法编码为 UTF-8")
+        }
 
         do {
             let parameters = NWParameters.tcp
             parameters.allowLocalEndpointReuse = true
             parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: port)
-            let newListener = try NWListener(using: parameters, on: port)
-            let readySignal = DispatchSemaphore(value: 0)
-            var didSignal = false
-            var isReady = false
+            let newListener = try NWListener(using: parameters)
+            let readiness = ScreenShareListenerReadiness()
 
             payload = data
             listener = newListener
@@ -33,25 +80,24 @@ enum ScreenShareLocalHandoff {
             newListener.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    if !didSignal {
-                        isReady = true
-                        didSignal = true
-                        readySignal.signal()
-                    }
-                case .failed:
-                    if !didSignal {
-                        didSignal = true
-                        readySignal.signal()
-                    }
+                    readiness.markReady()
+                case .waiting(let error):
+                    readiness.markWaiting(error)
+                case .failed(let error):
+                    readiness.markFailed(error)
                 default:
                     break
                 }
             }
             newListener.start(queue: queue)
 
-            guard readySignal.wait(timeout: .now() + 2) == .success, isReady else {
+            let didSignal = readiness.signal.wait(timeout: .now() + 5) == .success
+            let status = readiness.snapshot()
+            guard didSignal, status.isReady else {
+                let failure = status.diagnostic ?? "等待本机监听器就绪超时（5 秒）"
+                print("[screen-share] \(failure)")
                 stop()
-                return false
+                return .init(isReady: false, diagnostic: failure)
             }
 
             backgroundTask = UIApplication.shared.beginBackgroundTask(
@@ -65,10 +111,12 @@ enum ScreenShareLocalHandoff {
                 guard !Task.isCancelled else { return }
                 stop()
             }
-            return true
+            return .init(isReady: true, diagnostic: nil)
         } catch {
+            let failure = "创建本机监听器失败：\(error)"
+            print("[screen-share] \(failure)")
             stop()
-            return false
+            return .init(isReady: false, diagnostic: failure)
         }
     }
 

@@ -118,7 +118,7 @@ struct APIClient {
               let handoffPayload = String(data: payloadData, encoding: .utf8) else {
             throw APIError.invalidResponse
         }
-        let localHandoffReady = await ScreenShareLocalHandoff.publish(
+        let localHandoff = await ScreenShareLocalHandoff.publish(
             handoffPayload,
             expiresIn: response.expiresIn
         )
@@ -126,7 +126,8 @@ struct APIClient {
             expiresAt: response.expiresAt,
             expiresIn: response.expiresIn,
             probeID: response.probeID,
-            localHandoffReady: localHandoffReady
+            localHandoffReady: localHandoff.isReady,
+            localHandoffDiagnostic: localHandoff.diagnostic
         )
     }
 
@@ -508,6 +509,7 @@ struct ScreenSharePreparation: Hashable {
     let expiresIn: Int
     let probeID: String
     let localHandoffReady: Bool
+    let localHandoffDiagnostic: String?
 }
 
 private struct ScreenShareSessionPayload: Encodable {

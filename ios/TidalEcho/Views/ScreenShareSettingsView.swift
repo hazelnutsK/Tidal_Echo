@@ -54,8 +54,16 @@ struct ScreenShareSettingsView: View {
                     if preparation.localHandoffReady {
                         probeStatusLabel
                     } else {
-                        Label("无法开启本机票据通道", systemImage: "xmark.circle.fill")
-                            .foregroundStyle(.red)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Label("无法开启本机票据通道", systemImage: "xmark.circle.fill")
+                                .foregroundStyle(.red)
+                            if let diagnostic = preparation.localHandoffDiagnostic {
+                                Text(diagnostic)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(palette.secondaryText)
+                                    .textSelection(.enabled)
+                            }
+                        }
                     }
 
                     Button {

@@ -795,20 +795,13 @@ private struct AppearanceSettingsView: View {
                 range: 0...1,
                 step: 0.05
             )
-            if model.bubbleStyle == .liquid || model.bubbleShapeStyle == .standard {
-                settingSlider(
-                    title: "气泡圆角",
-                    valueText: "\(Int(model.bubbleRadius.rounded()))",
-                    value: $model.bubbleRadius,
-                    range: 4...26,
-                    step: 1
-                )
-            } else {
-                LabeledContent("气泡圆角", value: "15 / 6")
-                Text("连缀气泡使用 15pt 主圆角和 6pt 衔接圆角。")
-                    .font(.caption)
-                    .foregroundStyle(palette.secondaryText)
-            }
+            settingSlider(
+                title: "气泡圆角",
+                valueText: "\(Int(model.bubbleRadius.rounded()))",
+                value: $model.bubbleRadius,
+                range: 4...26,
+                step: 1
+            )
             settingSlider(
                 title: "气泡宽度",
                 valueText: "\(Int(model.bubbleWidthScale * 100))%",
@@ -900,7 +893,7 @@ private struct AppearanceSettingsView: View {
                 model.bubbleWidthScale = 1
                 model.bubbleBorderWidth = 0
                 model.bubbleStyle = .classic
-                model.bubbleShapeStyle = .telegram
+                model.bubbleShapeStyle = .standard
                 model.liquidGlassStrength = 56.8
                 model.liquidGlassDispersion = 0.39
                 model.liquidGlassRimWidth = 0.28

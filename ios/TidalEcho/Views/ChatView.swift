@@ -332,9 +332,7 @@ struct ChatView: View {
                             peerName: model.peerDisplayName,
                             showsTimestamp: row.showsTimestamp,
                             isGroupStart: row.isGroupStart,
-                            isTail: model.chatMode == .short
-                                && model.bubbleStyle == .classic
-                                && model.bubbleShapeStyle != .telegram
+                            isTail: model.chatMode == .short && model.bubbleStyle == .classic
                                 ? false
                                 : row.isTail,
                             isGroupedWithPrevious: !row.isGroupStart,
@@ -426,13 +424,9 @@ struct ChatView: View {
                             bubbleShapeStyle: model.bubbleShapeStyle,
                             liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight,
-                            isTail: !(
-                                model.chatMode == .short
-                                    && model.bubbleStyle == .classic
-                                    && model.bubbleShapeStyle != .telegram
-                            )
+                            isTail: !(model.chatMode == .short && model.bubbleStyle == .classic)
                         )
-                    } else if model.isTyping {
+                    } else if model.isTyping || !model.streamingThinking.isEmpty {
                         TypingRow(
                             palette: palette,
                             showsAIAvatar: model.showsAIAvatar,
@@ -519,6 +513,9 @@ struct ChatView: View {
                     settleAtBottom(proxy)
                 }
                 .onChange(of: model.streamingReply) { _ in
+                    if isAtBottom { scrollToBottom(proxy, animated: false) }
+                }
+                .onChange(of: model.streamingThinking) { _ in
                     if isAtBottom { scrollToBottom(proxy, animated: false) }
                 }
                 .onChange(of: model.isTyping) { _ in

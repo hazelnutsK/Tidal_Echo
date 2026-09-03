@@ -228,13 +228,13 @@ final class AppModel: ObservableObject {
             rawValue: defaults.string(forKey: Keys.bubbleShapeStyle) ?? ""
         ) ?? .standard
         if defaults.bool(forKey: Keys.telegramBubbleMetricsV1) {
-            bubbleShapeStyle = savedBubbleShapeStyle
+            // Undo the one-release Telegram default without permanently
+            // overriding shape choices made after this migration.
+            bubbleShapeStyle = .standard
+            defaults.set(EchoBubbleShapeStyle.standard.rawValue, forKey: Keys.bubbleShapeStyle)
+            defaults.removeObject(forKey: Keys.telegramBubbleMetricsV1)
         } else {
-            // Adopt the Telegram-like grouped silhouette once for existing installs.
-            // Future launches keep whichever shape the user selects in Settings.
-            bubbleShapeStyle = .telegram
-            defaults.set(EchoBubbleShapeStyle.telegram.rawValue, forKey: Keys.bubbleShapeStyle)
-            defaults.set(true, forKey: Keys.telegramBubbleMetricsV1)
+            bubbleShapeStyle = savedBubbleShapeStyle
         }
         liquidGlassStrength = defaults.object(forKey: Keys.liquidGlassStrength) == nil ? 56.8 : defaults.double(forKey: Keys.liquidGlassStrength)
         liquidGlassDispersion = defaults.object(forKey: Keys.liquidGlassDispersion) == nil ? 0.39 : defaults.double(forKey: Keys.liquidGlassDispersion)
@@ -311,7 +311,7 @@ final class AppModel: ObservableObject {
         chatWeight = 340
         showsAIBubble = true
         bubbleStyle = .classic
-        bubbleShapeStyle = .telegram
+        bubbleShapeStyle = .standard
         aiBubbleColorHex = "#EEEBE4"
         humanBubbleColorHex = "#E2C2C5"
         bubbleOpacity = 0.60
@@ -770,14 +770,24 @@ final class AppModel: ObservableObject {
                 mime: recording.mime,
                 sessionID: activeWireSessionID
             )
-            if !messages.contains(where: { $0.id == response.id }) {
-                let transcript = (response.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let echoedRows = try? await client.history(
+                since: max(0, response.id - 1),
+                limit: 2,
+                sessionID: activeSessionID
+            )
+            let echoedVoice = echoedRows?.first(where: { $0.id == response.id })
+            if let echoedVoice {
+                // The persisted row contains the full acoustic/emotion line;
+                // the upload response intentionally carries only the transcript.
+                upsert(echoedVoice)
+            } else if !messages.contains(where: { $0.id == response.id }) {
+                let transcript = Self.voiceTextWithoutMicrophone(response.text ?? "")
                 upsert(ChatMessage(
                     id: response.id,
                     timestamp: ISO8601DateFormatter().string(from: Date()),
                     author: .human,
                     kind: "voice",
-                    text: transcript.isEmpty ? "" : "🎤 \(transcript)",
+                    text: transcript,
                     meta: MessageMeta(
                         attachments: response.attachment.map { [$0] } ?? [],
                         apiSession: activeWireSessionID
@@ -791,6 +801,15 @@ final class AppModel: ObservableObject {
             errorMessage = "语音发送失败：\(error.localizedDescription)"
             return false
         }
+    }
+
+    private static func voiceTextWithoutMicrophone(_ raw: String) -> String {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["🎙️", "🎤", "🎙"] where text.hasPrefix(prefix) {
+            return String(text.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text
     }
 
     func sendCallTranscript(_ text: String, callID: String) async throws -> VoiceResponse {

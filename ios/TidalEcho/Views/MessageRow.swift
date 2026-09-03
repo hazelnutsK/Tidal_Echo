@@ -159,7 +159,7 @@ struct MessageRow: View {
                 bubble
             }
         }
-        .padding(.top, usesCompactGroupSpacing && isGroupedWithPrevious ? -5 : 0)
+        .padding(.top, usesCompactGroupSpacing && isGroupedWithPrevious ? -6 : 0)
     }
 
     private var callLifecycleEvent: CallLifecycleEvent? {
@@ -215,11 +215,7 @@ struct MessageRow: View {
             if message.author == .human { Spacer(minLength: 56) }
 
             if message.author == .ai && showsAIAvatar {
-                if isTail {
-                    AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
-                } else {
-                    Color.clear.frame(width: 27, height: 27)
-                }
+                AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
             }
 
             VStack(alignment: message.author == .human ? .trailing : .leading, spacing: 4) {
@@ -246,9 +242,9 @@ struct MessageRow: View {
                         )
                     }
 
-                    if !message.text.isEmpty {
+                    if !displayedMessageText.isEmpty {
                         MarkdownMessageText(
-                            source: message.text,
+                            source: displayedMessageText,
                             palette: palette,
                             textColor: resolvedBubbleTextColor,
                             chatFont: chatFont,
@@ -343,11 +339,7 @@ struct MessageRow: View {
             }
 
             if message.author == .human && showsHumanAvatar {
-                if isTail {
-                    AvatarBadge(image: humanAvatarImage, fallback: "person.fill", palette: palette)
-                } else {
-                    Color.clear.frame(width: 27, height: 27)
-                }
+                AvatarBadge(image: humanAvatarImage, fallback: "person.fill", palette: palette)
             }
 
             if message.author == .ai && showsAIBubble {
@@ -419,8 +411,18 @@ struct MessageRow: View {
         bubbleShapeStyle == .telegram && usesCompactGroupSpacing
     }
 
-    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 9 : 13 }
-    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 7 : 9 }
+    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
+    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
+
+    private var displayedMessageText: String {
+        guard message.kind == "voice" else { return message.text }
+        let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        for prefix in ["🎙️", "🎤", "🎙"] where text.hasPrefix(prefix) {
+            return String(text.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return text
+    }
 
     private var displayedReaction: String? {
         message.meta.reactions[message.author == .human ? "ai" : "human"]
@@ -878,6 +880,7 @@ private struct EchoMessageBubbleShape: Shape {
         if style == .telegram {
             return TelegramBubbleShape(
                 author: author,
+                radius: radius,
                 isGroupStart: isGroupStart,
                 isTail: isTail
             ).path(in: rect)
@@ -892,22 +895,22 @@ private struct EchoMessageBubbleShape: Shape {
 
 private struct TelegramBubbleShape: Shape {
     let author: MessageAuthor
+    let radius: CGFloat
     let isGroupStart: Bool
     let isTail: Bool
 
     func path(in rect: CGRect) -> Path {
         // Keep the rounded body on the same alignment line for every row.
         // The tail grows outward instead of reserving space inside the bubble.
-        // Telegram Web uses a 15px body radius, a 6px joined radius and a
-        // separate 9x20 appendix on the last bubble. This single SwiftUI path
-        // keeps the same proportions while allowing frosted backgrounds to clip
-        // and sample as one continuous surface.
-        let tailWidth: CGFloat = 9
-        let tailShoulder: CGFloat = min(18, max(9, rect.height - 6))
+        // Both sides share one tail: short, level with the baseline, resolving
+        // into a clean cusp. The outgoing side is an exact mirror of it, so the
+        // two columns read as the same bubble facing opposite directions.
+        let tailWidth: CGFloat = 7
+        let tailShoulder: CGFloat = 9
         let body = rect
         let limit = min(body.width, body.height) / 2
-        let full = min(CGFloat(15), limit)
-        let joined = min(CGFloat(6), limit)
+        let full = min(max(0, radius), limit)
+        let joined = min(max(CGFloat(7), full * 0.42), min(CGFloat(10), limit))
         let topLeft = author == .ai ? (isGroupStart ? full : joined) : full
         let topRight = author == .human ? (isGroupStart ? full : joined) : full
         let bottomLeft = author == .ai ? joined : full
@@ -930,13 +933,13 @@ private struct TelegramBubbleShape: Shape {
             path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - tailShoulder))
             path.addCurve(
                 to: CGPoint(x: rect.maxX + tailWidth, y: rect.maxY - 0.5),
-                control1: CGPoint(x: body.maxX, y: body.maxY - tailShoulder * 0.48),
-                control2: CGPoint(x: rect.maxX + 5.5, y: rect.maxY - 1)
+                control1: CGPoint(x: body.maxX, y: body.maxY - 5.5),
+                control2: CGPoint(x: rect.maxX + 4, y: rect.maxY - 0.75)
             )
             path.addCurve(
-                to: CGPoint(x: body.maxX - 9, y: body.maxY),
-                control1: CGPoint(x: rect.maxX + 2, y: rect.maxY - 2.5),
-                control2: CGPoint(x: body.maxX - 4.5, y: body.maxY)
+                to: CGPoint(x: body.maxX - tailShoulder, y: body.maxY),
+                control1: CGPoint(x: rect.maxX + 1.5, y: rect.maxY - 2.25),
+                control2: CGPoint(x: body.maxX - 5, y: body.maxY)
             )
         } else {
             path.addLine(to: CGPoint(x: body.maxX, y: body.maxY - bottomRight))
@@ -951,16 +954,16 @@ private struct TelegramBubbleShape: Shape {
             // Keep the incoming tail short and level with the baseline. The
             // first control point preserves the bottom edge's horizontal
             // tangent; the shallow inset then resolves into a clean cusp.
-            path.addLine(to: CGPoint(x: body.minX + 9, y: body.maxY))
+            path.addLine(to: CGPoint(x: body.minX + tailShoulder, y: body.maxY))
             path.addCurve(
                 to: CGPoint(x: rect.minX - tailWidth, y: rect.maxY - 0.5),
-                control1: CGPoint(x: body.minX + 4.5, y: body.maxY),
-                control2: CGPoint(x: rect.minX - 2, y: rect.maxY - 2.5)
+                control1: CGPoint(x: body.minX + 5, y: body.maxY),
+                control2: CGPoint(x: rect.minX - 1.5, y: rect.maxY - 2.25)
             )
             path.addCurve(
                 to: CGPoint(x: body.minX, y: body.maxY - tailShoulder),
-                control1: CGPoint(x: rect.minX - 5.5, y: rect.maxY - 1),
-                control2: CGPoint(x: body.minX, y: body.maxY - tailShoulder * 0.48)
+                control1: CGPoint(x: rect.minX - 4, y: rect.maxY - 0.75),
+                control2: CGPoint(x: body.minX, y: body.maxY - 5.5)
             )
         } else {
             path.addLine(to: CGPoint(x: body.minX + bottomLeft, y: body.maxY))
@@ -1580,8 +1583,8 @@ struct StreamingReplyRow: View {
         bubbleShapeStyle == .telegram && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
-    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 9 : 13 }
-    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 7 : 9 }
+    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
+    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
 }
 
 /// Rebuilt to match Operit's chat bubbles (`ui/theme/LiquidGlass.kt`), whose

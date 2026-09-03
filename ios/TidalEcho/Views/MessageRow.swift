@@ -888,8 +888,7 @@ private struct EchoMessageBubbleShape: Shape {
         case .upperTail:
             return UpperCornerBubbleShape(
                 author: author,
-                radius: radius,
-                pinsTopCorner: isGroupStart
+                radius: radius
             ).path(in: rect)
         case .standard:
             return PWAChatBubbleShape(
@@ -903,18 +902,17 @@ private struct EchoMessageBubbleShape: Shape {
 
 /// A flush, nearly-square top corner inspired by the supplied reference.
 /// Incoming bubbles pin the upper-left corner and outgoing bubbles mirror it
-/// at upper-right. Only the first bubble in a sender group gets the pin.
+/// at upper-right. Every bubble keeps the softened pin for a consistent rhythm.
 private struct UpperCornerBubbleShape: Shape {
     let author: MessageAuthor
     let radius: CGFloat
-    let pinsTopCorner: Bool
 
     func path(in rect: CGRect) -> Path {
         let limit = min(rect.width, rect.height) / 2
         let full = min(max(0, radius), limit)
-        let pinned = min(CGFloat(3), full)
-        let topLeft = pinsTopCorner && author == .ai ? pinned : full
-        let topRight = pinsTopCorner && author == .human ? pinned : full
+        let pinned = min(CGFloat(6), full)
+        let topLeft = author == .ai ? pinned : full
+        let topRight = author == .human ? pinned : full
 
         var path = Path()
         path.move(to: CGPoint(x: rect.minX + topLeft, y: rect.minY))

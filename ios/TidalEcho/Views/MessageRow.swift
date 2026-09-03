@@ -877,19 +877,96 @@ private struct EchoMessageBubbleShape: Shape {
     let isTail: Bool
 
     func path(in rect: CGRect) -> Path {
-        if style == .telegram {
+        switch style {
+        case .telegram:
             return TelegramBubbleShape(
                 author: author,
                 radius: radius,
                 isGroupStart: isGroupStart,
                 isTail: isTail
             ).path(in: rect)
+        case .upperTail:
+            return UpperTailBubbleShape(
+                author: author,
+                radius: radius,
+                showsTail: isGroupStart
+            ).path(in: rect)
+        case .standard:
+            return PWAChatBubbleShape(
+                radius: radius,
+                bottomLeftRadius: author == .ai && isTail ? 5 : radius,
+                bottomRightRadius: author == .human && isTail ? 5 : radius
+            ).path(in: rect)
         }
-        return PWAChatBubbleShape(
-            radius: radius,
-            bottomLeftRadius: author == .ai && isTail ? 5 : radius,
-            bottomRightRadius: author == .human && isTail ? 5 : radius
-        ).path(in: rect)
+    }
+}
+
+/// A compact top-mounted speech tail inspired by the supplied reference:
+/// incoming bubbles point toward the avatar at upper-left, outgoing bubbles
+/// mirror it at upper-right. Only the first bubble in a sender group gets one.
+private struct UpperTailBubbleShape: Shape {
+    let author: MessageAuthor
+    let radius: CGFloat
+    let showsTail: Bool
+
+    func path(in rect: CGRect) -> Path {
+        let limit = min(rect.width, rect.height) / 2
+        let corner = min(max(0, radius), limit)
+        let tailWidth: CGFloat = 8
+        let tailDepth = min(CGFloat(10), max(CGFloat(6), rect.height * 0.34))
+        let hasIncomingTail = showsTail && author == .ai
+        let hasOutgoingTail = showsTail && author == .human
+
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + corner, y: rect.minY))
+
+        if hasOutgoingTail {
+            path.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX + tailWidth, y: rect.minY + 2))
+            path.addQuadCurve(
+                to: CGPoint(x: rect.maxX, y: rect.minY + tailDepth),
+                control: CGPoint(x: rect.maxX + 2, y: rect.minY + tailDepth * 0.68)
+            )
+        } else {
+            path.addLine(to: CGPoint(x: rect.maxX - corner, y: rect.minY))
+            path.addArc(
+                center: CGPoint(x: rect.maxX - corner, y: rect.minY + corner),
+                radius: corner,
+                startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
+            )
+        }
+
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - corner))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - corner, y: rect.maxY - corner),
+            radius: corner,
+            startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.minX + corner, y: rect.maxY))
+        path.addArc(
+            center: CGPoint(x: rect.minX + corner, y: rect.maxY - corner),
+            radius: corner,
+            startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false
+        )
+
+        if hasIncomingTail {
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + tailDepth))
+            path.addQuadCurve(
+                to: CGPoint(x: rect.minX - tailWidth, y: rect.minY + 2),
+                control: CGPoint(x: rect.minX - 2, y: rect.minY + tailDepth * 0.68)
+            )
+            path.addLine(to: CGPoint(x: rect.minX + 2, y: rect.minY))
+        } else {
+            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + corner))
+            path.addArc(
+                center: CGPoint(x: rect.minX + corner, y: rect.minY + corner),
+                radius: corner,
+                startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
+            )
+        }
+
+        path.closeSubpath()
+        return path
     }
 }
 

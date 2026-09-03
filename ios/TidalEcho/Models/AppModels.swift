@@ -29,12 +29,14 @@ enum EchoBubbleStyle: String, Codable, CaseIterable, Identifiable {
 enum EchoBubbleShapeStyle: String, Codable, CaseIterable, Identifiable {
     case standard
     case telegram
+    case upperTail
 
     var id: String { rawValue }
     var title: String {
         switch self {
         case .standard: return "默认"
         case .telegram: return "仿 TG"
+        case .upperTail: return "上尖角"
         }
     }
 }

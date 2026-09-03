@@ -155,10 +155,11 @@ final class VoiceRecorder: NSObject, ObservableObject, AVAudioRecorderDelegate {
 
     func finish() {
         guard isRecording else { return }
+        let finalDuration = max(duration, recorder?.currentTime ?? 0)
         recorder?.stop()
         meterTask?.cancel()
         meterTask = nil
-        duration = recorder?.currentTime ?? duration
+        duration = finalDuration
         recorder = nil
         isRecording = false
         hasRecording = fileURL != nil && duration >= 0.8

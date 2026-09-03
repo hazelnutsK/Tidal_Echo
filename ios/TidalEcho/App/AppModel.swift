@@ -155,6 +155,7 @@ final class AppModel: ObservableObject {
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
         static let bubbleShapeStyle = "tidalEcho.bubbleShapeStyle"
+        static let telegramBubbleMetricsV1 = "tidalEcho.telegramBubbleMetricsV1"
         static let liquidGlassStrength = "tidalEcho.liquidGlassStrength"
         static let liquidGlassDispersion = "tidalEcho.liquidGlassDispersion"
         static let liquidGlassRimWidth = "tidalEcho.liquidGlassRimWidth"
@@ -223,9 +224,18 @@ final class AppModel: ObservableObject {
         bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)
         bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
         bubbleStyle = EchoBubbleStyle(rawValue: defaults.string(forKey: Keys.bubbleStyle) ?? "") ?? .classic
-        bubbleShapeStyle = EchoBubbleShapeStyle(
+        let savedBubbleShapeStyle = EchoBubbleShapeStyle(
             rawValue: defaults.string(forKey: Keys.bubbleShapeStyle) ?? ""
         ) ?? .standard
+        if defaults.bool(forKey: Keys.telegramBubbleMetricsV1) {
+            bubbleShapeStyle = savedBubbleShapeStyle
+        } else {
+            // Adopt the Telegram-like grouped silhouette once for existing installs.
+            // Future launches keep whichever shape the user selects in Settings.
+            bubbleShapeStyle = .telegram
+            defaults.set(EchoBubbleShapeStyle.telegram.rawValue, forKey: Keys.bubbleShapeStyle)
+            defaults.set(true, forKey: Keys.telegramBubbleMetricsV1)
+        }
         liquidGlassStrength = defaults.object(forKey: Keys.liquidGlassStrength) == nil ? 56.8 : defaults.double(forKey: Keys.liquidGlassStrength)
         liquidGlassDispersion = defaults.object(forKey: Keys.liquidGlassDispersion) == nil ? 0.39 : defaults.double(forKey: Keys.liquidGlassDispersion)
         liquidGlassRimWidth = defaults.object(forKey: Keys.liquidGlassRimWidth) == nil ? 0.28 : defaults.double(forKey: Keys.liquidGlassRimWidth)
@@ -301,7 +311,7 @@ final class AppModel: ObservableObject {
         chatWeight = 340
         showsAIBubble = true
         bubbleStyle = .classic
-        bubbleShapeStyle = .standard
+        bubbleShapeStyle = .telegram
         aiBubbleColorHex = "#EEEBE4"
         humanBubbleColorHex = "#E2C2C5"
         bubbleOpacity = 0.60

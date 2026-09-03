@@ -332,7 +332,9 @@ struct ChatView: View {
                             peerName: model.peerDisplayName,
                             showsTimestamp: row.showsTimestamp,
                             isGroupStart: row.isGroupStart,
-                            isTail: model.chatMode == .short && model.bubbleStyle == .classic
+                            isTail: model.chatMode == .short
+                                && model.bubbleStyle == .classic
+                                && model.bubbleShapeStyle != .telegram
                                 ? false
                                 : row.isTail,
                             isGroupedWithPrevious: !row.isGroupStart,
@@ -424,7 +426,11 @@ struct ChatView: View {
                             bubbleShapeStyle: model.bubbleShapeStyle,
                             liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight,
-                            isTail: !(model.chatMode == .short && model.bubbleStyle == .classic)
+                            isTail: !(
+                                model.chatMode == .short
+                                    && model.bubbleStyle == .classic
+                                    && model.bubbleShapeStyle != .telegram
+                            )
                         )
                     } else if model.isTyping {
                         TypingRow(

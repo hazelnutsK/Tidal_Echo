@@ -886,10 +886,10 @@ private struct EchoMessageBubbleShape: Shape {
                 isTail: isTail
             ).path(in: rect)
         case .upperTail:
-            return UpperTailBubbleShape(
+            return UpperCornerBubbleShape(
                 author: author,
                 radius: radius,
-                showsTail: isGroupStart
+                pinsTopCorner: isGroupStart
             ).path(in: rect)
         case .standard:
             return PWAChatBubbleShape(
@@ -901,70 +901,47 @@ private struct EchoMessageBubbleShape: Shape {
     }
 }
 
-/// A compact top-mounted speech tail inspired by the supplied reference:
-/// incoming bubbles point toward the avatar at upper-left, outgoing bubbles
-/// mirror it at upper-right. Only the first bubble in a sender group gets one.
-private struct UpperTailBubbleShape: Shape {
+/// A flush, nearly-square top corner inspired by the supplied reference.
+/// Incoming bubbles pin the upper-left corner and outgoing bubbles mirror it
+/// at upper-right. Only the first bubble in a sender group gets the pin.
+private struct UpperCornerBubbleShape: Shape {
     let author: MessageAuthor
     let radius: CGFloat
-    let showsTail: Bool
+    let pinsTopCorner: Bool
 
     func path(in rect: CGRect) -> Path {
         let limit = min(rect.width, rect.height) / 2
-        let corner = min(max(0, radius), limit)
-        let tailWidth: CGFloat = 8
-        let tailDepth = min(CGFloat(10), max(CGFloat(6), rect.height * 0.34))
-        let hasIncomingTail = showsTail && author == .ai
-        let hasOutgoingTail = showsTail && author == .human
+        let full = min(max(0, radius), limit)
+        let pinned = min(CGFloat(3), full)
+        let topLeft = pinsTopCorner && author == .ai ? pinned : full
+        let topRight = pinsTopCorner && author == .human ? pinned : full
 
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX + corner, y: rect.minY))
-
-        if hasOutgoingTail {
-            path.addLine(to: CGPoint(x: rect.maxX - 2, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX + tailWidth, y: rect.minY + 2))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.maxX, y: rect.minY + tailDepth),
-                control: CGPoint(x: rect.maxX + 2, y: rect.minY + tailDepth * 0.68)
-            )
-        } else {
-            path.addLine(to: CGPoint(x: rect.maxX - corner, y: rect.minY))
-            path.addArc(
-                center: CGPoint(x: rect.maxX - corner, y: rect.minY + corner),
-                radius: corner,
-                startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
-            )
-        }
-
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - corner))
+        path.move(to: CGPoint(x: rect.minX + topLeft, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX - topRight, y: rect.minY))
         path.addArc(
-            center: CGPoint(x: rect.maxX - corner, y: rect.maxY - corner),
-            radius: corner,
+            center: CGPoint(x: rect.maxX - topRight, y: rect.minY + topRight),
+            radius: topRight,
+            startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - full))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - full, y: rect.maxY - full),
+            radius: full,
             startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false
         )
-        path.addLine(to: CGPoint(x: rect.minX + corner, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + full, y: rect.maxY))
         path.addArc(
-            center: CGPoint(x: rect.minX + corner, y: rect.maxY - corner),
-            radius: corner,
+            center: CGPoint(x: rect.minX + full, y: rect.maxY - full),
+            radius: full,
             startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false
         )
-
-        if hasIncomingTail {
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + tailDepth))
-            path.addQuadCurve(
-                to: CGPoint(x: rect.minX - tailWidth, y: rect.minY + 2),
-                control: CGPoint(x: rect.minX - 2, y: rect.minY + tailDepth * 0.68)
-            )
-            path.addLine(to: CGPoint(x: rect.minX + 2, y: rect.minY))
-        } else {
-            path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + corner))
-            path.addArc(
-                center: CGPoint(x: rect.minX + corner, y: rect.minY + corner),
-                radius: corner,
-                startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
-            )
-        }
-
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + topLeft))
+        path.addArc(
+            center: CGPoint(x: rect.minX + topLeft, y: rect.minY + topLeft),
+            radius: topLeft,
+            startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false
+        )
         path.closeSubpath()
         return path
     }

@@ -235,11 +235,9 @@ private final class HandMasks {
             CTRunGetGlyphs(run, CFRangeMake(0, count), &glyphs)
             CTRunGetPositions(run, CFRangeMake(0, count), &positions)
 
-            let attrs = CTRunGetAttributes(run) as NSDictionary
-            let runFont = (attrs[kCTFontAttributeName as String] as? CTFont) ?? font
-
+            // 这行只有一种字体，run 上的就是它，不必再从属性里取
             for i in 0..<count {
-                guard let glyphPath = CTFontCreatePathForGlyph(runFont, glyphs[i], nil) else { continue }
+                guard let glyphPath = CTFontCreatePathForGlyph(font, glyphs[i], nil) else { continue }
                 // 字形的 y 向上，屏幕的 y 向下：先翻转，再落到基线上
                 let transform = CGAffineTransform(scaleX: 1, y: -1)
                     .concatenating(CGAffineTransform(

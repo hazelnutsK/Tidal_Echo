@@ -159,7 +159,7 @@ struct MessageRow: View {
                 bubble
             }
         }
-        .padding(.top, usesCompactGroupSpacing && isGroupedWithPrevious ? -6 : 0)
+        .padding(.top, isGroupedWithPrevious ? compactGroupTopPadding : 0)
     }
 
     private var callLifecycleEvent: CallLifecycleEvent? {
@@ -211,7 +211,7 @@ struct MessageRow: View {
     }
 
     private var bubble: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: bubbleRowAlignment, spacing: 8) {
             if message.author == .human { Spacer(minLength: 56) }
 
             if message.author == .ai && showsAIAvatar {
@@ -326,7 +326,9 @@ struct MessageRow: View {
                                 Label("未送达", systemImage: "exclamationmark.circle.fill")
                                     .foregroundStyle(Color.red)
                             case .sent:
-                                Text(Self.formatTime(message.timestamp))
+                                if showsTimestamp {
+                                    Text(Self.formatTime(message.timestamp))
+                                }
                             }
                         } else if showsTimestamp {
                             Text(Self.formatTime(message.timestamp))
@@ -402,13 +404,27 @@ struct MessageRow: View {
         return 280 * min(scale, 1.2)
     }
 
-    private var usesCompactGroupSpacing: Bool {
-        bubbleShapeStyle == .telegram
+    private var usesUpperCornerShape: Bool {
+        bubbleShapeStyle == .upperTail
             && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
+    private var bubbleRowAlignment: VerticalAlignment {
+        usesUpperCornerShape ? .top : .bottom
+    }
+
+    private var compactGroupTopPadding: CGFloat {
+        guard bubbleStyle == .classic || bubbleStyle == .frosted else { return 0 }
+        switch bubbleShapeStyle {
+        case .telegram: return -6 // 9pt stack spacing becomes 3pt.
+        case .upperTail: return -4 // 9pt stack spacing becomes 5pt.
+        case .standard: return 0
+        }
+    }
+
     private var usesTelegramShape: Bool {
-        bubbleShapeStyle == .telegram && usesCompactGroupSpacing
+        bubbleShapeStyle == .telegram
+            && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
     private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
@@ -446,7 +462,12 @@ struct MessageRow: View {
     }
 
     private var shouldShowMetaLine: Bool {
-        message.author == .human || showsTimestamp || message.meta.edited
+        if showsTimestamp || message.meta.edited { return true }
+        guard message.author == .human else { return false }
+        switch message.delivery {
+        case .sending, .failed: return true
+        case .sent: return false
+        }
     }
 
     @ViewBuilder
@@ -1556,7 +1577,7 @@ struct StreamingReplyRow: View {
     let isTail: Bool
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        HStack(alignment: usesUpperCornerShape ? .top : .bottom, spacing: 8) {
             if showsAIAvatar {
                 AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
             }
@@ -1633,6 +1654,10 @@ struct StreamingReplyRow: View {
 
     private var usesTelegramShape: Bool {
         bubbleShapeStyle == .telegram && (bubbleStyle == .classic || bubbleStyle == .frosted)
+    }
+
+    private var usesUpperCornerShape: Bool {
+        bubbleShapeStyle == .upperTail && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
     private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }

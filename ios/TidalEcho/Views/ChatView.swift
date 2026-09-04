@@ -657,7 +657,6 @@ struct ChatView: View {
 
     private static func showsTimestamp(at index: Int, in messages: [ChatMessage]) -> Bool {
         let message = messages[index]
-        if message.author == .human { return true }
         if message.kind == "thinking" || message.kind == "act" { return false }
         var cursor = index + 1
         while cursor < messages.count {
@@ -666,10 +665,13 @@ struct ChatView: View {
                 cursor += 1
                 continue
             }
-            // Short-chat parts created from one reply share the exact source
-            // timestamp. Hide only those intermediate timestamps; a later
-            // autonomous send has its own timestamp even without a human reply.
-            return next.author != .ai || next.timestamp != message.timestamp
+            guard next.author == message.author,
+                  let date = messageDate(message.timestamp),
+                  let nextDate = messageDate(next.timestamp) else { return true }
+            let interval = nextDate.timeIntervalSince(date)
+            // Within a two-minute burst, only the last message carries the
+            // timestamp. A longer pause starts a new visible time boundary.
+            return interval < 0 || interval > 2 * 60
         }
         return true
     }

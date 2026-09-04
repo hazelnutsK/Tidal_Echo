@@ -37,6 +37,11 @@ final class AppModel: ObservableObject {
     @Published var incomingBookAnnotation: BookAnnotationEvent?
     /// 这条共享卡上的系统广播按钮得她自己点（程序化那条路没走通）。
     @Published var peekManualPickerID: Int?
+    /// 上一趟历史没读完（多半是后台被系统掐断）。回前台要补一次，
+    /// 否则聊天就一直空着——她只能划掉 App 重开。
+    private var historyNeedsReload = false
+    /// 正在连（启动那趟或登录那趟）。回前台的自愈不该插队跑第二个 bootstrap。
+    private var connectInFlight = false
     @Published var theme: EchoTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: Keys.theme) }
     }
@@ -339,6 +344,14 @@ final class AppModel: ObservableObject {
         try? saveAppearanceImage(data: data, kind: kind)
     }
 
+    /// URLSession 在 Task 被取消时抛的是 URLError.cancelled，不是 CancellationError。
+    /// 两个都得认——否则 iOS 在后台掐断的请求会被当成真故障弹到她脸上。
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError { return urlError.code == .cancelled }
+        return false
+    }
+
     func bootstrap() async {
         guard !didBootstrap else { return }
         didBootstrap = true
@@ -381,6 +394,37 @@ final class AppModel: ObservableObject {
         isStreamConnected = false
         KeychainStore.delete(account: Keys.relaySecret)
         phase = .signedOut
+    }
+
+    /// 回到前台。iOS 冻过一次进程之后这边可能是半死的：后台那趟历史被掐断
+    /// （聊天空着）、SSE 连着但不吐、轮询任务已经退出。统一在这里自愈一次，
+    /// 别再让她划掉 App 重开。
+    func resumeFromForeground() async {
+        guard !connectInFlight else { return }
+        switch phase {
+        case .connecting, .signedOut:
+            return                      // 正在连 / 她自己登出了,都不该插手
+        case .launching:
+            didBootstrap = false        // 上一趟没连成(多半被后台掐了),重来
+            await bootstrap()
+            return
+        case .connected:
+            break
+        }
+        guard let client else {
+            // .connected 却没有 client 是个坏状态,重连一次
+            didBootstrap = false
+            await bootstrap()
+            return
+        }
+        if historyNeedsReload || messages.isEmpty {
+            await loadHistory(showLoadingState: messages.isEmpty)
+        }
+        if !isStreamConnected { startStream(using: client) }
+        // 这两个循环任务在后台可能已经自己退了(sleep 被打断就 return),重开是幂等的
+        startIncrementalSync(using: client)
+        startHeartbeat()
+        await catchUp(using: client)
     }
 
     func refresh() async {
@@ -463,6 +507,7 @@ final class AppModel: ObservableObject {
             updateTypingState(false)
             await loadHistory(showLoadingState: false)
         } catch {
+            guard !Self.isCancellation(error) else { return }
             errorMessage = "切换对话失败：\(error.localizedDescription)"
         }
     }
@@ -534,9 +579,18 @@ final class AppModel: ObservableObject {
         activeSessionID == Self.legacySessionID ? nil : activeSessionID
     }
 
+    /// 后台 fetch 只需要一个能拉新消息的 client。**绝不在后台跑整套 bootstrap**——
+    /// 那会连着翻几百页历史，多半在系统给的时间窗里被掐断，留下一个空聊天、
+    /// 一句 cancelled，和一个回前台再也不会重连的 .connected 状态。
+    /// （她 2026-09-04 报的：切后台回来聊天全没了，非杀进程不可。）
+    private func backgroundOnlyClient() -> APIClient? {
+        guard let secret = KeychainStore.read(account: Keys.relaySecret), !secret.isEmpty,
+              let url = try? Self.normalizedRelayURL(savedServerAddress) else { return nil }
+        return APIClient(baseURL: url, secret: secret)
+    }
+
     func backgroundRefreshForNotifications() async -> Bool {
-        if client == nil { await bootstrap() }
-        guard let client else { return false }
+        guard let client = client ?? backgroundOnlyClient() else { return false }
         let lastNotified = UserDefaults.standard.integer(forKey: Keys.lastNativeNotificationID)
         let visibleHistoryCursor = messages.map(\.id).filter { $0 > 0 }.max() ?? 0
         let historyCursor = max(visibleHistoryCursor, lastNotified)
@@ -1188,6 +1242,8 @@ final class AppModel: ObservableObject {
     private func connect(url: URL, secret: String, persist: Bool) async {
         // Automatic keychain authentication stays behind the launch animation.
         // A manual login still keeps the form visible with its progress state.
+        connectInFlight = true
+        defer { connectInFlight = false }
         if phase != .launching {
             phase = .connecting
         }
@@ -1219,6 +1275,13 @@ final class AppModel: ObservableObject {
             startHeartbeat()
         } catch {
             client = nil
+            if Self.isCancellation(error) {
+                // 后台那趟连接被系统掐断:别登出、别报错——把重来的门留着，
+                // 回到前台 resumeFromForeground() 会再连一次。
+                didBootstrap = false
+                if phase != .connected { phase = .launching }
+                return
+            }
             phase = .signedOut
             errorMessage = error.localizedDescription
         }
@@ -1256,10 +1319,14 @@ final class AppModel: ObservableObject {
             }
             messages = merged.values.sorted(by: Self.messageComesBefore)
             canLoadOlderHistory = historyArchive.count > visibleHistory.count
+            historyNeedsReload = false
             if UIApplication.shared.applicationState == .active {
                 markNativeNotificationCursor(historyMaxID)
             }
         } catch {
+            // 半路断掉的这一趟没有写进 messages,聊天现在是空的——记下来回前台补。
+            historyNeedsReload = true
+            guard !Self.isCancellation(error) else { return }
             errorMessage = "聊天记录加载失败：\(error.localizedDescription)"
         }
     }

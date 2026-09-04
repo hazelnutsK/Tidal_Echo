@@ -59,8 +59,13 @@ struct RootView: View {
             case .background:
                 appLock.lockForBackground()
             case .active:
-                guard launchPresentationComplete, model.phase == .connected else { return }
-                Task { await appLock.unlockIfNeeded() }
+                guard launchPresentationComplete else { return }
+                if model.phase == .connected {
+                    Task { await appLock.unlockIfNeeded() }
+                }
+                // iOS 冻过一次之后这边常是半死的（历史被掐断、轮询任务已退出），
+                // 回到前台统一自愈一次，别让她只能划掉 App 重开
+                Task { await model.resumeFromForeground() }
             case .inactive:
                 break
             @unknown default:

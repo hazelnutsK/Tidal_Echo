@@ -1,16 +1,20 @@
+import CoreText
 import SwiftUI
 import UIKit
 
-/// 开屏：星光 → 十字星芒 → 放射星图 → 星盘 → 月相成环 → 扭转为莫比乌斯 → pulse → Aquila
+/// 开屏：一支笔把 Aquila 写出来，i 的点最后落成一颗爱心。
 ///
-/// 整幅星图是**时间的纯函数**（TimelineView + Canvas），没有 repeatForever、没有 delay 叠加，
-/// 因此任何一帧都可复现，也不存在元素"等待出发"的静止帧。
+/// 写法是让粗笔沿笔顺走，再用 Sacramento 的字形把它裁出来——所以写出来的每一处
+/// 弧度都是这支字体本身的，不是描边框。三笔：A 的主体、那道横杠、quila 一笔连到底。
+///
+/// 整幅画面是**时间的纯函数**（TimelineView + Canvas），没有 repeatForever、没有
+/// delay 叠加，因此任何一帧都可复现，也不存在元素"等待出发"的静止帧。
 struct LaunchView: View {
     let theme: EchoTheme
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @State private var start = Date()
-    @State private var titleVisible = false
     @State private var subtitleVisible = false
 
     private var palette: EchoPalette { theme.palette }
@@ -22,7 +26,7 @@ struct LaunchView: View {
 
                 if reduceMotion {
                     Canvas { context, size in
-                        renderer(size: size).draw(into: context, t: Sky.staticFrame)
+                        renderer(size: size).draw(into: context, t: Hand.staticFrame)
                     }
                 } else {
                     TimelineView(.animation) { timeline in
@@ -33,22 +37,14 @@ struct LaunchView: View {
                     }
                 }
 
-                VStack(spacing: 18) {
-                    Text("Aquila")
-                        .font(Self.titleFont)
-                        .foregroundStyle(palette.text)
-                        .opacity(titleVisible ? 1 : 0)
-                        .offset(y: titleVisible ? 0 : 9)
-
-                    LaunchSubtitle(
-                        tracking: subtitleVisible ? 3.4 : 6.2,
-                        color: palette.secondaryText.opacity(0.82)
-                    )
-                    .opacity(subtitleVisible ? 1 : 0)
-                }
+                LaunchSubtitle(
+                    tracking: subtitleVisible ? 3.4 : 6.2,
+                    color: palette.secondaryText.opacity(0.82)
+                )
+                .opacity(subtitleVisible ? 1 : 0)
                 .position(
                     x: geo.size.width / 2,
-                    y: Double(Sky.center(in: geo.size).y) + Sky.radius(in: geo.size) + 96
+                    y: Hand.geometry(in: geo.size).subtitleY
                 )
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -59,192 +55,414 @@ struct LaunchView: View {
         .onAppear(perform: play)
     }
 
-    private func renderer(size: CGSize) -> StarChart {
-        StarChart(theme: theme, size: size, reduced: reduceMotion)
+    private func renderer(size: CGSize) -> Handwriting {
+        Handwriting(theme: theme, size: size, scale: displayScale, reduced: reduceMotion)
     }
 
     private func play() {
-        start = Date()
-
         guard !reduceMotion else {
-            titleVisible = true
             subtitleVisible = true
             return
         }
-        withAnimation(.easeOut(duration: 0.36).delay(Sky.title.lowerBound)) {
-            titleVisible = true
+        // 领地遮罩要算一次（几十毫秒）。先备好再起表，免得第一笔从半路开始。
+        if let screen = (UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }.first)?.screen.bounds.size {
+            HandMasks.shared.warm(size: screen)
         }
-        withAnimation(.easeOut(duration: 0.44).delay(Sky.subtitle.lowerBound)) {
+        start = Date()
+        withAnimation(.easeOut(duration: 0.44).delay(Hand.subtitle.lowerBound)) {
             subtitleVisible = true
         }
     }
-
-    /// Sacramento 的 PostScript 名是 `Sacramento-Regular`；万一没注册上，退回 family 名。
-    private static let titleFont: Font = {
-        let name = UIFont(name: "Sacramento-Regular", size: 44) != nil
-            ? "Sacramento-Regular"
-            : "Sacramento"
-        return .custom(name, size: 44)
-    }()
 }
 
 // MARK: - 时间轴与几何常量
 
-private enum Sky {
-    static let moonCount = 16
-    static let dustCount = 220
-    static let rayCount = 46
-    static let bandHalfWidth: Double = 9      // 尘埃带半宽
-    static let flatK: Double = 0.62           // 扭转后 ∞ 的高/宽系数
-    static let perspective: Double = 760
-    static let moonRadius: Double = 7.4
-    static let drift: Double = 0.075          // 成形后沿轨道的流动 rad/s
+private enum Hand {
+    /// 她 2026-09-05 在预览里定的：速度 1.05、笔迹 54、爱心 26、胭脂色。
+    /// 下面的秒数已经按 1.05 折算过，不必再乘。
+    static let strokeSpans: [ClosedRange<Double>] = [
+        0.000...0.438,      // A 的主体：左下花体扫上去 → 顶点 → 右腿落下
+        0.486...0.714,      // 那道横杠：左边小钩起笔，穿过 A 甩出去
+        0.762...1.429       // quila：q 的碗与下垂环 → u → i → l 的高杆 → a 收笔
+    ]
+    static let heart = 1.476...1.714
+    static let subtitle = 1.638...1.981
 
-    // 紧凑时间轴（秒）。关键叙事在 2.6s 内讲完，之后是可无限停留的 idle。
-    static let core = 0.0...0.32
-    static let cross = 0.15...0.62
-    static let rays = 0.25...1.00
-    static let rayGrow: Double = 0.38         // 单条放射线的生长时长
-    static let raySpread: Double = 0.34       // 逐条错开的最大延迟
-    static let dial = 0.62...1.14
-    static let moons = 0.92...1.66
-    static let dust = 1.05...1.70
-    static let twist = 1.74...2.58
-    static let pulseAt: Double = 2.58
-    static let title = 2.45...2.85
-    static let subtitle = 2.62...3.06
+    static let pen: CGFloat = 54          // 笔尖宽度（300px 字号下）
+    static let heartWidth: CGFloat = 26   // 原来那个点直径是 16
+    static let fontSize: CGFloat = 104
 
-    /// reduceMotion 用的静止帧：所有进度已满、pulse 已过、无漂移。
-    static let staticFrame: Double = 99
+    /// reduceMotion 用的静止帧：全部写完。
+    static let staticFrame: Double = 9
 
-    static func center(in size: CGSize) -> CGPoint {
-        CGPoint(x: size.width / 2, y: size.height * 0.375)
+    // 骨架与字形都以 300px 字号、原点=字体绘制点（ascender 线）为准。
+    static let designSize: CGFloat = 300
+    static let glyphTop: CGFloat = 61       // 字形最高的墨
+    static let glyphMidY: CGFloat = 249.5   // 字形垂直中心
+    static let dot = CGPoint(x: 524, y: 160)
+
+    /// 三笔的骨架。取自 Sacramento 渲染出的 "Aquila"，一笔一条折线。
+    static let strokes: [[CGPoint]] = [
+        [(-17,252),(10,262),(53,271),(95,265),(127,247),(160,232),(193,217),
+         (220,196),(247,173),(261,142),(272,86),
+         (276,132),(280,182),(283,232),(285,288),(284,330)],
+        [(49,141),(36,150),(30,167),(33,183),(47,200),(67,208),(97,209),(127,208),
+         (160,206),(193,203),(227,201),(260,199),(290,196),(317,193)],
+        [(377,215),(358,220),(340,230),(331,243),(329,257),(340,270),(353,277),
+         (370,272),(383,262),
+         (387,240),(388,270),(386,300),(384,340),(382,387),(384,415),(387,430),
+         (378,428),(370,418),(367,395),(367,373),(375,345),(390,320),
+         (398,285),(402,255),(403,233),
+         (410,255),(420,272),(433,273),(447,262),(458,240),(467,220),
+         (472,245),(482,265),(497,273),(510,262),(520,245),(525,230),
+         (532,250),(543,268),(550,270),(563,262),(573,245),(578,233),
+         (590,230),(600,180),(612,130),(617,90),(609,77),(601,95),(604,140),
+         (610,200),(615,245),(618,262),
+         (625,275),(637,273),
+         (663,219),(652,228),(645,242),(652,262),(658,270),(672,274),(687,266),
+         (698,248),(702,232),
+         (706,250),(712,268),(720,272),(735,268),(750,255),(767,233)]
+    ].map { $0.map { CGPoint($0) } }
+
+    /// 每一笔的分段长度与总长，用来把进度换算成"写到哪"。
+    static let metrics: [(lengths: [Double], total: Double)] = strokes.map { pts in
+        var lengths: [Double] = []
+        for i in 0..<(pts.count - 1) {
+            lengths.append(Double(hypot(pts[i+1].x - pts[i].x, pts[i+1].y - pts[i].y)))
+        }
+        return (lengths, lengths.reduce(0, +))
     }
 
-    static func radius(in size: CGSize) -> Double {
-        min(Double(size.width) * 0.295, Double(size.height) * 0.16)
+    struct Geometry {
+        let origin: CGPoint     // 骨架/字形坐标系的原点（屏幕坐标）
+        let scale: CGFloat
+        let subtitleY: CGFloat
+
+        func map(_ p: CGPoint) -> CGPoint {
+            CGPoint(x: origin.x + p.x * scale, y: origin.y + p.y * scale)
+        }
+    }
+
+    static func geometry(in size: CGSize) -> Geometry {
+        let scale = fontSize / designSize
+        // 字形横向居中，纵向落在屏幕 0.478 处——和原来星图的重心一致
+        let midX = size.width / 2
+        let midY = size.height * 0.478
+        let origin = CGPoint(x: midX - 377 * scale, y: midY - glyphMidY * scale)
+        return Geometry(
+            origin: origin,
+            scale: scale,
+            subtitleY: origin.y + 438 * scale + 46
+        )
     }
 }
 
-private func ramp(_ t: Double, _ range: ClosedRange<Double>) -> Double {
-    let x = (t - range.lowerBound) / (range.upperBound - range.lowerBound)
-    return x < 0 ? 0 : (x > 1 ? 1 : x)
+private extension CGPoint {
+    init(_ pair: (Int, Int)) { self.init(x: CGFloat(pair.0), y: CGFloat(pair.1)) }
 }
 
 private func clamp01(_ x: Double) -> Double { x < 0 ? 0 : (x > 1 ? 1 : x) }
+private func ramp(_ t: Double, _ range: ClosedRange<Double>) -> Double {
+    clamp01((t - range.lowerBound) / (range.upperBound - range.lowerBound))
+}
 private func easeOut(_ x: Double) -> Double { 1 - pow(1 - x, 3) }
 private func easeInOut(_ x: Double) -> Double {
     x < 0.5 ? 4 * x * x * x : 1 - pow(-2 * x + 2, 3) / 2
 }
-
-// MARK: - 预生成的装饰（固定种子，每次启动一致）
-
-private struct Ray {
-    let angle, r0, r1, width, opacity, dashPhase, delay: Double
-    let dash: [CGFloat]
+/// 落定时带一下回弹——爱心掉进来那个劲儿全在这。
+private func easeOutBack(_ x: Double) -> Double {
+    1 + 2.15 * pow(x - 1, 3) + 1.35 * pow(x - 1, 2)
 }
 
-private struct Mote {
-    let u, v, weight, size, opacity, twinkle: Double
-}
+// MARK: - 字形与领地
 
-private struct Speck {
-    let x, y, r, opacity: Double
-}
+/// 字形按"离哪一笔的骨架最近"分给三笔，每笔只能点亮自己名下的墨。
+///
+/// 没有这一步，A 的斜边（在 x≈160–250 处贴着横杠只隔 5–26pt）会被粗笔一路捎带
+/// 写掉，第二笔上场时就只剩 A 外面那一小截可写了。收细笔尖治不了——斜边本身就是
+/// A 最粗的主笔画。所以改成先分地盘。
+private final class HandMasks {
+    static let shared = HandMasks()
 
-private struct Fleck {
-    let x, y, r, opacity: Double
-}
+    private var cachedKey: String = ""
+    private var cachedGlyph = Path()
+    private var cachedTerritories: [CGImage] = []
+    private let lock = NSLock()
 
-private struct Noise {
-    private var state: UInt64
-    init(_ seed: UInt64) { state = seed }
-    mutating func next() -> Double {
-        state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-        return Double(state >> 11) / Double(UInt64(1) << 53)
+    struct Assets {
+        let glyph: Path
+        let territories: [CGImage]
+    }
+
+    func warm(size: CGSize) { _ = assets(for: size) }
+
+    func assets(for size: CGSize) -> Assets {
+        let key = "\(Int(size.width))x\(Int(size.height))"
+        lock.lock()
+        defer { lock.unlock() }
+        if key != cachedKey || cachedTerritories.count != Hand.strokes.count {
+            let geo = Hand.geometry(in: size)
+            cachedGlyph = Self.buildGlyphPath(geo: geo)
+            cachedTerritories = Self.buildTerritories(size: size, geo: geo)
+            cachedKey = key
+        }
+        return Assets(glyph: cachedGlyph, territories: cachedTerritories)
+    }
+
+    /// 用 Core Text 把 "Aquila" 取成矢量轮廓——比位图遮罩清爽，边缘也不会糊。
+    private static func buildGlyphPath(geo: Hand.Geometry) -> Path {
+        let font = CTFontCreateWithName("Sacramento-Regular" as CFString, Hand.fontSize, nil)
+        let attributed = NSAttributedString(
+            string: "Aquila",
+            attributes: [kCTFontAttributeName as NSAttributedString.Key: font]
+        )
+        let line = CTLineCreateWithAttributedString(attributed)
+        // 骨架的原点是字体的绘制点（ascender 线），Core Text 却按基线落字。
+        // 与其信 ascent 的某一种定义，不如量墨迹：字形最高的墨在骨架里是 y=61
+        // （300px 字号），量出它到基线的距离，两个原点就对齐了。
+        let inkBounds = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+        let rise = inkBounds.maxY > 0 ? inkBounds.maxY : CTFontGetAscent(font)
+        let baseline = geo.origin.y + Hand.glyphTop * geo.scale + rise
+        let combined = CGMutablePath()
+
+        guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return Path() }
+        for run in runs {
+            let count = CTRunGetGlyphCount(run)
+            guard count > 0 else { continue }
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetGlyphs(run, CFRangeMake(0, count), &glyphs)
+            CTRunGetPositions(run, CFRangeMake(0, count), &positions)
+
+            let attrs = CTRunGetAttributes(run) as NSDictionary
+            let runFont = (attrs[kCTFontAttributeName as String] as? CTFont) ?? font
+
+            for i in 0..<count {
+                guard let glyphPath = CTFontCreatePathForGlyph(runFont, glyphs[i], nil) else { continue }
+                // 字形的 y 向上，屏幕的 y 向下：先翻转，再落到基线上
+                let transform = CGAffineTransform(scaleX: 1, y: -1)
+                    .concatenating(CGAffineTransform(
+                        translationX: geo.origin.x + positions[i].x,
+                        y: baseline - positions[i].y
+                    ))
+                combined.addPath(glyphPath, transform: transform)
+            }
+        }
+        return Path(combined)
+    }
+
+    /// 逐像素最近邻：字形附近的每个点归给离它最近的那条骨架。
+    /// 只在字形墨迹（外扩几点）上算，30k 像素 × 100 段，一次几十毫秒。
+    private static func buildTerritories(size: CGSize, geo: Hand.Geometry) -> [CGImage] {
+        let w = Int(size.width.rounded()), h = Int(size.height.rounded())
+        guard w > 0, h > 0 else { return [] }
+
+        // 骨架映射到屏幕坐标
+        let polys: [[CGPoint]] = Hand.strokes.map { $0.map(geo.map) }
+        let boxes: [CGRect] = polys.map { pts in
+            var box = CGRect(x: pts[0].x, y: pts[0].y, width: 0, height: 0)
+            for p in pts { box = box.union(CGRect(x: p.x, y: p.y, width: 0, height: 0)) }
+            return box
+        }
+
+        // 字形墨迹范围（骨架外扩一点，把抗锯齿的边缘像素也圈进来）
+        var inkBox = boxes[0]
+        for box in boxes { inkBox = inkBox.union(box) }
+        inkBox = inkBox.insetBy(dx: -22, dy: -22)
+        let x0 = max(0, Int(inkBox.minX)), x1 = min(w, Int(inkBox.maxX.rounded(.up)))
+        let y0 = max(0, Int(inkBox.minY)), y1 = min(h, Int(inkBox.maxY.rounded(.up)))
+        guard x0 < x1, y0 < y1 else { return [] }
+
+        let count = w * h
+        var buffers = [[UInt8]](repeating: [UInt8](repeating: 0, count: count), count: polys.count)
+
+        for py in y0..<y1 {
+            let fy = CGFloat(py) + 0.5
+            for px in x0..<x1 {
+                let fx = CGFloat(px) + 0.5
+                var best = CGFloat.greatestFiniteMagnitude
+                var owner = 0
+                for (i, poly) in polys.enumerated() {
+                    // 离这一笔的包围盒都比现有最优远，就不用逐段算了
+                    let bx = max(boxes[i].minX - fx, 0, fx - boxes[i].maxX)
+                    let by = max(boxes[i].minY - fy, 0, fy - boxes[i].maxY)
+                    if hypot(bx, by) >= best { continue }
+                    var d = CGFloat.greatestFiniteMagnitude
+                    for k in 0..<(poly.count - 1) {
+                        d = min(d, distance(fx, fy, poly[k], poly[k + 1]))
+                        if d < 0.5 { break }
+                    }
+                    if d < best { best = d; owner = i }
+                }
+                buffers[owner][py * w + px] = 255
+            }
+        }
+
+        return buffers.compactMap { buffer in
+            var rgba = [UInt8](repeating: 0, count: count * 4)
+            for idx in 0..<count where buffer[idx] != 0 {
+                rgba[idx * 4 + 3] = buffer[idx]      // 只要 alpha，RGB 留黑
+            }
+            guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+            return CGImage(
+                width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent
+            )
+        }
+    }
+
+    private static func distance(_ x: CGFloat, _ y: CGFloat, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let abx = b.x - a.x, aby = b.y - a.y
+        let len2 = abx * abx + aby * aby
+        guard len2 > 1e-9 else { return hypot(x - a.x, y - a.y) }
+        var t = ((x - a.x) * abx + (y - a.y) * aby) / len2
+        t = t < 0 ? 0 : (t > 1 ? 1 : t)
+        return hypot(x - (a.x + t * abx), y - (a.y + t * aby))
     }
 }
 
-private enum Decor {
-    static let rays: [Ray] = {
-        var n = Noise(20_260_829)
-        return (0..<Sky.rayCount).map { i in
-            let base = Double(i) / Double(Sky.rayCount) * 2 * .pi
-            let dashed = n.next() < 0.62
-            return Ray(
-                angle: base + (n.next() - 0.5) * 0.075,
-                r0: 26 + n.next() * 30,
-                r1: 84 + n.next() * 104,
-                width: 0.35 + n.next() * 0.55,
-                opacity: 0.22 + n.next() * 0.6,
-                dashPhase: n.next() * 20,
-                delay: n.next() * Sky.raySpread,
-                dash: dashed ? [CGFloat(3 + n.next() * 16), CGFloat(2.5 + n.next() * 9)] : []
-            )
-        }
-    }()
+// MARK: - 绘制
 
-    static let motes: [Mote] = {
-        var n = Noise(770_113)
-        return (0..<Sky.dustCount).map { _ in
-            Mote(
-                u: n.next() * 2 * .pi,
-                v: n.next() * 2 - 1,
-                weight: pow(n.next(), 0.7),
-                size: 0.35 + n.next() * 0.95,
-                opacity: 0.16 + n.next() * 0.5,
-                twinkle: n.next() * 6.283
-            )
-        }
-    }()
-
-    static let specks: [Speck] = {
-        var n = Noise(31_415_926)
-        return (0..<80).map { _ in
-            Speck(x: n.next(), y: n.next() * 0.72, r: n.next() * 0.9 + 0.25,
-                  opacity: 0.12 + n.next() * 0.45)
-        }
-    }()
-
-    static let flecks: [[Fleck]] = {
-        var n = Noise(5_271_009)
-        return (0..<Sky.moonCount).map { _ in
-            (0..<5).map { _ in
-                Fleck(x: (n.next() * 2 - 1) * 0.62, y: (n.next() * 2 - 1) * 0.62,
-                      r: 0.12 + n.next() * 0.3, opacity: 0.05 + n.next() * 0.16)
-            }
-        }
-    }()
-}
-
-// MARK: - 星图渲染
-
-private struct StarChart {
+private struct Handwriting {
     let theme: EchoTheme
     let size: CGSize
+    let scale: CGFloat
     let reduced: Bool
 
     private var palette: EchoPalette { theme.palette }
     private var isDark: Bool { theme == .harbor }
-    private var ink: Color { isDark ? .white : palette.accent }
-    private var moonFill: Color {
-        isDark ? Color(hex: 0xECF2F7) : (theme == .mist ? Color(hex: 0x181818) : Color(hex: 0x68584A))
-    }
-
-    private var center: CGPoint { Sky.center(in: size) }
-    private var R: Double { Sky.radius(in: size) }
+    private var rose: Color { isDark ? Color(hex: 0xE98BA6) : Color(hex: 0xC8455F) }
 
     func draw(into context: GraphicsContext, t: Double) {
-        let m = reduced ? 1 : easeInOut(ramp(t, Sky.twist))       // 扭转量 0→1
-        let flow = reduced ? 0 : max(0, t - Sky.twist.upperBound) * Sky.drift
-
         drawTexture(context)
         if isDark { drawSpecks(context, t: t) }
-        drawRays(context, t: t, m: m)
-        drawDial(context, t: t, m: m)
-        drawOrbit(context, t: t, m: m, flow: flow)
-        drawCore(context, t: t, m: m)
-        drawPulse(context, t: t, m: m)
+
+        let geo = Hand.geometry(in: size)
+        let assets = HandMasks.shared.assets(for: size)
+        guard !assets.territories.isEmpty else { return }
+        let full = CGRect(origin: .zero, size: size)
+
+        var tip: CGPoint?
+        for i in Hand.strokes.indices {
+            let p = reduced ? 1 : ramp(t, Hand.strokeSpans[i])
+            guard p > 0 else { continue }
+            let eased = easeInOut(p)
+
+            var ctx = context
+            ctx.clip(to: assets.glyph)                       // 字形：矢量,边缘干净
+            ctx.clipToLayer { layer in                       // 领地：只点亮自己名下的墨
+                layer.draw(Image(decorative: assets.territories[i], scale: 1), in: full)
+            }
+            let (path, end) = inkPath(i, upTo: eased, geo: geo)
+            ctx.stroke(
+                path,
+                with: .color(palette.text),
+                style: StrokeStyle(lineWidth: Hand.pen * geo.scale, lineCap: .round, lineJoin: .round)
+            )
+            if p < 1 { tip = end }
+        }
+
+        if let tip, !reduced { drawNib(context, at: tip) }
+        drawHeart(context, t: t, geo: geo)
+    }
+
+    /// 沿骨架推进到 p，返回已经写出的那一段和笔尖所在
+    private func inkPath(_ i: Int, upTo p: Double, geo: Hand.Geometry) -> (Path, CGPoint) {
+        let pts = Hand.strokes[i]
+        let (lengths, total) = Hand.metrics[i]
+        var path = Path()
+        path.move(to: geo.map(pts[0]))
+        var last = geo.map(pts[0])
+        guard p > 0 else { return (path, last) }
+
+        let want = p * total
+        var done = 0.0
+        for k in 0..<lengths.count {
+            if done + lengths[k] <= want {
+                last = geo.map(pts[k + 1])
+                path.addLine(to: last)
+                done += lengths[k]
+            } else {
+                let f = CGFloat((want - done) / lengths[k])
+                let cut = CGPoint(
+                    x: pts[k].x + (pts[k + 1].x - pts[k].x) * f,
+                    y: pts[k].y + (pts[k + 1].y - pts[k].y) * f
+                )
+                last = geo.map(cut)
+                path.addLine(to: last)
+                break
+            }
+        }
+        return (path, last)
+    }
+
+    /// 笔尖那一点墨光
+    private func drawNib(_ context: GraphicsContext, at point: CGPoint) {
+        let r: CGFloat = 13
+        context.fill(
+            Path(ellipseIn: CGRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)),
+            with: .radialGradient(
+                Gradient(colors: [
+                    palette.accent.opacity(isDark ? 0.34 : 0.20),
+                    palette.accent.opacity(0)
+                ]),
+                center: point, startRadius: 0, endRadius: r
+            )
+        )
+    }
+
+    /// i 的点最后落下，换成一颗爱心
+    private func drawHeart(_ context: GraphicsContext, t: Double, geo: Hand.Geometry) {
+        let p = reduced ? 1 : ramp(t, Hand.heart)
+        guard p > 0 else { return }
+        let e = reduced ? 1 : easeOutBack(p)
+        let center = geo.map(Hand.dot)
+        let y = center.y - CGFloat(1 - e) * 30 * geo.scale
+        let w = Hand.heartWidth * geo.scale * CGFloat(0.35 + 0.65 * e)
+        let alpha = min(1, p * 2.6)
+
+        let halo = w * 2.2
+        context.fill(
+            Path(ellipseIn: CGRect(x: center.x - halo, y: y - halo, width: halo * 2, height: halo * 2)),
+            with: .radialGradient(
+                Gradient(colors: [rose.opacity(0.22 * alpha), rose.opacity(0)]),
+                center: CGPoint(x: center.x, y: y), startRadius: 0, endRadius: halo
+            )
+        )
+        context.fill(heartPath(center: CGPoint(x: center.x, y: y), width: w),
+                     with: .color(rose.opacity(alpha)))
+
+        // 落定时一圈很淡的涟漪，接住原来 pulse 的位置
+        let after = t - Hand.heart.upperBound
+        if !reduced, after > 0, after < 0.9 {
+            let r = CGFloat(easeOut(clamp01(after / 0.7))) * size.width * 0.30
+            context.stroke(
+                Path(ellipseIn: CGRect(x: center.x - r, y: y - r, width: r * 2, height: r * 2)),
+                with: .color(palette.accent.opacity(0.16 * max(0, 1 - after / 0.8))),
+                lineWidth: 0.7
+            )
+        }
+    }
+
+    private func heartPath(center c: CGPoint, width: CGFloat) -> Path {
+        let r = width / 2, h = width * 0.9
+        var path = Path()
+        path.move(to: CGPoint(x: c.x, y: c.y + h * 0.42))
+        path.addCurve(
+            to: CGPoint(x: c.x, y: c.y - h * 0.20),
+            control1: CGPoint(x: c.x - r * 1.38, y: c.y - h * 0.06),
+            control2: CGPoint(x: c.x - r * 0.88, y: c.y - h * 0.66)
+        )
+        path.addCurve(
+            to: CGPoint(x: c.x, y: c.y + h * 0.42),
+            control1: CGPoint(x: c.x + r * 0.88, y: c.y - h * 0.66),
+            control2: CGPoint(x: c.x + r * 1.38, y: c.y - h * 0.06)
+        )
+        path.closeSubpath()
+        return path
     }
 
     // MARK: 背景
@@ -276,310 +494,30 @@ private struct StarChart {
             )
         }
     }
+}
 
-    // MARK: 放射线
+// MARK: - 夜港的星点（固定种子，每次启动一致）
 
-    private func drawRays(_ context: GraphicsContext, t: Double, m: Double) {
-        guard t >= Sky.rays.lowerBound || reduced else { return }
-        let fade = 1 - 0.55 * m                       // 扭转期让位给月相环
+private struct Speck {
+    let x, y, r, opacity: Double
+}
 
-        for ray in Decor.rays {
-            let grow = reduced
-                ? 1
-                : easeOut(clamp01((t - Sky.rays.lowerBound - ray.delay) / Sky.rayGrow))
-            guard grow > 0 else { continue }
-
-            let length = (ray.r1 - ray.r0) * grow
-            let a = ray.opacity * (isDark ? 0.5 : 0.32) * fade * (0.35 + 0.65 * grow)
-
-            var line = Path()
-            line.move(to: CGPoint(x: ray.r0, y: 0))
-            line.addLine(to: CGPoint(x: ray.r0 + length, y: 0))
-
-            var ctx = context
-            ctx.translateBy(x: center.x, y: center.y)
-            ctx.rotate(by: .radians(ray.angle))
-            ctx.stroke(
-                line,
-                with: .color(ink.opacity(a)),
-                style: StrokeStyle(lineWidth: ray.width, dash: ray.dash, dashPhase: ray.dashPhase)
-            )
+private enum Decor {
+    static let specks: [Speck] = {
+        var n = Noise(31_415_926)
+        return (0..<80).map { _ in
+            Speck(x: n.next(), y: n.next() * 0.72, r: n.next() * 0.9 + 0.25,
+                  opacity: 0.12 + n.next() * 0.45)
         }
-    }
+    }()
+}
 
-    // MARK: 星盘
-
-    private func drawDial(_ context: GraphicsContext, t: Double, m: Double) {
-        let p = reduced ? 1 : easeOut(ramp(t, Sky.dial))
-        guard p > 0 else { return }
-        let fade = p * (1 - 0.75 * m)
-
-        var ctx = context
-        ctx.translateBy(x: center.x, y: center.y)
-
-        let outer = R * 0.60 * (0.85 + 0.15 * p)
-        ctx.stroke(
-            arc(radius: outer, sweep: p),
-            with: .color(ink.opacity(0.30 * fade * (isDark ? 1 : 0.8))),
-            style: StrokeStyle(lineWidth: 0.6, dash: [5, 4.5], dashPhase: -t * 4)
-        )
-        ctx.stroke(
-            arc(radius: R * 0.43, sweep: p),
-            with: .color(ink.opacity(0.20 * fade)),
-            style: StrokeStyle(lineWidth: 0.5, dash: [2, 7])
-        )
-
-        var ticks = Path()
-        let tickBase = R * 0.72
-        for i in 0..<48 {
-            guard Double(i) / 48 <= p else { break }
-            let a = Double(i) / 48 * 2 * .pi
-            let len = i % 4 == 0 ? 6.0 : 3.0
-            ticks.move(to: CGPoint(x: cos(a) * tickBase, y: sin(a) * tickBase))
-            ticks.addLine(to: CGPoint(x: cos(a) * (tickBase + len), y: sin(a) * (tickBase + len)))
-        }
-        ctx.stroke(ticks, with: .color(ink.opacity(0.26 * fade)), lineWidth: 0.5)
-    }
-
-    private func arc(radius: Double, sweep: Double) -> Path {
-        var p = Path()
-        p.addArc(center: .zero, radius: radius, startAngle: .zero,
-                 endAngle: .radians(2 * .pi * max(0.0001, sweep)), clockwise: false)
-        return p
-    }
-
-    // MARK: 轨道（尘埃 + 月相，按深度排序）
-
-    /// 曲线：m=0 是正圆；m=1 是"立起来 + 拧半圈"的马鞍圆，正面投影即 ∞。
-    private func point(u: Double, m: Double) -> SIMD3<Double> {
-        let k = 1 + (Sky.flatK - 1) * m
-        return SIMD3(R * cos(u), R * k * sin(u) * (1 - m + m * cos(u)), R * m * sin(u))
-    }
-
-    /// 带子法向：随扭转角 h = m·u/2 从面内转到竖直，扭转处收窄成一条线。
-    private func bandOffset(u: Double, m: Double, v: Double) -> SIMD3<Double> {
-        let h = m * u / 2
-        let nx = cos(u)
-        let ny = sin(u) * (1 + (Sky.flatK - 1) * m)
-        let l = max(1e-6, (nx * nx + ny * ny).squareRoot())
-        return SIMD3(v * cos(h) * nx / l, v * cos(h) * ny / l, v * sin(h))
-    }
-
-    private func project(_ p: SIMD3<Double>) -> (x: Double, y: Double, s: Double, z: Double) {
-        let s = Sky.perspective / (Sky.perspective - p.z)
-        return (Double(center.x) + p.x * s, Double(center.y) + p.y * s, s, p.z)
-    }
-
-    private enum Orbiter {
-        case mote(Mote)
-        case moon(index: Int, u: Double, appear: Double, phase: Double)
-    }
-
-    private func drawOrbit(_ context: GraphicsContext, t: Double, m: Double, flow: Double) {
-        let dustIn = reduced ? 1 : easeOut(ramp(t, Sky.dust))
-        let moonIn = reduced ? 1 : ramp(t, Sky.moons)
-
-        var items: [(z: Double, x: Double, y: Double, s: Double, body: Orbiter)] = []
-        items.reserveCapacity(Sky.dustCount + Sky.moonCount)
-
-        if dustIn > 0 {
-            for mote in Decor.motes {
-                let u = mote.u + flow
-                let off = bandOffset(u: u, m: m,
-                                     v: mote.v * Sky.bandHalfWidth * (0.55 + 0.45 * mote.weight))
-                let p = project(point(u: u, m: m) + off)
-                items.append((p.z, p.x, p.y, p.s, .mote(mote)))
-            }
-        }
-        if moonIn > 0 {
-            for i in 0..<Sky.moonCount {
-                let u = -Double.pi / 2 + Double(i) / Double(Sky.moonCount) * 2 * .pi + flow
-                let p = project(point(u: u, m: m))
-                let appear = reduced
-                    ? 1
-                    : easeOut(clamp01((moonIn * 1.16 - Double(i) / Double(Sky.moonCount) * 0.86) / 0.30))
-                let phase = (Double(i) / Double(Sky.moonCount) + 0.5).truncatingRemainder(dividingBy: 1)
-                items.append((p.z, p.x, p.y, p.s, .moon(index: i, u: u, appear: appear, phase: phase)))
-            }
-        }
-        items.sort { $0.z < $1.z }
-
-        let pulseT = t - Sky.pulseAt
-        let pulseR = pulseT > 0 ? easeOut(clamp01(pulseT / 0.72)) * (R + 42) : -1
-
-        for item in items {
-            let depth = (item.z / R + 1) / 2                     // 0 远 → 1 近
-            let dx = item.x - Double(center.x)
-            let dy = item.y - Double(center.y)
-            let dist = (dx * dx + dy * dy).squareRoot()
-            let glow = pulseGlow(dist: dist, pulseT: pulseT, pulseR: pulseR)
-
-            switch item.body {
-            case .mote(let mote):
-                let a = mote.opacity * dustIn * (0.35 + 0.65 * depth) * (isDark ? 1 : 0.62)
-                    * (0.75 + 0.25 * sin(t * 1.9 + mote.twinkle))
-                let r = mote.size * item.s * (1 + glow * 0.6)
-                context.fill(
-                    Path(ellipseIn: CGRect(x: item.x - r, y: item.y - r, width: r * 2, height: r * 2)),
-                    with: .color((isDark ? Color.white : ink).opacity(min(1, a + glow * 0.5)))
-                )
-
-            case .moon(let index, let u, let appear, let phase):
-                guard appear > 0 else { continue }
-                drawMoon(context, index: index, u: u, appear: appear, phase: phase,
-                         at: CGPoint(x: item.x, y: item.y), scale: item.s,
-                         depth: depth, m: m, glow: glow)
-            }
-        }
-    }
-
-    private func pulseGlow(dist: Double, pulseT: Double, pulseR: Double) -> Double {
-        guard pulseT > 0, pulseR > 0 else { return 0 }
-        return max(0, 1 - abs(dist - pulseR) / 26) * max(0, 1 - pulseT / 1.15)
-    }
-
-    private func drawMoon(
-        _ context: GraphicsContext, index: Int, u: Double, appear: Double, phase: Double,
-        at p: CGPoint, scale: Double, depth: Double, m: Double, glow: Double
-    ) {
-        let r = Sky.moonRadius * scale * (0.5 + 0.5 * appear)
-        let alpha = appear * (0.62 + 0.38 * depth)
-        let h = m * u / 2                                  // 带子在此处的翻面角
-
-        var ctx = context
-        ctx.translateBy(x: p.x, y: p.y)
-        ctx.rotate(by: .radians(m * sin(u) * 0.22))
-        // 翻面证据：带子侧对观众时月相压扁
-        ctx.scaleBy(x: 1, y: 0.42 + 0.58 * abs(cos(h)))
-
-        if isDark {
-            ctx.stroke(
-                Path(ellipseIn: CGRect(x: -r, y: -r, width: r * 2, height: r * 2)),
-                with: .color(.white.opacity(0.055)),
-                lineWidth: 0.6
-            )
-            let halo = r * 2.6
-            ctx.fill(
-                Path(ellipseIn: CGRect(x: -halo, y: -halo, width: halo * 2, height: halo * 2)),
-                with: .radialGradient(
-                    Gradient(colors: [
-                        palette.accent.opacity((0.20 + glow * 0.5) * alpha),
-                        palette.accent.opacity(0)
-                    ]),
-                    center: .zero, startRadius: r * 0.4, endRadius: halo
-                )
-            )
-        }
-
-        let disc = moonPath(r: r, phase: phase)
-        let lift = min(1, alpha + glow * 0.85)
-        ctx.fill(
-            disc,
-            with: .linearGradient(
-                Gradient(colors: [
-                    moonFill.opacity(lift * (isDark ? 0.78 : 0.92)),
-                    moonFill.opacity(lift),
-                    moonFill.opacity(lift * (isDark ? 0.62 : 0.8))
-                ]),
-                startPoint: CGPoint(x: -r, y: -r), endPoint: CGPoint(x: r, y: r)
-            )
-        )
-
-        // 银箔斑驳
-        var foil = ctx
-        foil.clip(to: disc)
-        for fleck in Decor.flecks[index] {
-            let fr = fleck.r * r
-            foil.fill(
-                Path(ellipseIn: CGRect(x: fleck.x * r - fr, y: fleck.y * r - fr,
-                                       width: fr * 2, height: fr * 2)),
-                with: .color(isDark
-                    ? Color(hex: 0x5A6978).opacity(fleck.opacity * 2.1)
-                    : Color.white.opacity(fleck.opacity * 2.4))
-            )
-        }
-    }
-
-    /// 月相：右半圆 + 一段半宽为 |cos(2πphase)|·r 的 terminator，贝塞尔近似。
-    /// phase 0=新月 .25=上弦 .5=满月 .75=下弦；下半周镜像成亏相。
-    private func moonPath(r: Double, phase: Double) -> Path {
-        let a = cos(2 * .pi * phase)          // +1 新月 → -1 满月
-        let w = r * a                         // 正=terminator 与右缘同向（亮区窄）
-        let K = 0.5523
-
-        var p = Path()
-        p.move(to: CGPoint(x: 0, y: -r))
-        p.addCurve(to: CGPoint(x: r, y: 0),
-                   control1: CGPoint(x: r * K, y: -r), control2: CGPoint(x: r, y: -r * K))
-        p.addCurve(to: CGPoint(x: 0, y: r),
-                   control1: CGPoint(x: r, y: r * K), control2: CGPoint(x: r * K, y: r))
-        p.addCurve(to: CGPoint(x: w, y: 0),
-                   control1: CGPoint(x: w * K, y: r), control2: CGPoint(x: w, y: r * K))
-        p.addCurve(to: CGPoint(x: 0, y: -r),
-                   control1: CGPoint(x: w, y: -r * K), control2: CGPoint(x: w * K, y: -r))
-        p.closeSubpath()
-
-        guard phase > 0.5 else { return p }
-        return p.applying(CGAffineTransform(scaleX: -1, y: 1))
-    }
-
-    // MARK: 中心十字星芒
-
-    private func drawCore(_ context: GraphicsContext, t: Double, m: Double) {
-        let core = (reduced ? 1 : easeOut(ramp(t, Sky.core))) * (1 - 0.45 * m)
-        guard core > 0 else { return }
-        let k = reduced ? 1 : easeOut(ramp(t, Sky.cross))
-
-        var ctx = context
-        ctx.translateBy(x: center.x, y: center.y)
-        ctx.scaleBy(x: 1 - 0.14 * m, y: 1 - 0.14 * m)
-
-        let halo: Double = 30
-        ctx.fill(
-            Path(ellipseIn: CGRect(x: -halo, y: -halo, width: halo * 2, height: halo * 2)),
-            with: .radialGradient(
-                Gradient(colors: [
-                    palette.accent.opacity((isDark ? 0.34 : 0.20) * core),
-                    palette.accent.opacity(0)
-                ]),
-                center: .zero, startRadius: 0, endRadius: halo
-            )
-        )
-
-        var cross = Path()
-        cross.move(to: CGPoint(x: 0, y: -34 * k)); cross.addLine(to: CGPoint(x: 0, y: 34 * k))
-        cross.move(to: CGPoint(x: -27 * k, y: 0)); cross.addLine(to: CGPoint(x: 27 * k, y: 0))
-        ctx.stroke(cross, with: .color(ink.opacity(0.85 * core)), lineWidth: 1.05)
-
-        var minor = Path()
-        minor.move(to: CGPoint(x: 0, y: -20 * k)); minor.addLine(to: CGPoint(x: 0, y: 20 * k))
-        minor.move(to: CGPoint(x: -20 * k, y: 0)); minor.addLine(to: CGPoint(x: 20 * k, y: 0))
-        var diagonal = ctx
-        diagonal.rotate(by: .radians(.pi / 4))
-        diagonal.stroke(minor, with: .color(ink.opacity(0.42 * core)), lineWidth: 0.65)
-
-        let dot = 1.9 * (0.6 + 0.4 * core)
-        ctx.fill(
-            Path(ellipseIn: CGRect(x: -dot, y: -dot, width: dot * 2, height: dot * 2)),
-            with: .color(ink.opacity(0.95 * core))
-        )
-    }
-
-    // MARK: pulse
-
-    private func drawPulse(_ context: GraphicsContext, t: Double, m: Double) {
-        let pulseT = t - Sky.pulseAt
-        guard pulseT > 0, pulseT < 1.0 else { return }
-        let r = easeOut(clamp01(pulseT / 0.72)) * (R + 42)
-        let ry = r * (1 - 0.55 * m)
-
-        var ctx = context
-        ctx.translateBy(x: center.x, y: center.y)
-        ctx.stroke(
-            Path(ellipseIn: CGRect(x: -r, y: -ry, width: r * 2, height: ry * 2)),
-            with: .color(palette.accent.opacity(0.24 * max(0, 1 - pulseT / 0.9))),
-            lineWidth: 0.7
-        )
+private struct Noise {
+    private var state: UInt64
+    init(_ seed: UInt64) { state = seed }
+    mutating func next() -> Double {
+        state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+        return Double(state >> 11) / Double(UInt64(1) << 53)
     }
 }
 

@@ -44,9 +44,9 @@ struct RootView: View {
             }
 
             async let bootstrapTask: Void = model.bootstrap()
-            // 星图开屏把关键叙事（星芒→星图→月相成环→扭转→pulse→标题）讲完约 3.1s。
-            // bootstrap 更慢时开屏自然停在 idle（月相沿轨道缓慢流动），不会有突兀的收尾。
-            let minimumPresentation: Duration = reduceMotion ? .milliseconds(250) : .milliseconds(3200)
+            // 手写开屏把 Aquila 写完、爱心落定、副标题收拢约 2.0s（她 2026-09-05 定的节奏）。
+            // bootstrap 更慢时开屏自然停在写完的样子，不会有突兀的收尾。
+            let minimumPresentation: Duration = reduceMotion ? .milliseconds(250) : .milliseconds(2150)
             try? await Task.sleep(for: minimumPresentation)
             launchPresentationComplete = true
             await bootstrapTask

@@ -222,99 +222,98 @@ struct MessageRow: View {
                 AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
             }
 
-            VStack(alignment: message.author == .human ? .trailing : .leading, spacing: 4) {
-                VStack(alignment: .leading, spacing: 9) {
-                    if imageAttachments.count > 1 {
-                        PhotoStackAttachmentView(
-                            attachments: imageAttachments,
-                            request: attachmentRequest,
-                            palette: palette
-                        )
-                    } else if let image = imageAttachments.first {
-                        AttachmentView(
-                            attachment: image,
-                            request: attachmentRequest(image),
-                            palette: palette
-                        )
-                    }
-
-                    ForEach(nonImageAttachments) { attachment in
-                        AttachmentView(
-                            attachment: attachment,
-                            request: attachmentRequest(attachment),
-                            palette: palette
-                        )
-                    }
-
-                    if !displayedMessageText.isEmpty {
-                        MarkdownMessageText(
-                            source: displayedMessageText,
-                            palette: palette,
-                            textColor: resolvedBubbleTextColor,
-                            chatFont: chatFont,
-                            fontScale: fontScale,
-                            chatWeight: chatWeight
-                        )
-                    }
-
-                    if let card = message.meta.xhs {
-                        XHSNoteCard(
-                            card: card,
-                            palette: palette,
-                            fontScale: fontScale,
-                            request: attachmentRequest
-                        )
-                    }
-
-                    if let timer = message.meta.timer {
-                        MessageTimerCard(
-                            timer: timer,
-                            palette: palette,
-                            onDone: onCompleteTimer
-                        )
-                    }
-
-                    if let ask = message.meta.ask {
-                        MessageAskChip(ask: ask, palette: palette, onOpen: onOpenAsk)
-                    }
-
-                    if let peek = message.meta.peek {
-                        MessagePeekCard(
-                            peek: peek,
-                            palette: palette,
-                            needsManualPicker: peekNeedsManualPicker,
-                            onAccept: onAcceptPeek,
-                            onDecline: onDeclinePeek
-                        )
-                    }
-
-                    if !message.meta.album.isEmpty {
-                        MessageAlbumChip(entries: message.meta.album, palette: palette)
-                    }
+            VStack(alignment: message.author == .human ? .trailing : .leading, spacing: 6) {
+                // 我发的图不套气泡：单独一张贴在文字上面，文字自己占一个气泡。
+                // （她 2026-09-04 定的：图和字合在一个大气泡里太闷。）
+                if !photosOutsideBubble.isEmpty {
+                    photoBlock(photosOutsideBubble)
+                        .frame(maxWidth: resolvedBubbleMaxWidth, alignment: .leading)
                 }
-                .foregroundStyle(resolvedBubbleTextColor)
-                .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : bubbleHorizontalPadding)
-                .padding(.vertical, bubbleVerticalPadding)
-                .background { bubbleBackground }
-                .overlay {
-                    if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
-                        if bubbleStyle == .liquid {
-                            RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
-                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
-                        } else {
-                            bubbleShape
-                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+
+                if hasBubbleContent {
+                    VStack(alignment: .leading, spacing: 9) {
+                        if !photosInsideBubble.isEmpty {
+                            photoBlock(photosInsideBubble)
+                        }
+
+                        ForEach(nonImageAttachments) { attachment in
+                            AttachmentView(
+                                attachment: attachment,
+                                request: attachmentRequest(attachment),
+                                palette: palette
+                            )
+                        }
+
+                        if !displayedMessageText.isEmpty {
+                            MarkdownMessageText(
+                                source: displayedMessageText,
+                                palette: palette,
+                                textColor: resolvedBubbleTextColor,
+                                chatFont: chatFont,
+                                fontScale: fontScale,
+                                chatWeight: chatWeight
+                            )
+                        }
+
+                        if let card = message.meta.xhs {
+                            XHSNoteCard(
+                                card: card,
+                                palette: palette,
+                                fontScale: fontScale,
+                                request: attachmentRequest
+                            )
+                        }
+
+                        if let timer = message.meta.timer {
+                            MessageTimerCard(
+                                timer: timer,
+                                palette: palette,
+                                onDone: onCompleteTimer
+                            )
+                        }
+
+                        if let ask = message.meta.ask {
+                            MessageAskChip(ask: ask, palette: palette, onOpen: onOpenAsk)
+                        }
+
+                        if let peek = message.meta.peek {
+                            MessagePeekCard(
+                                peek: peek,
+                                palette: palette,
+                                needsManualPicker: peekNeedsManualPicker,
+                                onAccept: onAcceptPeek,
+                                onDecline: onDeclinePeek
+                            )
+                        }
+
+                        if !message.meta.album.isEmpty {
+                            MessageAlbumChip(entries: message.meta.album, palette: palette)
                         }
                     }
+                    .foregroundStyle(resolvedBubbleTextColor)
+                    .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : bubbleHorizontalPadding)
+                    .padding(.vertical, bubbleVerticalPadding)
+                    .background { bubbleBackground }
+                    .overlay {
+                        if bubbleBorderWidth > 0 && (message.author == .human || showsAIBubble) {
+                            if bubbleStyle == .liquid {
+                                RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                            } else {
+                                bubbleShape
+                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                            }
+                        }
+                    }
+                    // Constrain wrapping without painting the background across the
+                    // whole max-width frame. Short messages keep their intrinsic width.
+                    .frame(
+                        maxWidth: message.author == .ai && !showsAIBubble
+                            ? .infinity
+                            : resolvedBubbleMaxWidth,
+                        alignment: message.author == .human ? .trailing : .leading
+                    )
                 }
-                // Constrain wrapping without painting the background across the
-                // whole max-width frame. Short messages keep their intrinsic width.
-                .frame(
-                    maxWidth: message.author == .ai && !showsAIBubble
-                        ? .infinity
-                        : resolvedBubbleMaxWidth,
-                    alignment: message.author == .human ? .trailing : .leading
-                )
 
                 if let reaction = displayedReaction, !reaction.isEmpty {
                     Text(reaction)
@@ -469,6 +468,44 @@ struct MessageRow: View {
 
     private var nonImageAttachments: [Attachment] {
         ownAttachments.filter { !$0.isImage }
+    }
+
+    /// 我发的图走气泡外那条路；她自己发的图保持原样留在气泡里。
+    private var photosOutsideBubble: [Attachment] {
+        message.author == .ai ? imageAttachments : []
+    }
+
+    private var photosInsideBubble: [Attachment] {
+        message.author == .ai ? [] : imageAttachments
+    }
+
+    /// 气泡里还剩东西吗——纯图消息就不该再画一个空气泡出来。
+    private var hasBubbleContent: Bool {
+        !displayedMessageText.isEmpty
+            || !photosInsideBubble.isEmpty
+            || !nonImageAttachments.isEmpty
+            || message.meta.xhs != nil
+            || message.meta.timer != nil
+            || message.meta.ask != nil
+            || message.meta.peek != nil
+            || !message.meta.album.isEmpty
+    }
+
+    @ViewBuilder
+    private func photoBlock(_ photos: [Attachment]) -> some View {
+        if photos.count > 1 {
+            PhotoStackAttachmentView(
+                attachments: photos,
+                request: attachmentRequest,
+                palette: palette
+            )
+        } else if let image = photos.first {
+            AttachmentView(
+                attachment: image,
+                request: attachmentRequest(image),
+                palette: palette
+            )
+        }
     }
 
     private var myReaction: String? {
@@ -874,7 +911,9 @@ private struct MessagePeekCard: View {
                     Button {
                         run(onAccept)
                     } label: {
-                        Text("给你看").frame(maxWidth: .infinity)
+                        Text("给你看")
+                            .foregroundStyle(palette.onAccent)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(palette.accent)
@@ -882,7 +921,9 @@ private struct MessagePeekCard: View {
                     Button {
                         run(onDecline)
                     } label: {
-                        Text("现在不行").frame(maxWidth: .infinity)
+                        Text("现在不行")
+                            .foregroundStyle(palette.text)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
                     .tint(palette.secondaryText)
@@ -1216,10 +1257,12 @@ private struct MessageTimerCard: View {
                 }
                 Spacer(minLength: 8)
                 if timer.status == "running" && remaining > 0 {
-                    Button("搞定了", action: onDone)
-                        .font(.caption.weight(.semibold))
-                        .buttonStyle(.borderedProminent)
-                        .tint(palette.accent)
+                    Button(action: onDone) {
+                        Text("搞定了").foregroundStyle(palette.onAccent)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .buttonStyle(.borderedProminent)
+                    .tint(palette.accent)
                 }
             }
             .padding(11)

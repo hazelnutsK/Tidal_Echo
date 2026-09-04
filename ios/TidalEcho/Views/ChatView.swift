@@ -17,6 +17,9 @@ struct ChatView: View {
     @State private var askSheetContext: AskSheetContext?
     @State private var seenAskMessageIDs = Set<Int>()
     @State private var didPrimeAskAutopresentation = false
+    @State private var peekSheetContext: PeekSheetContext?
+    @State private var seenPeekMessageIDs = Set<Int>()
+    @State private var didPrimePeekAutopresentation = false
     @State private var editingMessage: ChatMessage?
     @State private var pendingRegeneration: ChatMessage?
     @State private var pendingHide: ChatMessage?
@@ -99,6 +102,12 @@ struct ChatView: View {
                 .presentationDragIndicator(.hidden)
                 .presentationCornerRadius(28)
         }
+        .sheet(item: $peekSheetContext) { context in
+            MessagePeekSheet(model: model, context: context)
+                .presentationDetents([.height(330)])
+                .presentationDragIndicator(.hidden)
+                .presentationCornerRadius(28)
+        }
         .sheet(isPresented: $showingSessions) {
             SessionManagerView(model: model)
         }
@@ -114,6 +123,7 @@ struct ChatView: View {
         .onAppear {
             openAcceptedCallIfNeeded()
             primeAskAutopresentationIfNeeded()
+            primePeekAutopresentationIfNeeded()
             observedMessageCount = model.messages.count
         }
         .onPreferenceChange(ComposerHeightPreferenceKey.self) { height in
@@ -123,12 +133,17 @@ struct ChatView: View {
         .onChange(of: model.isLoadingHistory) { loading in
             if loading {
                 didPrimeAskAutopresentation = false
+                didPrimePeekAutopresentation = false
             } else {
                 primeAskAutopresentationIfNeeded()
+                primePeekAutopresentationIfNeeded()
             }
         }
         .onChange(of: newestUnansweredAskID) { _ in
             presentNewestAskIfNeeded()
+        }
+        .onChange(of: newestPendingPeekID) { _ in
+            presentNewestPeekIfNeeded()
         }
         .confirmationDialog(
             "重新生成这条回复？",
@@ -713,6 +728,34 @@ struct ChatView: View {
         askSheetContext = AskSheetContext(messageID: message.id, initialAsk: ask)
     }
 
+    private var newestPendingPeekID: Int? {
+        model.messages.last(where: {
+            $0.id > 0 && $0.meta.peek?.status == "pending"
+        })?.id
+    }
+
+    private func primePeekAutopresentationIfNeeded() {
+        guard !model.isLoadingHistory, !didPrimePeekAutopresentation else { return }
+        seenPeekMessageIDs = Set(model.messages.compactMap { message in
+            message.meta.peek == nil ? nil : message.id
+        })
+        didPrimePeekAutopresentation = true
+    }
+
+    private func presentNewestPeekIfNeeded() {
+        guard !model.isLoadingHistory else { return }
+        guard didPrimePeekAutopresentation else {
+            primePeekAutopresentationIfNeeded()
+            return
+        }
+        guard let message = model.messages.last(where: {
+            $0.id > 0 && $0.meta.peek?.status == "pending"
+        }), let peek = message.meta.peek,
+              !seenPeekMessageIDs.contains(message.id) else { return }
+        seenPeekMessageIDs.insert(message.id)
+        peekSheetContext = PeekSheetContext(messageID: message.id, initialPeek: peek)
+    }
+
     private static func messagesShareBubbleGroup(_ first: ChatMessage, _ second: ChatMessage) -> Bool {
         guard first.kind != "thinking", first.kind != "act",
               second.kind != "thinking", second.kind != "act",
@@ -867,6 +910,108 @@ private struct AskSheetContext: Identifiable {
     let messageID: Int
     let initialAsk: MessageAsk
     var id: Int { messageID }
+}
+
+private struct PeekSheetContext: Identifiable {
+    let messageID: Int
+    let initialPeek: MessagePeek
+    var id: Int { messageID }
+}
+
+/// 我开口要看她屏幕时从底部升起来的那张卡。按「给你看」之后，系统自己的录屏
+/// 面板会接着弹出来——那一下 iOS 不让代码代劳，所以这里把话说在前面。
+private struct MessagePeekSheet: View {
+    @ObservedObject var model: AppModel
+    let context: PeekSheetContext
+    @Environment(\.dismiss) private var dismiss
+    @State private var busy = false
+
+    private var palette: EchoPalette { model.theme.palette }
+    private var peek: MessagePeek {
+        model.messages.first(where: { $0.id == context.messageID })?.meta.peek ?? context.initialPeek
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                Text("ALTAIR 想看一眼")
+                    .font(.system(size: 12, weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(palette.accent)
+                    .padding(.top, 5)
+                Spacer()
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.secondaryText)
+                        .frame(width: 32, height: 32)
+                        .background(palette.composer.opacity(0.82), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Text(peek.note.isEmpty ? "让我看看你此刻的屏幕。" : peek.note)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(palette.text)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 14)
+
+            Text("点「给你看」，系统会弹出录屏面板——在那上面点一下开始直播就行。只取一张画面，然后自动结束。")
+                .font(.system(size: 13))
+                .foregroundStyle(palette.secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+
+            Spacer(minLength: 16)
+
+            HStack(spacing: 10) {
+                Button {
+                    guard !busy else { return }
+                    busy = true
+                    // 先让这张卡退场，系统面板才好干净地盖上来
+                    dismiss()
+                    Task {
+                        do { try await model.acceptPeek(messageID: context.messageID) }
+                        catch { model.errorMessage = error.localizedDescription }
+                    }
+                } label: {
+                    Text("给你看")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(palette.onAccent)
+                        .frame(maxWidth: .infinity, minHeight: 46)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(palette.accent)
+
+                Button {
+                    guard !busy else { return }
+                    busy = true
+                    Task {
+                        do { try await model.declinePeek(messageID: context.messageID) }
+                        catch { model.errorMessage = error.localizedDescription }
+                        dismiss()
+                    }
+                } label: {
+                    Text("现在不行")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(palette.text)
+                        .frame(maxWidth: .infinity, minHeight: 46)
+                }
+                .buttonStyle(.bordered)
+                .tint(palette.secondaryText)
+            }
+            .disabled(busy)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(palette.background.ignoresSafeArea())
+        .onChange(of: peek.status) { _, status in
+            // 别的设备上按过了（或者卡过期了），这边就别再挡着
+            if status != "pending" && !busy { dismiss() }
+        }
+    }
 }
 
 private struct MessageAskSheet: View {

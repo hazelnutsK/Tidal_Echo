@@ -41,7 +41,8 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
                 humanBubble: Color(hex: 0xC9CCD3).opacity(0.90),
                 composer: Color.white.opacity(0.58),
                 accent: Color.black,
-                hairline: Color.black.opacity(0.13)
+                hairline: Color.black.opacity(0.13),
+                onAccent: Color.white
             )
         case .paper:
             return EchoPalette(
@@ -53,7 +54,8 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
                 humanBubble: Color(hex: 0xE2C2C5),
                 composer: Color(hex: 0xF0EEE6).opacity(0.84),
                 accent: Color(hex: 0x8C7466),
-                hairline: Color(hex: 0xBDA896).opacity(0.28)
+                hairline: Color(hex: 0xBDA896).opacity(0.28),
+                onAccent: Color.white
             )
         case .harbor:
             return EchoPalette(
@@ -65,7 +67,9 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
                 humanBubble: Color(hex: 0x344A5B).opacity(0.94),
                 composer: Color(hex: 0x1C2A35).opacity(0.94),
                 accent: Color(hex: 0x8AAFC6),
-                hairline: Color.white.opacity(0.10)
+                hairline: Color.white.opacity(0.10),
+                // 夜港的 accent 是浅蓝，白字压不住，用底色当字色
+                onAccent: Color(hex: 0x0D1720)
             )
         }
     }
@@ -266,6 +270,10 @@ struct EchoPalette {
     let composer: Color
     let accent: Color
     let hairline: Color
+    /// 实心强调按钮（borderedProminent）上那行字的颜色。气泡内容整体套了
+    /// foregroundStyle(bubbleTextColor)，会一路盖到按钮标题上——墨白主题的
+    /// accent 是纯黑，于是黑底灰字什么都看不见（她 2026-09-04 指出来的）。
+    let onAccent: Color
 
     var background: LinearGradient {
         LinearGradient(

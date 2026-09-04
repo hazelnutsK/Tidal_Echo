@@ -255,6 +255,25 @@ final class NativeNotificationCenter: ObservableObject {
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// 「他想看一眼你的屏幕」——共享申请跟普通消息长得不一样，
+    /// 锁屏上一眼就能认出来是要她按一下的事。
+    func scheduleScreenPeek(_ message: ChatMessage) {
+        guard enabled else { return }
+        let content = UNMutableNotificationContent()
+        content.title = "Altair想看一眼你的屏幕"
+        let note = (message.meta.peek?.note ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = note.isEmpty ? fallback : note
+        content.body = body.isEmpty ? "打开看看要不要给他看" : String(body.prefix(140))
+        content.sound = .default
+        content.categoryIdentifier = Self.messageCategory
+        content.userInfo = ["type": "peek", "message_id": message.id]
+        let request = UNNotificationRequest(
+            identifier: "tidal-peek-\(message.id)", content: content, trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     func scheduleIncomingCall(_ invite: IncomingCallInvite) {
         guard enabled else { return }
         let content = UNMutableNotificationContent()

@@ -1665,7 +1665,11 @@ final class AppModel: ObservableObject {
             if isFreshIncomingCall(message) {
                 NativeCallCoordinator.shared.reportIncoming(messageID: message.id, text: message.text)
             } else if message.kind == "reply", UIApplication.shared.applicationState != .active {
-                NativeNotificationCenter.shared.scheduleMessage(message)
+                if message.meta.peek?.status == "pending" {
+                    NativeNotificationCenter.shared.scheduleScreenPeek(message)
+                } else {
+                    NativeNotificationCenter.shared.scheduleMessage(message)
+                }
             }
         }
         markNativeNotificationCursor(message.id)

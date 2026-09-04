@@ -107,6 +107,15 @@ struct APIClient {
             ScreenShareSessionResponse.self,
             from: try await data(for: req)
         )
+        return try await publishScreenShareHandoff(response, probeMarker: probeMarker)
+    }
+
+    /// 领到票据之后的那半程：把交接单挂上本机端口，等录屏扩展来取。
+    /// 自助共享和「给你看一眼」卡走的是同一段，区别只在票据从哪个端点签出来。
+    private func publishScreenShareHandoff(
+        _ response: ScreenShareSessionResponse,
+        probeMarker: String
+    ) async throws -> ScreenSharePreparation {
         let handoff = ScreenShareHandoffPayload(
             version: 1,
             relayURL: baseURL.absoluteString,
@@ -129,6 +138,28 @@ struct APIClient {
             localHandoffReady: localHandoff.isReady,
             localHandoffDiagnostic: localHandoff.diagnostic
         )
+    }
+
+    /// 她在卡上按了「给你看」：同一次调用里签票据、挂本机交接，
+    /// 回到 UI 就能直接开系统广播面板。
+    func acceptPeek(messageID: Int) async throws -> ScreenSharePreparation {
+        let probeMarker = UUID().uuidString
+        var req = request(url: endpoint("app/peek/\(messageID)/accept"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(
+            ScreenShareSessionPayload(apiSession: nil, appGroupProbe: probeMarker)
+        )
+        let response = try decoder.decode(
+            ScreenShareSessionResponse.self,
+            from: try await data(for: req)
+        )
+        return try await publishScreenShareHandoff(response, probeMarker: probeMarker)
+    }
+
+    /// 她按了「现在不行」。
+    func declinePeek(messageID: Int) async throws -> MessagePeek {
+        let req = request(url: endpoint("app/peek/\(messageID)/decline"), method: "POST")
+        return try decoder.decode(PeekResponse.self, from: try await data(for: req)).peek
     }
 
     func screenShareProbeStatus(probeID: String) async throws -> ScreenShareProbeStatus {

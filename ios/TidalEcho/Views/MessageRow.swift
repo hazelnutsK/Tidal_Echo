@@ -119,6 +119,10 @@ struct MessageRow: View {
     let onReact: (String) -> Void
     let onCompleteTimer: () -> Void
     let onOpenAsk: () -> Void
+    /// 程序化点不开系统广播面板时，这张共享卡要露出真的那颗按钮让她手点。
+    let peekNeedsManualPicker: Bool
+    let onAcceptPeek: () async -> Void
+    let onDeclinePeek: () async -> Void
     let onAnswerCall: () -> Void
     let attachmentRequest: (Attachment) -> URLRequest?
 
@@ -272,6 +276,16 @@ struct MessageRow: View {
 
                     if let ask = message.meta.ask {
                         MessageAskChip(ask: ask, palette: palette, onOpen: onOpenAsk)
+                    }
+
+                    if let peek = message.meta.peek {
+                        MessagePeekCard(
+                            peek: peek,
+                            palette: palette,
+                            needsManualPicker: peekNeedsManualPicker,
+                            onAccept: onAcceptPeek,
+                            onDecline: onDeclinePeek
+                        )
                     }
 
                     if !message.meta.album.isEmpty {
@@ -821,6 +835,122 @@ private struct MessageAskChip: View {
     private var chipText: String {
         if let answer = ask.answer { return "你答：\(answer.text)" }
         return ask.question
+    }
+}
+
+/// 「给你看一眼」：我发起的屏幕共享请求，她按了确认才会有系统面板。
+/// 画面不会变成她的气泡——回来的那张图夹在我随后那条消息里。
+private struct MessagePeekCard: View {
+    let peek: MessagePeek
+    let palette: EchoPalette
+    let needsManualPicker: Bool
+    let onAccept: () async -> Void
+    let onDecline: () async -> Void
+    @State private var busy = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 9) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundStyle(peek.isOpen ? palette.text : palette.secondaryText)
+                    if !peek.note.isEmpty && peek.status != "delivered" {
+                        Text(peek.note)
+                            .font(.system(size: 12))
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 8)
+                if busy { ProgressView().controlSize(.small) }
+            }
+
+            if peek.status == "pending" {
+                HStack(spacing: 8) {
+                    Button {
+                        run(onAccept)
+                    } label: {
+                        Text("给你看").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(palette.accent)
+
+                    Button {
+                        run(onDecline)
+                    } label: {
+                        Text("现在不行").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(palette.secondaryText)
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .disabled(busy)
+            } else if peek.status == "accepted" && needsManualPicker {
+                HStack(spacing: 10) {
+                    Text("点这颗按钮，再选 Tidal Echo")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.secondaryText)
+                    Spacer(minLength: 4)
+                    BroadcastPickerButton()
+                        .frame(width: 42, height: 42)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        .accessibilityLabel("打开系统屏幕共享")
+                }
+            }
+        }
+        .padding(11)
+        .background(
+            palette.composer.opacity(0.76),
+            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(palette.hairline, lineWidth: 0.6)
+        )
+        .onChange(of: peek.status) { _, _ in busy = false }
+    }
+
+    private func run(_ action: @escaping () async -> Void) {
+        guard !busy else { return }
+        busy = true
+        Task {
+            await action()
+            busy = false
+        }
+    }
+
+    private var icon: String {
+        switch peek.status {
+        case "accepted": return "record.circle"
+        case "delivered": return "checkmark.circle.fill"
+        case "declined": return "hand.raised.fill"
+        case "expired": return "clock.badge.xmark"
+        default: return "eye"
+        }
+    }
+
+    private var tint: Color {
+        switch peek.status {
+        case "delivered": return .green
+        case "declined", "expired": return palette.secondaryText
+        default: return palette.accent
+        }
+    }
+
+    private var title: String {
+        switch peek.status {
+        case "accepted":
+            return needsManualPicker ? "还差一下：开系统广播" : "在系统面板上点「开始直播」"
+        case "delivered": return "他看到了"
+        case "declined": return "你说了现在不行"
+        case "expired":
+            return peek.reason == "frame_never_arrived" ? "画面没送到" : "这张卡过期了"
+        default: return "他想看一眼你的屏幕"
+        }
     }
 }
 

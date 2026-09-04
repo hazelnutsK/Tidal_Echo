@@ -149,6 +149,31 @@ struct MessageAsk: Decodable, Hashable {
     }
 }
 
+/// 「给你看一眼」——我发起的屏幕共享请求，她按确认才会开始录屏。
+/// status: pending 等她按 / accepted 票据已发、等系统面板 / delivered 画面到了 /
+/// declined 她说现在不行 / expired 这次没成（reason 说是哪种没成）。
+struct MessagePeek: Decodable, Hashable {
+    var note: String
+    var status: String
+    var reason: String?
+    var expiresAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case note, status, reason
+        case expiresAt = "expires_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        note = (try? values.decode(String.self, forKey: .note)) ?? ""
+        status = (try? values.decode(String.self, forKey: .status)) ?? "pending"
+        reason = try? values.decode(String.self, forKey: .reason)
+        expiresAt = try? values.decode(String.self, forKey: .expiresAt)
+    }
+
+    var isOpen: Bool { status == "pending" || status == "accepted" }
+}
+
 struct MessageAlbumEntry: Decodable, Hashable, Identifiable {
     let albumID: Int?
     let url: String
@@ -180,6 +205,7 @@ struct MessageMeta: Decodable, Hashable {
     var starred: String?
     var timer: MessageTimer?
     var ask: MessageAsk?
+    var peek: MessagePeek?
     var edited: Bool
     var glyph: String?
     var steps: [ToolStep]
@@ -200,7 +226,7 @@ struct MessageMeta: Decodable, Hashable {
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
         case callStatus = "call_status"
-        case starred, timer, ask, edited, glyph, steps, act, album, recalled, xhs
+        case starred, timer, ask, peek, edited, glyph, steps, act, album, recalled, xhs
     }
 
     init(
@@ -220,6 +246,7 @@ struct MessageMeta: Decodable, Hashable {
         self.starred = nil
         self.timer = nil
         self.ask = nil
+        self.peek = nil
         self.edited = false
         self.glyph = nil
         self.steps = []
@@ -253,6 +280,7 @@ struct MessageMeta: Decodable, Hashable {
         starred = Self.lenient(String.self, values, .starred)
         timer = Self.lenient(MessageTimer.self, values, .timer)
         ask = Self.lenient(MessageAsk.self, values, .ask)
+        peek = Self.lenient(MessagePeek.self, values, .peek)
         edited = Self.lenient(Bool.self, values, .edited) ?? false
         bookRef = Self.lenient(BookRef.self, values, .bookRef)
         callStatus = Self.lenient(String.self, values, .callStatus)
@@ -374,6 +402,10 @@ struct AskResponse: Decodable {
     let ask: MessageAsk
 }
 
+struct PeekResponse: Decodable {
+    let peek: MessagePeek
+}
+
 struct MessageNavigationRequest: Equatable {
     let token = UUID()
     let messageID: Int
@@ -402,12 +434,13 @@ struct StreamEnvelope: Decodable {
     let apiSession: String?
     let timer: MessageTimer?
     let ask: MessageAsk?
+    let peek: MessagePeek?
     let post: MomentPost?
     let bookID: Int?
     let annotation: BookAnnotation?
 
     enum CodingKeys: String, CodingKey {
-        case type, active, id, reactions, text, done, starred, timer, ask, post, annotation
+        case type, active, id, reactions, text, done, starred, timer, ask, peek, post, annotation
         case streamID = "stream_id"
         case timestamp = "ts"
         case apiSession = "api_session"

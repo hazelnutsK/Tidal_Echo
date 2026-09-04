@@ -383,6 +383,15 @@ struct ChatView: View {
                                 guard let ask = message.meta.ask else { return }
                                 askSheetContext = AskSheetContext(messageID: message.id, initialAsk: ask)
                             },
+                            peekNeedsManualPicker: model.peekManualPickerID == message.id,
+                            onAcceptPeek: {
+                                do { try await model.acceptPeek(messageID: message.id) }
+                                catch { model.errorMessage = error.localizedDescription }
+                            },
+                            onDeclinePeek: {
+                                do { try await model.declinePeek(messageID: message.id) }
+                                catch { model.errorMessage = error.localizedDescription }
+                            },
                             onAnswerCall: {
                                 presentVoiceCallDirectly()
                             },

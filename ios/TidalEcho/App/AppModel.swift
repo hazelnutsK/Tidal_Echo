@@ -35,6 +35,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var momentsUnreadCount = 0
     /// 小克在书页边留了一句话：正开着那一章的阅读页会当场把它长出来。
     @Published var incomingBookAnnotation: BookAnnotationEvent?
+    /// 这条共享卡上的系统广播按钮得她自己点（程序化那条路没走通）。
+    @Published var peekManualPickerID: Int?
     @Published var theme: EchoTheme {
         didSet { UserDefaults.standard.set(theme.rawValue, forKey: Keys.theme) }
     }
@@ -659,6 +661,24 @@ final class AppModel: ObservableObject {
     func answerAsk(messageID: Int, index: Int? = nil, text: String? = nil) async throws {
         let ask = try await requireClient().answerAsk(messageID: messageID, index: index, text: text)
         updateAsk(messageID: messageID, ask: ask)
+    }
+
+    /// 她按了「给你看」：领一次性票据 → 挂本机交接 → 替她点开系统广播按钮。
+    /// 那颗按钮藏在系统视图层级里，点不着就把卡片切成手点模式——绝不假装已经开了。
+    func acceptPeek(messageID: Int) async throws {
+        let preparation = try await requireClient().acceptPeek(messageID: messageID)
+        markPeekStatus(messageID: messageID, "accepted")
+        guard preparation.localHandoffReady else {
+            peekManualPickerID = messageID
+            throw APIError.server(preparation.localHandoffDiagnostic ?? "本机票据通道没能打开")
+        }
+        peekManualPickerID = ScreenBroadcastLauncher.present() ? nil : messageID
+    }
+
+    func declinePeek(messageID: Int) async throws {
+        let peek = try await requireClient().declinePeek(messageID: messageID)
+        if peekManualPickerID == messageID { peekManualPickerID = nil }
+        updatePeek(messageID: messageID, peek: peek)
     }
 
     func greetingForCurrentTime() async -> String? {
@@ -1475,6 +1495,12 @@ final class AppModel: ObservableObject {
                     updateAsk(messageID: id, ask: ask)
                 }
                 return
+            case "peek":
+                if let id = envelope.id, let peek = envelope.peek {
+                    if !peek.isOpen, peekManualPickerID == id { peekManualPickerID = nil }
+                    updatePeek(messageID: id, peek: peek)
+                }
+                return
             case "star":
                 if let id = envelope.id,
                    let index = messages.firstIndex(where: { $0.id == id }) {
@@ -1529,6 +1555,29 @@ final class AppModel: ObservableObject {
         }
         if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
             historyArchive[index].meta.ask = ask
+        }
+    }
+
+    private func updatePeek(messageID: Int, peek: MessagePeek) {
+        if let index = messages.firstIndex(where: { $0.id == messageID }) {
+            messages[index].meta.peek = peek
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
+            historyArchive[index].meta.peek = peek
+        }
+    }
+
+    /// 服务器的 peek 帧路上可能慢一步，按下去的那一刻卡片得先动起来。
+    private func markPeekStatus(messageID: Int, _ status: String) {
+        if let index = messages.firstIndex(where: { $0.id == messageID }),
+           var peek = messages[index].meta.peek {
+            peek.status = status
+            messages[index].meta.peek = peek
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }),
+           var peek = historyArchive[index].meta.peek {
+            peek.status = status
+            historyArchive[index].meta.peek = peek
         }
     }
 

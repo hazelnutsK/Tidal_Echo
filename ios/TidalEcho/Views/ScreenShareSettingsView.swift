@@ -180,22 +180,3 @@ struct ScreenShareSettingsView: View {
         }
     }
 }
-
-private struct BroadcastPickerButton: UIViewRepresentable {
-    func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
-        let picker = RPSystemBroadcastPickerView(frame: .zero)
-        picker.preferredExtension = uploadExtensionBundleIdentifier
-        picker.showsMicrophoneButton = false
-        picker.tintColor = .label
-        return picker
-    }
-
-    func updateUIView(_ picker: RPSystemBroadcastPickerView, context: Context) {
-        picker.preferredExtension = uploadExtensionBundleIdentifier
-        picker.showsMicrophoneButton = false
-    }
-
-    private var uploadExtensionBundleIdentifier: String {
-        "\(Bundle.main.bundleIdentifier ?? "com.tidalecho.personal").ScreenShareUpload"
-    }
-}

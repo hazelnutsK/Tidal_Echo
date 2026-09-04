@@ -1,10 +1,14 @@
 import CoreImage
 import CoreMedia
+import ImageIO
 import Foundation
 import Network
 import ReplayKit
 
 final class SampleHandler: RPBroadcastSampleHandler {
+    /// 送出去那张图的长边上限（像素）。
+    private static let longestSide: CGFloat = 1600
+
     private let context = CIContext(options: [.cacheIntermediates: false])
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -45,7 +49,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     ) {
         guard sampleBufferType == .video,
               !didStartUpload,
-              Date().timeIntervalSince(startedAt) >= 3,
+              Date().timeIntervalSince(startedAt) >= 4,
               let uploadURL,
               let jpeg = makeJPEG(from: sampleBuffer) else { return }
 
@@ -136,14 +140,31 @@ final class SampleHandler: RPBroadcastSampleHandler {
             image = image.oriented(forExifOrientation: orientation.int32Value)
         }
 
-        let longestSide = max(image.extent.width, image.extent.height)
-        if longestSide > 720 {
-            let scale = 720 / longestSide
-            image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        // 长边 720 会把 iPhone 竖屏压到 330 多像素宽，屏幕上的字全糊成一团。
+        // 1600 够读清正文；Lanczos 缩放对小字的锐度比仿射缩放明显好。
+        let side = max(image.extent.width, image.extent.height)
+        if side > Self.longestSide {
+            let scale = Self.longestSide / side
+            if let filter = CIFilter(name: "CILanczosScaleTransform") {
+                filter.setValue(image, forKey: kCIInputImageKey)
+                filter.setValue(scale, forKey: kCIInputScaleKey)
+                filter.setValue(1.0, forKey: kCIInputAspectRatioKey)
+                image = filter.outputImage ?? image.transformed(
+                    by: CGAffineTransform(scaleX: scale, y: scale)
+                )
+            } else {
+                image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+            }
         }
+        // q0.85 下一帧三四百 KB，离 relay 那边 4MB 的闸还很远。
         return context.jpegRepresentation(
             of: image,
-            colorSpace: CGColorSpaceCreateDeviceRGB()
+            colorSpace: CGColorSpaceCreateDeviceRGB(),
+            options: [
+                CIImageRepresentationOption(
+                    rawValue: kCGImageDestinationLossyCompressionQuality as String
+                ): 0.85
+            ]
         )
     }
 

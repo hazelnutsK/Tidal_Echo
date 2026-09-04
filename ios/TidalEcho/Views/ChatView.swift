@@ -12,6 +12,7 @@ struct ChatView: View {
     @State private var showingSettings = false
     @State private var showingSpaces = false
     @State private var showingVoiceCall = false
+    @State private var isPresentingVoiceCall = false
     @State private var showingSearch = false
     @State private var showingSessions = false
     @State private var askSheetContext: AskSheetContext?
@@ -885,12 +886,12 @@ struct ChatView: View {
     }
 
     private func presentVoiceCallDirectly() {
-        guard !showingVoiceCall else { return }
-        nativeCalls.transitionToInAppCall()
-        // Let the incoming overlay / system CallKit surface finish dismissing before
-        // asking SwiftUI for a different full-screen presentation.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+        guard !showingVoiceCall, !isPresentingVoiceCall else { return }
+        isPresentingVoiceCall = true
+        Task {
+            await nativeCalls.transitionToInAppCall()
             showingVoiceCall = true
+            isPresentingVoiceCall = false
         }
     }
 }
@@ -2072,4 +2073,3 @@ private struct ComposerView: View {
         return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
-

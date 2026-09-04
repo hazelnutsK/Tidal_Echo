@@ -311,7 +311,7 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         }
 
         do {
-            try configureSession()
+            try await configureSession()
             callID = "ios-call-\(UUID().uuidString.lowercased())"
             initialMessageID = model.messages.map(\.id).filter { $0 > 0 }.max() ?? 0
             isActive = true
@@ -400,11 +400,21 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         }
     }
 
-    private func configureSession() throws {
+    private func configureSession() async throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
-        try session.setActive(true)
-        try session.overrideOutputAudioPort(.speaker)
+        for attempt in 0..<4 {
+            do {
+                try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
+                try session.setActive(true)
+                try session.overrideOutputAudioPort(.speaker)
+                return
+            } catch {
+                guard attempt < 3 else { throw error }
+                // A full-screen CallKit answer can release its audio session a
+                // fraction later than its UI. Give that handoff time to settle.
+                try await Task.sleep(nanoseconds: 250_000_000)
+            }
+        }
     }
 
     private func requestMicrophonePermission() async -> Bool {

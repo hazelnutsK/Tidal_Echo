@@ -25,6 +25,11 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
     private let controller = CXCallController()
     private var invites: [UUID: IncomingCallInvite] = [:]
     private var activeUUID: UUID?
+    private var callKitManagedUUIDs: Set<UUID> = []
+    private var isCallKitAudioSessionActive = false
+    private var isWaitingForAudioHandoff = false
+    private var audioHandoffWaiters: [CheckedContinuation<Void, Never>] = []
+    private var audioHandoffTimeoutTask: Task<Void, Never>?
     private var reportedDeclineMessageIDs: Set<Int> = []
 
     override init() {
@@ -43,6 +48,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         guard ringingInvite == nil, acceptedInvite == nil, activeUUID == nil else { return }
         let invite = IncomingCallInvite(id: messageID, uuid: UUID(), text: text)
         invites[invite.uuid] = invite
+        callKitManagedUUIDs.insert(invite.uuid)
         ringingInvite = invite
         activeUUID = invite.uuid
         shouldPlayInAppRingtone = false
@@ -58,6 +64,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         provider.reportNewIncomingCall(with: invite.uuid, update: update) { error in
             Task { @MainActor in
                 if let error {
+                    self.callKitManagedUUIDs.remove(invite.uuid)
                     self.lastCallKitError = error.localizedDescription
                     let isForeground = UIApplication.shared.applicationState == .active
                     self.shouldPlayInAppRingtone = isForeground
@@ -116,15 +123,23 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         acceptedInvite = nil
     }
 
-    func transitionToInAppCall() {
-        if let activeUUID {
-            provider.reportCall(with: activeUUID, endedAt: Date(), reason: .answeredElsewhere)
-            invites.removeValue(forKey: activeUUID)
+    func transitionToInAppCall() async {
+        let callKitUUID = activeUUID.flatMap { uuid in
+            callKitManagedUUIDs.contains(uuid) ? uuid : nil
+        }
+        if let callKitUUID {
+            beginAudioHandoff()
+            provider.reportCall(with: callKitUUID, endedAt: Date(), reason: .answeredElsewhere)
+            callKitManagedUUIDs.remove(callKitUUID)
+            invites.removeValue(forKey: callKitUUID)
         }
         activeUUID = nil
         ringingInvite = nil
         acceptedInvite = nil
         shouldPlayInAppRingtone = false
+        if callKitUUID != nil {
+            await waitForAudioHandoff()
+        }
     }
 
     func finishCurrentCall() {
@@ -148,8 +163,46 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         }
     }
 
+    private func beginAudioHandoff() {
+        audioHandoffTimeoutTask?.cancel()
+        isWaitingForAudioHandoff = true
+        audioHandoffTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard !Task.isCancelled else { return }
+            if self?.isCallKitAudioSessionActive == true {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard !Task.isCancelled else { return }
+            }
+            self?.completeAudioHandoff()
+        }
+    }
+
+    private func waitForAudioHandoff() async {
+        guard isWaitingForAudioHandoff else { return }
+        await withCheckedContinuation { continuation in
+            if isWaitingForAudioHandoff {
+                audioHandoffWaiters.append(continuation)
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func completeAudioHandoff() {
+        guard isWaitingForAudioHandoff else { return }
+        isWaitingForAudioHandoff = false
+        audioHandoffTimeoutTask?.cancel()
+        audioHandoffTimeoutTask = nil
+        let waiters = audioHandoffWaiters
+        audioHandoffWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+
     nonisolated func providerDidReset(_ provider: CXProvider) {
         Task { @MainActor [weak self] in
+            self?.callKitManagedUUIDs.removeAll()
+            self?.isCallKitAudioSessionActive = false
+            self?.completeAudioHandoff()
             self?.activeUUID = nil
             self?.ringingInvite = nil
             self?.acceptedInvite = nil
@@ -180,6 +233,7 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
                 self.reportDeclineIfNeeded(messageID: invite.id)
             }
             self.invites.removeValue(forKey: action.callUUID)
+            self.callKitManagedUUIDs.remove(action.callUUID)
             if self.activeUUID == action.callUUID { self.activeUUID = nil }
             self.ringingInvite = nil
             self.acceptedInvite = nil
@@ -188,8 +242,18 @@ final class NativeCallCoordinator: NSObject, ObservableObject, CXProviderDelegat
         }
     }
 
-    nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {}
-    nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {}
+    nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        Task { @MainActor [weak self] in
+            self?.isCallKitAudioSessionActive = true
+        }
+    }
+
+    nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        Task { @MainActor [weak self] in
+            self?.isCallKitAudioSessionActive = false
+            self?.completeAudioHandoff()
+        }
+    }
 }
 
 @MainActor

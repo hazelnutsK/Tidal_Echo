@@ -727,7 +727,7 @@ private final class VoiceCallController: NSObject, ObservableObject, AVAudioPlay
         level = 0.78
         do {
             let data = try await model.synthesizeSpeech(text: text, messageID: messageID, persist: true)
-            try configureSession()
+            try await configureSession()
             await play(data: data)
         } catch {
             await speakWithSystemVoice(text)

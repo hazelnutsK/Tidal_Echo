@@ -945,8 +945,26 @@ struct ContextThresholdResponse: Decodable {
     }
 }
 
+struct DesktopKeepaliveConfig: Decodable {
+    let keepalive: Bool
+}
+
+struct DesktopKeepaliveStatus: Decodable {
+    let ok: Bool
+    let config: DesktopKeepaliveConfig
+    let nextAt: String?
+    let lastFireAt: String?
+    let today: Int
+    let brain: String
+
+    enum CodingKeys: String, CodingKey {
+        case ok, config, today, brain
+        case nextAt = "next_at"
+        case lastFireAt = "last_fire_at"
+    }
+}
+
 struct ContextActionResponse: Decodable {
     let ok: Bool
     let action: String
 }
-

@@ -24,6 +24,7 @@ private func settingsRowBackground(theme: EchoTheme, palette: EchoPalette) -> Co
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     let onSearch: () -> Void
+    let onCall: () -> Void
     @State private var anniversary: AnniversarySummary?
     @State private var greeting: String?
     @Environment(\.dismiss) private var dismiss
@@ -96,8 +97,8 @@ struct SettingsView: View {
                             HubNavigationTile(icon: "gauge.with.dots.needle.50percent", title: "会话与上下文", subtitle: "窗口与切换", palette: palette, isMist: model.theme == .mist) {
                                 ContextSettingsView(model: model)
                             }
-                            HubNavigationTile(icon: "terminal", title: "终端", subtitle: "实时会话流", palette: palette, isMist: model.theme == .mist) {
-                                TerminalView(model: model)
+                            Button { leaveHub(for: onCall) } label: {
+                                HubTile(icon: "phone.fill", title: "语音通话", subtitle: "打给 Altair", palette: palette, isMist: model.theme == .mist)
                             }
                             HubNavigationTile(icon: "chart.bar", title: "Claude 额度", subtitle: "限额与用量", palette: palette, isMist: model.theme == .mist) {
                                 ClaudeQuotaView(model: model)
@@ -1815,6 +1816,9 @@ private struct ContextSettingsView: View {
     @State private var pendingCommand: ContextCommand?
     @State private var chatMode: ChatMode = .long
     @State private var stripsShortChatTerminalPeriods = false
+    @State private var keepaliveStatus: DesktopKeepaliveStatus?
+    @State private var keepaliveOn = false
+    @State private var isKeepaliveBusy = false
 
     private var palette: EchoPalette { model.theme.palette }
     private var usageK: Double { Double(status?.usageTokens ?? 0) / 1000 }
@@ -1865,6 +1869,18 @@ private struct ContextSettingsView: View {
                     Button("保存阈值") { Task { await saveThreshold() } }
                 }
                 Text("仅影响 Desktop；到达触发线后会带最近对话自动交接重开。")
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+
+                Toggle("缓存保活", isOn: Binding(
+                    get: { keepaliveOn },
+                    set: { enabled in
+                        keepaliveOn = enabled
+                        Task { await saveKeepalive(enabled) }
+                    }
+                ))
+                .disabled(isKeepaliveBusy)
+                Text(keepaliveStatusText)
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText)
             }
@@ -1960,6 +1976,9 @@ private struct ContextSettingsView: View {
                 chatMode = settings.mode
                 stripsShortChatTerminalPeriods = settings.stripTerminalPeriods
             }
+            if let nextKeepalive = try? await model.settingsDesktopKeepalive() {
+                applyKeepalive(nextKeepalive)
+            }
         } catch {
             errorText = error.localizedDescription
         }
@@ -1990,6 +2009,54 @@ private struct ContextSettingsView: View {
             autoSwap.toggle()
             errorText = error.localizedDescription
         }
+    }
+
+    private func saveKeepalive(_ enabled: Bool) async {
+        isKeepaliveBusy = true
+        defer { isKeepaliveBusy = false }
+        do {
+            let next = try await model.updateDesktopKeepalive(enabled)
+            applyKeepalive(next)
+            notice = next.config.keepalive
+                ? "缓存保活已开启，一小时内不让缓存凉。"
+                : "缓存保活已关闭。"
+        } catch {
+            keepaliveOn = !enabled
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func applyKeepalive(_ next: DesktopKeepaliveStatus) {
+        keepaliveStatus = next
+        keepaliveOn = next.config.keepalive
+    }
+
+    private var keepaliveStatusText: String {
+        guard let keepaliveStatus else {
+            return "Desktop 会话闲置 50–58 分钟会随机续一次；你超过 10 小时没说话便停止保活。"
+        }
+        if keepaliveStatus.brain != "desktop" {
+            return "当前为 API 身体，自带心跳；这个开关只影响 Desktop。"
+        }
+        var details: [String] = []
+        if keepaliveStatus.today > 0 {
+            details.append("今日 \(keepaliveStatus.today) 次")
+        }
+        if keepaliveStatus.config.keepalive, let time = keepaliveClock(keepaliveStatus.nextAt) {
+            details.append("下次约 \(time)")
+        } else if let time = keepaliveClock(keepaliveStatus.lastFireAt) {
+            details.append("上次 \(time)")
+        }
+        if !details.isEmpty { return details.joined(separator: " · ") }
+        return keepaliveStatus.config.keepalive
+            ? "等上一轮说完后开始计时；闲置 50–58 分钟随机续一次。"
+            : "已关闭；Desktop 缓存会按服务端原本的时间自然过期。"
+    }
+
+    private func keepaliveClock(_ raw: String?) -> String? {
+        guard let raw, let separator = raw.firstIndex(of: "T") else { return nil }
+        let clock = raw[raw.index(after: separator)...].prefix(5)
+        return clock.count == 5 ? String(clock) : nil
     }
 
     private func saveChatMode(_ mode: ChatMode) async {

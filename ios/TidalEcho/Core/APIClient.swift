@@ -467,6 +467,19 @@ struct APIClient {
         return try decoder.decode(ContextThresholdResponse.self, from: responseData)
     }
 
+    func desktopKeepalive() async throws -> DesktopKeepaliveStatus {
+        let responseData = try await data(for: request(url: endpoint("app/keepalive")))
+        return try decoder.decode(DesktopKeepaliveStatus.self, from: responseData)
+    }
+
+    func setDesktopKeepalive(_ enabled: Bool) async throws -> DesktopKeepaliveStatus {
+        var req = request(url: endpoint("app/keepalive"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(DesktopKeepalivePayload(keepalive: enabled))
+        let responseData = try await data(for: req)
+        return try decoder.decode(DesktopKeepaliveStatus.self, from: responseData)
+    }
+
     func performContextAction(_ action: String, sid: String? = nil) async throws -> ContextActionResponse {
         var req = request(url: endpoint("app/context_action"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -722,6 +735,10 @@ private struct ContextThresholdPayload: Encodable {
         case auto
         case triggerK = "trigger_k"
     }
+}
+
+private struct DesktopKeepalivePayload: Encodable {
+    let keepalive: Bool
 }
 
 private struct ContextActionPayload: Encodable {

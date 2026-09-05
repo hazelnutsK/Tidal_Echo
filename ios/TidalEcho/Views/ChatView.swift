@@ -13,6 +13,7 @@ struct ChatView: View {
     @State private var showingSpaces = false
     @State private var showingVoiceCall = false
     @State private var isPresentingVoiceCall = false
+    @State private var showingTerminal = false
     @State private var showingSearch = false
     @State private var showingSessions = false
     @State private var askSheetContext: AskSheetContext?
@@ -90,7 +91,8 @@ struct ChatView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView(
                 model: model,
-                onSearch: { showingSearch = true }
+                onSearch: { showingSearch = true },
+                onCall: { showingVoiceCall = true }
             )
                 .presentationDetents([.medium, .large])
         }
@@ -120,6 +122,19 @@ struct ChatView: View {
         }
         .fullScreenCover(isPresented: $showingVoiceCall) {
             VoiceCallView(model: model)
+        }
+        .fullScreenCover(isPresented: $showingTerminal) {
+            NavigationStack {
+                TerminalView(model: model)
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            Button { showingTerminal = false } label: {
+                                Image(systemName: "chevron.down")
+                            }
+                            .accessibilityLabel("关闭终端")
+                        }
+                    }
+            }
         }
         .onAppear {
             openAcceptedCallIfNeeded()
@@ -196,7 +211,7 @@ struct ChatView: View {
             }
 
             HStack(spacing: 14) {
-                headerButton(icon: "phone.fill", size: 15) { showingVoiceCall = true }
+                headerButton(icon: "terminal", size: 15) { showingTerminal = true }
                 headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
             }
         }

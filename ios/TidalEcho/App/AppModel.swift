@@ -1220,6 +1220,14 @@ final class AppModel: ObservableObject {
         try await requireClient().updateContextThreshold(triggerK: triggerK, auto: auto)
     }
 
+    func settingsDesktopKeepalive() async throws -> DesktopKeepaliveStatus {
+        try await requireClient().desktopKeepalive()
+    }
+
+    func updateDesktopKeepalive(_ enabled: Bool) async throws -> DesktopKeepaliveStatus {
+        try await requireClient().setDesktopKeepalive(enabled)
+    }
+
     func performContextAction(_ action: String, sid: String? = nil) async throws -> ContextActionResponse {
         try await requireClient().performContextAction(action, sid: sid)
     }

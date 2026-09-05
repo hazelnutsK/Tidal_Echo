@@ -448,6 +448,69 @@ struct StreamEnvelope: Decodable {
     }
 }
 
+struct ClawdPetState: Decodable, Equatable {
+    let sid: String?
+    let state: String
+    let event: String?
+    let toolName: String?
+    let sessionTitle: String?
+    let timestamp: String?
+
+    static let idle = ClawdPetState(
+        sid: nil,
+        state: "idle",
+        event: nil,
+        toolName: nil,
+        sessionTitle: nil,
+        timestamp: nil
+    )
+
+    enum CodingKeys: String, CodingKey {
+        case sid, state, event
+        case toolName = "tool_name"
+        case sessionTitle = "session_title"
+        case timestamp = "ts"
+    }
+
+    var assetFilename: String {
+        switch state {
+        case "thinking": return "clawd-thinking.gif"
+        case "working": return "clawd-typing.gif"
+        case "juggling": return "clawd-juggling.gif"
+        case "sweeping": return "clawd-sweeping.gif"
+        case "error": return "clawd-error.gif"
+        case "notification": return "clawd-notification.gif"
+        case "carrying": return "clawd-carrying.gif"
+        case "sleeping": return "clawd-sleeping.gif"
+        default: return "clawd-idle.gif"
+        }
+    }
+
+    var localizedLabel: String {
+        switch state {
+        case "thinking": return "在想"
+        case "working": return "在敲"
+        case "juggling": return "多线程"
+        case "sweeping": return "清上下文"
+        case "error": return "出错了"
+        case "attention": return "等你"
+        case "notification": return "有提示"
+        case "carrying": return "搬东西"
+        case "sleeping": return "睡了"
+        default: return "闲着"
+        }
+    }
+
+    var statusText: String {
+        [localizedLabel, toolName, sessionTitle]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: " · ")
+    }
+}
+
 enum BrainTarget: String, Codable, CaseIterable, Identifiable {
     case desktop
     case codex

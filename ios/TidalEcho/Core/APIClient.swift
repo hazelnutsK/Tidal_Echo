@@ -480,6 +480,19 @@ struct APIClient {
         return try decoder.decode(DesktopKeepaliveStatus.self, from: responseData)
     }
 
+    func clawdState() async throws -> ClawdPetState {
+        let responseData = try await data(for: request(url: endpoint("app/clawd_state")))
+        return try decoder.decode(ClawdPetState.self, from: responseData)
+    }
+
+    func clawdAssetURL(filename: String) -> URL? {
+        guard var components = URLComponents(url: baseURL, resolvingAgainstBaseURL: false) else { return nil }
+        components.path = "/chat/clawd/\(filename)"
+        components.query = nil
+        components.fragment = nil
+        return components.url
+    }
+
     func performContextAction(_ action: String, sid: String? = nil) async throws -> ContextActionResponse {
         var req = request(url: endpoint("app/context_action"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")

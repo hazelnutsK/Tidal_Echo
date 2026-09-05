@@ -686,6 +686,13 @@ private struct AppearanceSettingsView: View {
                 )
             }
 
+            Section("聊天挂件") {
+                Toggle("显示小螃蟹", isOn: $model.showsClawdPet)
+                Text("它会跟着桌面身体的状态切换动作。可以在聊天页拖到喜欢的位置，点一下会告诉你他正在做什么。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+            }
+
         }
         .tint(palette.accent)
         .scrollContentBackground(.hidden)

@@ -76,6 +76,12 @@ struct ChatView: View {
                 }
             }
 
+            if model.showsClawdPet {
+                ClawdPetOverlay(model: model, bottomInset: composerHeight + 4)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    .zIndex(10)
+            }
+
             if let invite = nativeCalls.ringingInvite,
                nativeCalls.shouldPlayInAppRingtone {
                 NativeIncomingCallOverlay(

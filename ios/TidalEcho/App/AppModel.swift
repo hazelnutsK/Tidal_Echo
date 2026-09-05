@@ -75,6 +75,9 @@ final class AppModel: ObservableObject {
     @Published var showsHumanAvatar: Bool {
         didSet { UserDefaults.standard.set(showsHumanAvatar, forKey: Keys.showsHumanAvatar) }
     }
+    @Published var showsClawdPet: Bool {
+        didSet { UserDefaults.standard.set(showsClawdPet, forKey: Keys.showsClawdPet) }
+    }
     @Published var bubbleWidthScale: Double {
         didSet { UserDefaults.standard.set(bubbleWidthScale, forKey: Keys.bubbleWidthScale) }
     }
@@ -123,6 +126,7 @@ final class AppModel: ObservableObject {
     @Published var backgroundImage: UIImage?
     @Published var aiAvatarImage: UIImage?
     @Published var humanAvatarImage: UIImage?
+    @Published private(set) var clawdPetState = ClawdPetState.idle
 
     private var client: APIClient?
     private let stream = SSEClient()
@@ -158,6 +162,7 @@ final class AppModel: ObservableObject {
         static let backgroundBlur = "tidalEcho.backgroundBlur"
         static let showsAIBubble = "tidalEcho.showsAIBubble"
         static let showsHumanAvatar = "tidalEcho.showsHumanAvatar"
+        static let showsClawdPet = "tidalEcho.showsClawdPet"
         static let bubbleWidthScale = "tidalEcho.bubbleWidthScale"
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
@@ -228,6 +233,7 @@ final class AppModel: ObservableObject {
         backgroundBlur = defaults.object(forKey: Keys.backgroundBlur) == nil ? 0 : defaults.double(forKey: Keys.backgroundBlur)
         showsAIBubble = defaults.object(forKey: Keys.showsAIBubble) == nil ? true : defaults.bool(forKey: Keys.showsAIBubble)
         showsHumanAvatar = defaults.object(forKey: Keys.showsHumanAvatar) == nil ? false : defaults.bool(forKey: Keys.showsHumanAvatar)
+        showsClawdPet = defaults.object(forKey: Keys.showsClawdPet) == nil ? true : defaults.bool(forKey: Keys.showsClawdPet)
         bubbleWidthScale = defaults.object(forKey: Keys.bubbleWidthScale) == nil ? 1 : defaults.double(forKey: Keys.bubbleWidthScale)
         bubbleBorderWidth = defaults.object(forKey: Keys.bubbleBorderWidth) == nil ? 0 : defaults.double(forKey: Keys.bubbleBorderWidth)
         bubbleStyle = EchoBubbleStyle(rawValue: defaults.string(forKey: Keys.bubbleStyle) ?? "") ?? .classic
@@ -392,6 +398,7 @@ final class AppModel: ObservableObject {
         streamingReply = ""
         updateTypingState(false)
         isStreamConnected = false
+        clawdPetState = .idle
         KeychainStore.delete(account: Keys.relaySecret)
         phase = .signedOut
     }
@@ -1228,6 +1235,10 @@ final class AppModel: ObservableObject {
         try await requireClient().setDesktopKeepalive(enabled)
     }
 
+    func clawdPetGIFURL() -> URL? {
+        client?.clawdAssetURL(filename: clawdPetState.assetFilename)
+    }
+
     func performContextAction(_ action: String, sid: String? = nil) async throws -> ContextActionResponse {
         try await requireClient().performContextAction(action, sid: sid)
     }
@@ -1263,6 +1274,7 @@ final class AppModel: ObservableObject {
             if let settings = try? await nextClient.chatMode() {
                 chatMode = settings.mode
             }
+            clawdPetState = (try? await nextClient.clawdState()) ?? .idle
             if persist {
                 UserDefaults.standard.set(url.absoluteString, forKey: Keys.relayURL)
                 try KeychainStore.save(secret, account: Keys.relaySecret)
@@ -1542,6 +1554,11 @@ final class AppModel: ObservableObject {
         if let envelope = try? decoder.decode(StreamEnvelope.self, from: data),
            let type = envelope.type {
             switch type {
+            case "clawd_state":
+                if let nextState = try? decoder.decode(ClawdPetState.self, from: data) {
+                    clawdPetState = nextState
+                }
+                return
             case "typing":
                 updateTypingState(envelope.active ?? false)
                 return

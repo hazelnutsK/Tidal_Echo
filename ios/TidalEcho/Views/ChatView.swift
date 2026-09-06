@@ -57,7 +57,7 @@ struct ChatView: View {
 
             ZStack(alignment: .top) {
                 messageList
-                topFog
+                if !isNest { topFog }
                 topBar
 
                 VStack(spacing: 0) {
@@ -229,13 +229,8 @@ struct ChatView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(palette.text)
                         .frame(width: 38, height: 38)
-                        .background {
-                            if !usesNativeGlass { headerGlass(shape: Circle()) }
-                        }
-                        .glassEffect(
-                            .clear.tint(headerGlassTint).interactive(usesNativeGlass),
-                            in: .circle
-                        )
+                        .background { nestGlass(shape: Circle(), native: usesNativeGlass) }
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
 
@@ -260,13 +255,7 @@ struct ChatView: View {
                     nestHeaderButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
                 }
                 .padding(.horizontal, 3)
-                .background {
-                    if !usesNativeGlass { headerGlass(shape: Capsule()) }
-                }
-                .glassEffect(
-                    .clear.tint(headerGlassTint).interactive(usesNativeGlass),
-                    in: .capsule
-                )
+                .background { nestGlass(shape: Capsule(), native: usesNativeGlass) }
             } else {
                 HStack(spacing: 14) {
                     headerButton(icon: "terminal", size: 15) { showingTerminal = true }
@@ -276,14 +265,42 @@ struct ChatView: View {
         }
     }
 
+    /// The glass has to sit in `.background` rather than on top of the label:
+    /// a `glassEffect` layer laid over a button swallows the tap, which is what
+    /// left the whole Nest header dead.
+    @ViewBuilder
+    private func nestGlass<S: InsettableShape>(shape: S, native: Bool) -> some View {
+        if native {
+            shape
+                .fill(Color.white.opacity(0.001))
+                .glassEffect(.clear.tint(headerGlassTint), in: shape)
+        } else {
+            headerGlass(shape: shape)
+        }
+    }
+
     private func nestHeaderButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(palette.text)
                 .frame(width: 37, height: 38)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    /// The list deliberately ignores the container's top safe area so chat can
+    /// run under the status bar — which also leaves the system nothing to hang
+    /// its edge effect on. Hand the device inset back in explicitly, plus the
+    /// height of the floating header, so the fade covers both.
+    private var nestTopInset: CGFloat {
+        let device = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first(where: { $0.activationState == .foregroundActive })?
+            .keyWindow?
+            .safeAreaInsets.top ?? 59
+        return device + 55
     }
 
     private var topFog: some View {
@@ -452,6 +469,7 @@ struct ChatView: View {
                             isPaper: model.theme == .paper,
                             isMist: model.theme == .mist,
                             isNest: model.theme == .nest,
+                            isNestGroupTail: row.isTail,
                             showsNestDisclaimer: message.id == latestAIReplyID
                                 && !model.isTyping
                                 && model.streamingThinking.isEmpty
@@ -552,7 +570,8 @@ struct ChatView: View {
                             bubbleShapeStyle: model.bubbleShapeStyle,
                             liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight,
-                            isTail: !(model.chatMode == .short && model.bubbleStyle == .classic)
+                            isTail: !(model.chatMode == .short && model.bubbleStyle == .classic),
+                            isNest: model.theme == .nest
                         )
                     } else if model.isTyping || !model.streamingThinking.isEmpty {
                         TypingRow(
@@ -577,8 +596,14 @@ struct ChatView: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Color.clear.frame(height: isNest ? 0 : 76)
+                    Color.clear.frame(height: isNest ? nestTopInset : 76)
                 }
+                // Nest drops the hand-rolled fog for the system's own soft
+                // scroll edge effect — the same fade the thinking sheet gets.
+                .scrollEdgeEffectStyle(
+                    isNest ? ScrollEdgeEffectStyle.soft : ScrollEdgeEffectStyle.automatic,
+                    for: .top
+                )
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear.frame(height: composerHeight)
                 }
@@ -1796,13 +1821,12 @@ private struct ComposerView: View {
     @State private var importedTypes: [UTType] = [.item]
     @State private var draftText = ""
     @State private var currentBrain: BrainTarget = .desktop
-    @State private var isSwitchingBrain = false
 
     private var palette: EchoPalette { model.theme.palette }
     private var isNest: Bool { model.theme == .nest }
 
     var body: some View {
-        VStack(spacing: isNest ? 5 : 7) {
+        VStack(spacing: isNest ? 10 : 7) {
             if recorder.isRecording || recorder.hasRecording {
                 HStack(spacing: 11) {
                     Button { recorder.cancel() } label: {
@@ -1866,13 +1890,22 @@ private struct ComposerView: View {
                 }
             }
 
-            TextField(isNest ? "Reply to Claude" : "和Altair说话…", text: $draftText, axis: .vertical)
+            TextField(isNest ? "" : "和Altair说话…", text: $draftText, axis: .vertical)
                 .lineLimit(1...(isNest ? 4 : 5))
                 .font(model.chatFont.font(
                     size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
                     numericWeight: model.chatWeight
                 ))
                 .foregroundStyle(palette.text)
+                .overlay(alignment: .topLeading) {
+                    // ChatNest writes its prompt in the UI sans, never the serif body face.
+                    if isNest && draftText.isEmpty {
+                        Text("Reply to Claude")
+                            .font(.system(size: 16 * model.fontScale, weight: .regular))
+                            .foregroundStyle(palette.secondaryText.opacity(0.8))
+                            .allowsHitTesting(false)
+                    }
+                }
                 .padding(.horizontal, 4)
                 .padding(.top, isNest ? 1 : 3)
                 .padding(.bottom, isNest ? 0 : 2)
@@ -1896,30 +1929,12 @@ private struct ComposerView: View {
                 }
                 .accessibilityLabel("打开颜文字抽屉")
 
-                Menu {
-                    Section("切换身体") {
-                        ForEach(BrainTarget.allCases) { target in
-                            Button {
-                                switchBrain(to: target)
-                            } label: {
-                                if currentBrain == target {
-                                    Label(target.title, systemImage: "checkmark")
-                                } else {
-                                    Text(target.title)
-                                }
-                            }
-                        }
-                    }
-                    Divider()
-                    Button("管理对话窗口", systemImage: "rectangle.stack") {
-                        onShowSessions()
-                    }
-                } label: {
+                Button(action: onShowSessions) {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(model.isStreamConnected ? Color.green.opacity(0.86) : palette.secondaryText.opacity(0.72))
                             .frame(width: 6, height: 6)
-                        Text(isSwitchingBrain ? "切换中…" : currentBrain.title)
+                        Text(brainLabel)
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.9)
@@ -1932,12 +1947,12 @@ private struct ComposerView: View {
                     .padding(.horizontal, isNest ? 11 : 10)
                     .frame(height: isNest ? 32 : 35)
                     .background(composerAuxiliaryBackground.opacity(0.86), in: Capsule())
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
                 .layoutPriority(1)
-                .disabled(isSwitchingBrain)
                 .accessibilityLabel(
-                    "切换身体，当前为 \(currentBrain.title)，\(model.isStreamConnected ? "在线" : "离线")"
+                    "对话窗口，当前身体 \(brainLabel)，\(model.isStreamConnected ? "在线" : "离线")"
                 )
 
                 Spacer(minLength: 0)
@@ -1959,8 +1974,8 @@ private struct ComposerView: View {
                 Button {
                     send()
                 } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
+                    Image(systemName: isNest ? "waveform" : "arrow.up")
+                        .font(.system(size: isNest ? 17 : 16, weight: isNest ? .semibold : .bold))
                         .foregroundStyle(Color.white.opacity(canSend ? 1 : 0.72))
                         .frame(width: isNest ? 33 : 36, height: isNest ? 33 : 36)
                         .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
@@ -1968,7 +1983,7 @@ private struct ComposerView: View {
                 .disabled(!canSend)
             }
         }
-        .padding(isNest ? 8 : 10)
+        .padding(isNest ? 13 : 10)
         .background { composerContainerGlass }
         .padding(.horizontal, isNest ? 14 : 12)
         .padding(.top, isNest ? 4 : 7)
@@ -2035,11 +2050,11 @@ private struct ComposerView: View {
 
     @ViewBuilder
     private var composerContainerGlass: some View {
-        let shape = RoundedRectangle(cornerRadius: 29, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: isNest ? 24 : 29, style: .continuous)
         if isNest {
             shape
                 .fill(Color.white.opacity(0.001))
-                .glassEffect(.clear.tint(palette.composer).interactive(), in: shape)
+                .glassEffect(.clear.tint(palette.composer), in: shape)
                 .overlay(shape.fill(Color.white.opacity(0.34)))
                 .overlay(shape.stroke(Color.white.opacity(0.72), lineWidth: 0.7))
                 .overlay(shape.stroke(palette.hairline, lineWidth: 0.45))
@@ -2067,7 +2082,7 @@ private struct ComposerView: View {
     }
 
     private var composerAuxiliaryBackground: Color {
-        if isNest { return Color(hex: 0xF0F0ED) }
+        if isNest { return Color(hex: 0xF5F5F2) }
         return model.theme == .paper ? Color(hex: 0xF0EEE6) : palette.aiBubble
     }
 
@@ -2082,22 +2097,13 @@ private struct ComposerView: View {
     }
 
     private func loadBrain() async {
-        guard !isSwitchingBrain else { return }
         do { currentBrain = try await model.settingsBrain() }
         catch { /* Keep the last known label while the relay reconnects. */ }
     }
 
-    private func switchBrain(to target: BrainTarget) {
-        guard target != currentBrain, !isSwitchingBrain else { return }
-        isSwitchingBrain = true
-        Task {
-            do {
-                currentBrain = try await model.updateSettingsBrain(target)
-            } catch {
-                model.errorMessage = error.localizedDescription
-            }
-            isSwitchingBrain = false
-        }
+    /// The desktop body is Claude Code — the chip says so instead of "Desktop".
+    private var brainLabel: String {
+        currentBrain == .desktop ? "Claude Code" : currentBrain.title
     }
 
     private var canSend: Bool {

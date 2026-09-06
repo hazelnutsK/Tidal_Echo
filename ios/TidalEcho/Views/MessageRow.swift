@@ -110,6 +110,9 @@ struct MessageRow: View {
     let isPaper: Bool
     let isMist: Bool
     let isNest: Bool
+    /// Last bubble of an AI burst. Short-chat mode splits one reply across
+    /// several bubbles; the action row belongs under the last one only.
+    let isNestGroupTail: Bool
     let showsNestDisclaimer: Bool
     let isIncomingCallActive: Bool
     let onToggleStar: () -> Void
@@ -294,7 +297,12 @@ struct MessageRow: View {
                         }
                     }
                     .foregroundStyle(resolvedBubbleTextColor)
-                    .padding(.horizontal, message.author == .ai && !showsAIBubble ? 2 : bubbleHorizontalPadding)
+                    .padding(
+                        .horizontal,
+                        message.author == .ai && !showsAIBubble
+                            ? (isNest ? 0 : 2)
+                            : bubbleHorizontalPadding
+                    )
                     .padding(.vertical, bubbleVerticalPadding)
                     .background { bubbleBackground }
                     .overlay {
@@ -356,6 +364,7 @@ struct MessageRow: View {
                 }
 
                 if isNest,
+                   isNestGroupTail,
                    message.author == .ai,
                    message.kind == "reply",
                    message.id > 0,
@@ -380,7 +389,9 @@ struct MessageRow: View {
     }
 
     private var nestInlineActions: some View {
-        HStack(spacing: 20) {
+        // ChatNest sets these ~28pt apart centre to centre; at 14pt glyphs that
+        // is a 14pt gap, not the 20 this started with.
+        HStack(spacing: 14) {
             nestActionButton("doc.on.doc", label: "复制", action: onCopy)
             nestActionButton("play", label: "朗读", action: onSpeak)
             nestActionButton(
@@ -414,17 +425,17 @@ struct MessageRow: View {
             ClaudeBrandMark(
                 size: 26,
                 motion: .idle,
-                color: palette.secondaryText.opacity(0.76)
+                color: palette.accent
             )
             Spacer(minLength: 10)
             VStack(alignment: .trailing, spacing: 0) {
                 Text("Altair is yours.")
-                Text("please double-check your heartbeat.")
+                Text("Please double-check your heartbeat.")
             }
             .multilineTextAlignment(.trailing)
         }
         .font(.system(size: 13, weight: .regular))
-        .foregroundStyle(palette.secondaryText.opacity(0.68))
+        .foregroundStyle(palette.text)
         .padding(.horizontal, 3)
         .padding(.top, 16)
         .frame(maxWidth: .infinity)
@@ -464,6 +475,9 @@ struct MessageRow: View {
                         tint: color,
                         tintOpacity: bubbleOpacity
                     )
+                } else if isNest {
+                    // ChatNest's bubble is a flat tinted plate: no lift, no rim.
+                    shape.fill(color.opacity(bubbleOpacity))
                 } else {
                     shape
                         .fill(color.opacity(bubbleOpacity))
@@ -520,8 +534,20 @@ struct MessageRow: View {
             && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
-    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
-    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
+    private var carriesBubble: Bool { message.author == .human || showsAIBubble }
+
+    /// Measured off ChatNest: ~10pt of padding inside a bubble, and bodiless AI
+    /// text almost flush, so consecutive segments read as one reply's paragraphs
+    /// instead of a stack of cards.
+    private var bubbleHorizontalPadding: CGFloat {
+        if isNest { return 10 }
+        return usesTelegramShape ? 10 : 13
+    }
+
+    private var bubbleVerticalPadding: CGFloat {
+        if isNest { return carriesBubble ? 10 : 2 }
+        return usesTelegramShape ? 8 : 9
+    }
 
     private var displayedMessageText: String {
         guard message.kind == "voice" else { return message.text }
@@ -1445,7 +1471,17 @@ private struct ProcessRow: View {
     private var usesSystemSheet: Bool { isMist || isNest }
     private var isHarbor: Bool { !isPaper && !isMist && !isNest }
     private var processFontSize: Double {
-        PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.16 : 1)
+        PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * processFontMultiplier
+    }
+
+    private var processFontMultiplier: Double {
+        if isNest { return 1.24 }
+        return isMist ? 1.16 : 1
+    }
+
+    /// Nest reads the sheet as a document, not as an aside: full ink, no wash.
+    private var sheetTextColor: Color {
+        isNest ? palette.text : palette.text.opacity(0.84)
     }
 
     private var mistTrigger: some View {
@@ -1464,9 +1500,7 @@ private struct ProcessRow: View {
     private var nestTrigger: some View {
         HStack(spacing: 8) {
             if isThinking {
-                Image(systemName: "clock")
-                    .font(.system(size: 13, weight: .regular))
-                    .frame(width: 14, height: 14)
+                NestThinkingClock(size: 14)
             } else {
                 ClaudeBrandMark(
                     size: 14,
@@ -1595,8 +1629,8 @@ private struct ProcessRow: View {
     private var processSheet: some View {
         NavigationStack {
             ScrollView {
-                processContent(textColor: palette.text.opacity(0.84))
-                    .foregroundStyle(palette.text.opacity(0.84))
+                processContent(textColor: sheetTextColor)
+                    .foregroundStyle(sheetTextColor)
                     .padding(.horizontal, 18)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1609,7 +1643,6 @@ private struct ProcessRow: View {
                     Button { showingProcessSheet = false } label: {
                         Image(systemName: "xmark")
                     }
-                    .buttonStyle(.glass)
                     .accessibilityLabel("Close")
                 }
             }
@@ -1891,6 +1924,7 @@ struct StreamingReplyRow: View {
     let liquidGlass: LiquidGlassSettings
     let chatWeight: Double
     let isTail: Bool
+    let isNest: Bool
 
     var body: some View {
         HStack(alignment: usesUpperCornerShape ? .top : .bottom, spacing: 8) {
@@ -1907,7 +1941,7 @@ struct StreamingReplyRow: View {
                     size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
                 ))
                 .foregroundStyle(aiBubbleTextColor)
-                .padding(.horizontal, showsAIBubble ? bubbleHorizontalPadding : 2)
+                .padding(.horizontal, showsAIBubble ? bubbleHorizontalPadding : (isNest ? 0 : 2))
                 .padding(.vertical, bubbleVerticalPadding)
                 .background {
                     if showsAIBubble {
@@ -1976,8 +2010,15 @@ struct StreamingReplyRow: View {
         bubbleShapeStyle == .upperTail && (bubbleStyle == .classic || bubbleStyle == .frosted)
     }
 
-    private var bubbleHorizontalPadding: CGFloat { usesTelegramShape ? 10 : 13 }
-    private var bubbleVerticalPadding: CGFloat { usesTelegramShape ? 8 : 9 }
+    private var bubbleHorizontalPadding: CGFloat {
+        if isNest { return 10 }
+        return usesTelegramShape ? 10 : 13
+    }
+
+    private var bubbleVerticalPadding: CGFloat {
+        if isNest { return showsAIBubble ? 10 : 2 }
+        return usesTelegramShape ? 8 : 9
+    }
 }
 
 /// Rebuilt to match Operit's chat bubbles (`ui/theme/LiquidGlass.kt`), whose
@@ -2115,7 +2156,7 @@ struct TypingRow: View {
     var body: some View {
         HStack(spacing: 8) {
             if isNest {
-                ClaudeBrandMark(size: 16, motion: .writing, color: palette.secondaryText)
+                ClaudeBrandMark(size: 16, motion: .writing, color: palette.accent)
             } else if showsAIAvatar {
                 AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
             }
@@ -2677,5 +2718,47 @@ private struct FullScreenImagePreview: View {
             .accessibilityLabel("关闭图片预览")
         }
         .statusBarHidden()
+    }
+}
+
+/// ChatNest marks a thinking step with a clock whose upper-left arc dissolves
+/// into three dots. No SF Symbol carries that break, so it is drawn by hand and
+/// inherits whatever foreground style the row is using.
+private struct NestThinkingClock: View {
+    var size: CGFloat = 14
+    var lineWidth: CGFloat = 1.3
+
+    var body: some View {
+        ZStack {
+            // 300° of ring, starting at 11 o'clock and running clockwise.
+            Circle()
+                .trim(from: 0, to: 0.833)
+                .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(240))
+
+            // The missing 60° comes back as three dots.
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .frame(width: lineWidth * 1.2, height: lineWidth * 1.2)
+                    .offset(y: -(size - lineWidth) / 2)
+                    .rotationEffect(.degrees(-75 + Double(index) * 18))
+            }
+
+            NestClockHands()
+                .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+private struct NestClockHands: Shape {
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        var path = Path()
+        path.move(to: CGPoint(x: center.x, y: center.y - radius * 0.55))
+        path.addLine(to: center)
+        path.addLine(to: CGPoint(x: center.x + radius * 0.44, y: center.y + radius * 0.3))
+        return path
     }
 }

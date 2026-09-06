@@ -57,7 +57,7 @@ struct ChatView: View {
 
             ZStack(alignment: .top) {
                 messageList
-                if !isNest { topFog }
+                topFog
                 topBar
 
                 VStack(spacing: 0) {
@@ -206,22 +206,14 @@ struct ChatView: View {
     }
 
     private var topBar: some View {
-        Group {
-            if #available(iOS 26.0, *), isNest {
-                GlassEffectContainer(spacing: 12) {
-                    nestTopBarContent(usesNativeGlass: true)
-                }
-            } else {
-                nestTopBarContent(usesNativeGlass: false)
-            }
-        }
+        topBarContent
         .padding(.horizontal, 16)
         .padding(.top, 9)
         .padding(.bottom, 8)
     }
 
     @ViewBuilder
-    private func nestTopBarContent(usesNativeGlass: Bool) -> some View {
+    private var topBarContent: some View {
         HStack(spacing: 10) {
             if isNest {
                 Button { showingSettings = true } label: {
@@ -229,7 +221,7 @@ struct ChatView: View {
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(palette.text)
                         .frame(width: 38, height: 38)
-                        .background { nestGlass(shape: Circle(), native: usesNativeGlass) }
+                        .background { headerGlass(shape: Circle()) }
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -255,27 +247,13 @@ struct ChatView: View {
                     nestHeaderButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
                 }
                 .padding(.horizontal, 3)
-                .background { nestGlass(shape: Capsule(), native: usesNativeGlass) }
+                .background { headerGlass(shape: Capsule()) }
             } else {
                 HStack(spacing: 14) {
                     headerButton(icon: "terminal", size: 15) { showingTerminal = true }
                     headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
                 }
             }
-        }
-    }
-
-    /// The glass has to sit in `.background` rather than on top of the label:
-    /// a `glassEffect` layer laid over a button swallows the tap, which is what
-    /// left the whole Nest header dead.
-    @ViewBuilder
-    private func nestGlass<S: InsettableShape>(shape: S, native: Bool) -> some View {
-        if native {
-            shape
-                .fill(Color.white.opacity(0.001))
-                .glassEffect(.clear.tint(headerGlassTint), in: shape)
-        } else {
-            headerGlass(shape: shape)
         }
     }
 
@@ -306,17 +284,17 @@ struct ChatView: View {
     private var topFog: some View {
         ZStack {
             VariableBackdropBlur(
-                radius: isNest ? 18 : 16,
+                radius: isNest ? 9 : 16,
                 mask: .blurredTopClearBottom,
-                fadeFrom: isNest ? 0.08 : 0.25,
-                fadeTo: isNest ? 0.88 : 0.65
+                fadeFrom: isNest ? 0.16 : 0.25,
+                fadeTo: isNest ? 0.86 : 0.65
             )
 
             VariableBackdropBlur(
-                radius: isNest ? 5 : 3,
+                radius: isNest ? 3 : 3,
                 mask: .blurredTopClearBottom,
-                fadeFrom: isNest ? 0.34 : 0.50,
-                fadeTo: isNest ? 0.96 : 0.88
+                fadeFrom: isNest ? 0.46 : 0.50,
+                fadeTo: isNest ? 0.95 : 0.88
             )
 
             Rectangle()
@@ -329,7 +307,7 @@ struct ChatView: View {
                     )
                 )
         }
-        .frame(height: isNest ? 146 : 120)
+        .frame(height: isNest ? 128 : 120)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
@@ -388,17 +366,17 @@ struct ChatView: View {
         case .mist: return Color(hex: 0xECF1F6).opacity(0.24)
         case .paper: return Color(hex: 0xFAFAF8).opacity(0.72)
         case .harbor: return Color(hex: 0x15212D).opacity(0.38)
-        case .nest: return Color(hex: 0xF7F7F5).opacity(0.72)
+        case .nest: return Color(hex: 0xF7F7F5).opacity(0.46)
         }
     }
 
     private var topFogStops: [Gradient.Stop] {
         if isNest {
             return [
-                .init(color: .black.opacity(0.86), location: 0),
-                .init(color: .black.opacity(0.64), location: 0.34),
-                .init(color: .black.opacity(0.22), location: 0.72),
-                .init(color: .clear, location: 0.98)
+                .init(color: .black.opacity(0.60), location: 0),
+                .init(color: .black.opacity(0.38), location: 0.36),
+                .init(color: .black.opacity(0.13), location: 0.74),
+                .init(color: .clear, location: 1)
             ]
         }
         return [
@@ -598,12 +576,6 @@ struct ChatView: View {
                 .safeAreaInset(edge: .top, spacing: 0) {
                     Color.clear.frame(height: isNest ? nestTopInset : 76)
                 }
-                // Nest drops the hand-rolled fog for the system's own soft
-                // scroll edge effect — the same fade the thinking sheet gets.
-                .scrollEdgeEffectStyle(
-                    isNest ? ScrollEdgeEffectStyle.soft : ScrollEdgeEffectStyle.automatic,
-                    for: .top
-                )
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear.frame(height: composerHeight)
                 }

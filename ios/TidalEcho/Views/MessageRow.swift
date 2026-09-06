@@ -493,7 +493,8 @@ struct MessageRow: View {
             author: message.author,
             radius: CGFloat(bubbleRadius),
             isGroupStart: isGroupStart,
-            isTail: isTail
+            // ChatNest has no tail: every corner keeps the full radius.
+            isTail: isNest ? false : isTail
         )
     }
 

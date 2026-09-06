@@ -176,6 +176,7 @@ final class AppModel: ObservableObject {
         static let liquidGlassSize = "tidalEcho.liquidGlassSize"
         static let pwaBubbleMetricsV1 = "tidalEcho.pwaBubbleMetricsV1"
         static let paperPresetV3 = "tidalEcho.paperPresetV3"
+        static let nestPresetV1 = "tidalEcho.nestPresetV1"
         static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
         static let humanBubbleColor = "tidalEcho.humanBubbleColor"
@@ -212,6 +213,7 @@ final class AppModel: ObservableObject {
         let rawTheme = defaults.string(forKey: Keys.theme) ?? EchoTheme.mist.rawValue
         let initialTheme = EchoTheme(rawValue: rawTheme) ?? .mist
         let shouldMigratePaperPreset = initialTheme == .paper && !defaults.bool(forKey: Keys.paperPresetV3)
+        let shouldMigrateNestPreset = initialTheme == .nest && !defaults.bool(forKey: Keys.nestPresetV1)
         theme = initialTheme
         let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
         chatFont = EchoChatFont(rawValue: rawFont) ?? .system
@@ -274,6 +276,10 @@ final class AppModel: ObservableObject {
             applyPaperAppearancePreset()
             defaults.set(true, forKey: Keys.paperPresetV3)
         }
+        if shouldMigrateNestPreset {
+            applyNestAppearancePreset()
+            defaults.set(true, forKey: Keys.nestPresetV1)
+        }
         NativeCallCoordinator.shared.onDeclineIncomingCall = { [weak self] messageID in
             await self?.markIncomingCallMissed(messageID: messageID)
         }
@@ -313,9 +319,16 @@ final class AppModel: ObservableObject {
 
     func applyTheme(_ nextTheme: EchoTheme) {
         theme = nextTheme
-        guard nextTheme == .paper else { return }
-        applyPaperAppearancePreset()
-        UserDefaults.standard.set(true, forKey: Keys.paperPresetV3)
+        switch nextTheme {
+        case .paper:
+            applyPaperAppearancePreset()
+            UserDefaults.standard.set(true, forKey: Keys.paperPresetV3)
+        case .nest:
+            applyNestAppearancePreset()
+            UserDefaults.standard.set(true, forKey: Keys.nestPresetV1)
+        case .mist, .harbor:
+            break
+        }
     }
 
     private func applyPaperAppearancePreset() {
@@ -336,6 +349,26 @@ final class AppModel: ObservableObject {
         showsHumanAvatar = true
         installPaperPresetAvatar(named: "paper-ai-avatar", kind: .aiAvatar)
         installPaperPresetAvatar(named: "paper-human-avatar", kind: .humanAvatar)
+    }
+
+    private func applyNestAppearancePreset() {
+        chatFont = .anthropicSerif
+        fontScale = 1
+        chatWeight = 400
+        showsAIBubble = false
+        showsAIAvatar = false
+        showsHumanAvatar = false
+        bubbleStyle = .classic
+        bubbleShapeStyle = .standard
+        aiBubbleColorHex = ""
+        humanBubbleColorHex = "#EFEFEB"
+        aiBubbleTextColorHex = "#1F1E1D"
+        humanBubbleTextColorHex = "#1F1E1D"
+        bubbleOpacity = 1
+        bubbleRadius = 22
+        bubbleWidthScale = 1.16
+        bubbleBorderWidth = 0
+        backgroundOpacity = 1
     }
 
     private func installPaperPresetAvatar(named name: String, kind: AppearanceImageKind) {

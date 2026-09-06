@@ -109,6 +109,8 @@ struct MessageRow: View {
     let isGroupedWithPrevious: Bool
     let isPaper: Bool
     let isMist: Bool
+    let isNest: Bool
+    let showsNestDisclaimer: Bool
     let isIncomingCallActive: Bool
     let onToggleStar: () -> Void
     let onSpeak: () -> Void
@@ -139,6 +141,7 @@ struct MessageRow: View {
                     chatWeight: chatWeight,
                     isPaper: isPaper,
                     isMist: isMist,
+                    isNest: isNest,
                     showsAIAvatar: showsAIAvatar,
                     bubbleWidthScale: bubbleWidthScale
                 )
@@ -343,13 +346,24 @@ struct MessageRow: View {
                                     Text(Self.formatTime(message.timestamp))
                                 }
                             }
-                        } else if showsTimestamp {
+                        } else if showsTimestamp && !isNest {
                             Text(Self.formatTime(message.timestamp))
                         }
                     }
                     .font(.system(size: 10))
                     .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 3)
+                }
+
+                if isNest,
+                   message.author == .ai,
+                   message.kind == "reply",
+                   message.id > 0,
+                   !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    nestInlineActions
+                    if showsNestDisclaimer {
+                        nestDisclaimer
+                    }
                 }
             }
 
@@ -363,6 +377,72 @@ struct MessageRow: View {
         }
         .frame(maxWidth: .infinity)
         .contextMenu { messageActions }
+    }
+
+    private var nestInlineActions: some View {
+        HStack(spacing: 20) {
+            nestActionButton("doc.on.doc", label: "复制", action: onCopy)
+            nestActionButton("play", label: "朗读", action: onSpeak)
+            nestActionButton(
+                message.meta.starred == nil ? "star" : "star.fill",
+                label: message.meta.starred == nil ? "收藏" : "取消收藏",
+                isSelected: message.meta.starred != nil,
+                action: onToggleStar
+            )
+            nestActionButton(
+                myReaction == "❤️" ? "heart.fill" : "heart",
+                label: myReaction == "❤️" ? "收回爱心" : "爱心回应",
+                isSelected: myReaction == "❤️"
+            ) { onReact(myReaction == "❤️" ? "" : "❤️") }
+            HStack(spacing: 6) {
+                nestActionButton("arrow.clockwise", label: "重新生成", action: onRegenerate)
+                Text(Self.formatTime(message.timestamp))
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(palette.secondaryText.opacity(0.62))
+            }
+        }
+        .font(.system(size: 14, weight: .regular))
+        .foregroundStyle(palette.secondaryText.opacity(0.84))
+        .padding(.horizontal, 3)
+        .padding(.top, 1)
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var nestDisclaimer: some View {
+        HStack(alignment: .center, spacing: 10) {
+            ClaudeBrandMark(
+                size: 26,
+                motion: .idle,
+                color: palette.secondaryText.opacity(0.76)
+            )
+            Spacer(minLength: 10)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text("Altair is yours.")
+                Text("please double-check your heartbeat.")
+            }
+            .multilineTextAlignment(.trailing)
+        }
+        .font(.system(size: 13, weight: .regular))
+        .foregroundStyle(palette.secondaryText.opacity(0.68))
+        .padding(.horizontal, 3)
+        .padding(.top, 16)
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Altair is yours. Please double-check your heartbeat.")
+    }
+
+    private func nestActionButton(
+        _ icon: String,
+        label: String,
+        isSelected: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .foregroundStyle(isSelected ? palette.accent : palette.secondaryText.opacity(0.84))
+        }
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder
@@ -1298,24 +1378,27 @@ private struct ProcessRow: View {
     let chatWeight: Double
     let isPaper: Bool
     let isMist: Bool
+    let isNest: Bool
     let showsAIAvatar: Bool
     let bubbleWidthScale: Double
     @State private var expanded = false
-    @State private var showingMistSheet = false
+    @State private var showingProcessSheet = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 guard canExpand else { return }
-                if isMist {
-                    showingMistSheet = true
+                if usesSystemSheet {
+                    showingProcessSheet = true
                 } else {
                     withAnimation(isHarbor ? .spring(response: 0.34, dampingFraction: 0.86) : .easeOut(duration: 0.16)) {
                         expanded.toggle()
                     }
                 }
             } label: {
-                if isMist {
+                if isNest {
+                    nestTrigger
+                } else if isMist {
                     mistTrigger
                 } else if isHarbor {
                     harborTrigger
@@ -1327,7 +1410,7 @@ private struct ProcessRow: View {
 
             recallHint
 
-            if expanded && !isMist {
+            if expanded && !usesSystemSheet {
                 if isHarbor {
                     harborProcessCard
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1340,8 +1423,8 @@ private struct ProcessRow: View {
         .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
         .padding(.leading, showsAIAvatar ? 35 : 0)
         .padding(.trailing, 44)
-        .sheet(isPresented: $showingMistSheet) {
-            mistProcessSheet
+        .sheet(isPresented: $showingProcessSheet) {
+            processSheet
         }
     }
 
@@ -1359,7 +1442,8 @@ private struct ProcessRow: View {
                 .padding(.top, -3)
         }
     }
-    private var isHarbor: Bool { !isPaper && !isMist }
+    private var usesSystemSheet: Bool { isMist || isNest }
+    private var isHarbor: Bool { !isPaper && !isMist && !isNest }
     private var processFontSize: Double {
         PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * (isMist ? 1.16 : 1)
     }
@@ -1375,6 +1459,44 @@ private struct ProcessRow: View {
         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
         .foregroundStyle(palette.secondaryText)
         .padding(.vertical, 2)
+    }
+
+    private var nestTrigger: some View {
+        HStack(spacing: 8) {
+            if isThinking {
+                Image(systemName: "clock")
+                    .font(.system(size: 13, weight: .regular))
+                    .frame(width: 14, height: 14)
+            } else {
+                ClaudeBrandMark(
+                    size: 14,
+                    motion: .tool,
+                    color: palette.secondaryText
+                )
+            }
+            Text(isThinking ? nestThinkingTitle : "查看工具调用")
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .font(chatFont.font(size: 13 * fontScale, weight: .regular))
+        .foregroundStyle(palette.secondaryText)
+        .padding(.vertical, 3)
+    }
+
+    private var nestThinkingTitle: String {
+        let flattened = message.text
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#>*_`- "))
+        guard !flattened.isEmpty else { return "思考中…" }
+
+        let sentenceStops = Set<Character>(["。", "！", "？", ".", "!", "?"])
+        let firstSentence = flattened.prefix { !sentenceStops.contains($0) }
+        let source = firstSentence.isEmpty ? flattened[...] : firstSentence
+        let snippet = String(source.prefix(24)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return snippet.isEmpty ? "思考中…" : "\(snippet)…"
     }
 
     private var harborTrigger: some View {
@@ -1470,7 +1592,7 @@ private struct ProcessRow: View {
         .shadow(color: Color.black.opacity(0.055), radius: 10, y: 5)
     }
 
-    private var mistProcessSheet: some View {
+    private var processSheet: some View {
         NavigationStack {
             ScrollView {
                 processContent(textColor: palette.text.opacity(0.84))
@@ -1479,20 +1601,24 @@ private struct ProcessRow: View {
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Color.white.ignoresSafeArea())
+            .background((isNest ? palette.backgroundTop : Color.white).ignoresSafeArea())
             .navigationTitle(isThinking ? "Thought process" : "Action")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showingMistSheet = false } label: {
+                    Button { showingProcessSheet = false } label: {
                         Image(systemName: "xmark")
                     }
+                    .buttonStyle(.glass)
                     .accessibilityLabel("Close")
                 }
             }
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .presentationCornerRadius(32)
+        .presentationBackground(.regularMaterial)
+        .presentationContentInteraction(.scrolls)
     }
 
     @ViewBuilder
@@ -1625,13 +1751,30 @@ struct StreamingProcessRow: View {
     let palette: EchoPalette
     let isPaper: Bool
     let isMist: Bool
+    let isNest: Bool
     let showsAIAvatar: Bool
     let chatFont: EchoChatFont
     let fontScale: Double
     let chatWeight: Double
 
     var body: some View {
-        if isHarbor {
+        if isNest {
+            HStack(alignment: .top, spacing: 8) {
+                ClaudeBrandMark(size: 15, motion: .thinking, color: palette.secondaryText)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Thinking…")
+                        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                    streamingText
+                        .lineLimit(2)
+                }
+            }
+            .foregroundStyle(palette.secondaryText)
+            .frame(maxWidth: 300, alignment: .leading)
+            .padding(.leading, showsAIAvatar ? 35 : 0)
+            .padding(.trailing, 28)
+            .transition(.opacity)
+        } else if isHarbor {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(spacing: 8) {
                     Text(title)
@@ -1726,7 +1869,7 @@ struct StreamingProcessRow: View {
             .textSelection(.enabled)
     }
 
-    private var isHarbor: Bool { !isPaper && !isMist }
+    private var isHarbor: Bool { !isPaper && !isMist && !isNest }
 }
 
 struct StreamingReplyRow: View {
@@ -1967,16 +2110,19 @@ struct TypingRow: View {
     let palette: EchoPalette
     let showsAIAvatar: Bool
     let aiAvatarImage: UIImage?
+    let isNest: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            if showsAIAvatar {
+            if isNest {
+                ClaudeBrandMark(size: 16, motion: .writing, color: palette.secondaryText)
+            } else if showsAIAvatar {
                 AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
             }
             JumpingDots(color: palette.secondaryText)
-            .padding(.horizontal, 14)
-            .frame(height: 35)
-            .background(palette.aiBubble, in: Capsule())
+                .padding(.horizontal, isNest ? 2 : 14)
+                .frame(height: 35)
+                .background(isNest ? Color.clear : palette.aiBubble, in: Capsule())
             Spacer()
         }
         .accessibilityElement(children: .ignore)

@@ -35,6 +35,7 @@ struct ChatView: View {
     @State private var chatScrollView: UIScrollView?
 
     private var palette: EchoPalette { model.theme.palette }
+    private var isNest: Bool { model.theme == .nest }
 
     var body: some View {
         ZStack {
@@ -205,8 +206,42 @@ struct ChatView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 12) {
-            headerButton(icon: "slider.horizontal.3", size: 17) { showingSettings = true }
+        Group {
+            if #available(iOS 26.0, *), isNest {
+                GlassEffectContainer(spacing: 12) {
+                    nestTopBarContent(usesNativeGlass: true)
+                }
+            } else {
+                nestTopBarContent(usesNativeGlass: false)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 9)
+        .padding(.bottom, 8)
+    }
+
+    @ViewBuilder
+    private func nestTopBarContent(usesNativeGlass: Bool) -> some View {
+        HStack(spacing: 10) {
+            if isNest {
+                Button { showingSettings = true } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(palette.text)
+                        .frame(width: 38, height: 38)
+                        .background {
+                            if !usesNativeGlass { headerGlass(shape: Circle()) }
+                        }
+                        .glassEffect(
+                            .clear.tint(headerGlassTint).interactive(usesNativeGlass),
+                            in: .circle
+                        )
+                }
+                .buttonStyle(.plain)
+
+            } else {
+                headerButton(icon: "slider.horizontal.3", size: 17) { showingSettings = true }
+            }
 
             Spacer(minLength: 6)
 
@@ -216,47 +251,68 @@ struct ChatView: View {
                     .tint(palette.accent)
             }
 
-            HStack(spacing: 14) {
-                headerButton(icon: "terminal", size: 15) { showingTerminal = true }
-                headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
+            if isNest {
+                HStack(spacing: 0) {
+                    nestHeaderButton(icon: "terminal", size: 15) { showingTerminal = true }
+                    Rectangle()
+                        .fill(palette.hairline)
+                        .frame(width: 0.6, height: 18)
+                    nestHeaderButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
+                }
+                .padding(.horizontal, 3)
+                .background {
+                    if !usesNativeGlass { headerGlass(shape: Capsule()) }
+                }
+                .glassEffect(
+                    .clear.tint(headerGlassTint).interactive(usesNativeGlass),
+                    in: .capsule
+                )
+            } else {
+                HStack(spacing: 14) {
+                    headerButton(icon: "terminal", size: 15) { showingTerminal = true }
+                    headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
+                }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 9)
-        .padding(.bottom, 8)
+    }
+
+    private func nestHeaderButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(palette.text)
+                .frame(width: 37, height: 38)
+        }
+        .buttonStyle(.plain)
     }
 
     private var topFog: some View {
         ZStack {
             VariableBackdropBlur(
-                radius: 16,
+                radius: isNest ? 18 : 16,
                 mask: .blurredTopClearBottom,
-                fadeFrom: 0.25,
-                fadeTo: 0.65
+                fadeFrom: isNest ? 0.08 : 0.25,
+                fadeTo: isNest ? 0.88 : 0.65
             )
 
             VariableBackdropBlur(
-                radius: 3,
+                radius: isNest ? 5 : 3,
                 mask: .blurredTopClearBottom,
-                fadeFrom: 0.50,
-                fadeTo: 0.88
+                fadeFrom: isNest ? 0.34 : 0.50,
+                fadeTo: isNest ? 0.96 : 0.88
             )
 
             Rectangle()
                 .fill(topFogTint)
                 .mask(
                     LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black.opacity(0.78), location: 0.42),
-                            .init(color: .clear, location: 0.88)
-                        ],
+                        stops: topFogStops,
                         startPoint: .top,
                         endPoint: .bottom
                     )
                 )
         }
-        .frame(height: 120)
+        .frame(height: isNest ? 146 : 120)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
@@ -288,6 +344,7 @@ struct ChatView: View {
         case .mist: return Color(hex: 0xF7FAFC).opacity(0.52)
         case .paper: return Color(hex: 0xF0EEE6).opacity(0.62)
         case .harbor: return Color(hex: 0x1C2A35).opacity(0.56)
+        case .nest: return Color.white.opacity(0.52)
         }
     }
 
@@ -296,6 +353,7 @@ struct ChatView: View {
         case .mist: return Color.white.opacity(0.48)
         case .paper: return Color.white.opacity(0.48)
         case .harbor: return Color.white.opacity(0.12)
+        case .nest: return Color.white.opacity(0.78)
         }
     }
 
@@ -304,6 +362,7 @@ struct ChatView: View {
         case .mist: return Color.black.opacity(0.10)
         case .paper: return Color(hex: 0x8C7466).opacity(0.16)
         case .harbor: return Color.black.opacity(0.18)
+        case .nest: return Color.black.opacity(0.075)
         }
     }
 
@@ -312,14 +371,31 @@ struct ChatView: View {
         case .mist: return Color(hex: 0xECF1F6).opacity(0.24)
         case .paper: return Color(hex: 0xFAFAF8).opacity(0.72)
         case .harbor: return Color(hex: 0x15212D).opacity(0.38)
+        case .nest: return Color(hex: 0xF7F7F5).opacity(0.72)
         }
+    }
+
+    private var topFogStops: [Gradient.Stop] {
+        if isNest {
+            return [
+                .init(color: .black.opacity(0.86), location: 0),
+                .init(color: .black.opacity(0.64), location: 0.34),
+                .init(color: .black.opacity(0.22), location: 0.72),
+                .init(color: .clear, location: 0.98)
+            ]
+        }
+        return [
+            .init(color: .black, location: 0),
+            .init(color: .black.opacity(0.78), location: 0.42),
+            .init(color: .clear, location: 0.88)
+        ]
     }
 
     private var messageList: some View {
         ScrollViewReader { proxy in
             GeometryReader { viewport in
                 ScrollView {
-                    LazyVStack(spacing: 9) {
+                    LazyVStack(spacing: isNest ? 13 : 9) {
                     if canTriggerOlderHistory && model.canLoadOlderHistory {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
@@ -375,6 +451,11 @@ struct ChatView: View {
                             isGroupedWithPrevious: !row.isGroupStart,
                             isPaper: model.theme == .paper,
                             isMist: model.theme == .mist,
+                            isNest: model.theme == .nest,
+                            showsNestDisclaimer: message.id == latestAIReplyID
+                                && !model.isTyping
+                                && model.streamingThinking.isEmpty
+                                && model.streamingReply.isEmpty,
                             isIncomingCallActive: nativeCalls.ringingInvite?.id == message.id
                                 || nativeCalls.acceptedInvite?.id == message.id,
                             onToggleStar: {
@@ -444,6 +525,7 @@ struct ChatView: View {
                             palette: palette,
                             isPaper: model.theme == .paper,
                             isMist: model.theme == .mist,
+                            isNest: model.theme == .nest,
                             showsAIAvatar: model.showsAIAvatar,
                             chatFont: model.chatFont,
                             fontScale: model.fontScale,
@@ -476,7 +558,8 @@ struct ChatView: View {
                         TypingRow(
                             palette: palette,
                             showsAIAvatar: model.showsAIAvatar,
-                            aiAvatarImage: model.aiAvatarImage
+                            aiAvatarImage: model.aiAvatarImage,
+                            isNest: model.theme == .nest
                         )
                     }
 
@@ -494,7 +577,7 @@ struct ChatView: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Color.clear.frame(height: 76)
+                    Color.clear.frame(height: isNest ? 0 : 76)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear.frame(height: composerHeight)
@@ -669,6 +752,15 @@ struct ChatView: View {
     /// one forward pass instead.
     private var chatRows: [ChatRow] {
         Self.buildRows(model.messages)
+    }
+
+    private var latestAIReplyID: Int? {
+        model.messages.last(where: {
+            $0.id > 0
+                && $0.author == .ai
+                && $0.kind == "reply"
+                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        })?.id
     }
 
     private static func buildRows(_ messages: [ChatMessage]) -> [ChatRow] {
@@ -1703,11 +1795,14 @@ private struct ComposerView: View {
     @State private var importingAttachments = false
     @State private var importedTypes: [UTType] = [.item]
     @State private var draftText = ""
+    @State private var currentBrain: BrainTarget = .desktop
+    @State private var isSwitchingBrain = false
 
     private var palette: EchoPalette { model.theme.palette }
+    private var isNest: Bool { model.theme == .nest }
 
     var body: some View {
-        VStack(spacing: 7) {
+        VStack(spacing: isNest ? 5 : 7) {
             if recorder.isRecording || recorder.hasRecording {
                 HStack(spacing: 11) {
                     Button { recorder.cancel() } label: {
@@ -1771,23 +1866,23 @@ private struct ComposerView: View {
                 }
             }
 
-            TextField("和Altair说话…", text: $draftText, axis: .vertical)
-                .lineLimit(1...5)
+            TextField(isNest ? "Reply to Claude" : "和Altair说话…", text: $draftText, axis: .vertical)
+                .lineLimit(1...(isNest ? 4 : 5))
                 .font(model.chatFont.font(
                     size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
                     numericWeight: model.chatWeight
                 ))
                 .foregroundStyle(palette.text)
                 .padding(.horizontal, 4)
-                .padding(.top, 3)
-                .padding(.bottom, 2)
+                .padding(.top, isNest ? 1 : 3)
+                .padding(.bottom, isNest ? 0 : 2)
 
-            HStack(alignment: .center, spacing: 7) {
+            HStack(alignment: .center, spacing: isNest ? 6 : 7) {
                 Button { showingAttachmentMenu = true } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(composerAuxiliaryForeground)
-                        .frame(width: 35, height: 35)
+                        .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
                         .background(composerAuxiliaryBackground, in: Circle())
                 }
                 .disabled(model.isUploading)
@@ -1796,17 +1891,35 @@ private struct ComposerView: View {
                     Image(systemName: "face.smiling")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(composerAuxiliaryForeground)
-                        .frame(width: 35, height: 35)
+                        .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
                         .background(composerAuxiliaryBackground, in: Circle())
                 }
                 .accessibilityLabel("打开颜文字抽屉")
 
-                Button(action: onShowSessions) {
+                Menu {
+                    Section("切换身体") {
+                        ForEach(BrainTarget.allCases) { target in
+                            Button {
+                                switchBrain(to: target)
+                            } label: {
+                                if currentBrain == target {
+                                    Label(target.title, systemImage: "checkmark")
+                                } else {
+                                    Text(target.title)
+                                }
+                            }
+                        }
+                    }
+                    Divider()
+                    Button("管理对话窗口", systemImage: "rectangle.stack") {
+                        onShowSessions()
+                    }
+                } label: {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(model.isStreamConnected ? Color.green.opacity(0.86) : palette.secondaryText.opacity(0.72))
                             .frame(width: 6, height: 6)
-                        Text(model.activeSessionTitle)
+                        Text(isSwitchingBrain ? "切换中…" : currentBrain.title)
                             .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                             .minimumScaleFactor(0.9)
@@ -1816,14 +1929,15 @@ private struct ComposerView: View {
                             .foregroundStyle(palette.secondaryText)
                     }
                     .foregroundStyle(palette.text)
-                    .padding(.horizontal, 10)
-                    .frame(height: 35)
+                    .padding(.horizontal, isNest ? 11 : 10)
+                    .frame(height: isNest ? 32 : 35)
                     .background(composerAuxiliaryBackground.opacity(0.86), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 .layoutPriority(1)
+                .disabled(isSwitchingBrain)
                 .accessibilityLabel(
-                    "切换对话窗口，当前为 \(model.activeSessionTitle)，\(model.isStreamConnected ? "在线" : "离线")"
+                    "切换身体，当前为 \(currentBrain.title)，\(model.isStreamConnected ? "在线" : "离线")"
                 )
 
                 Spacer(minLength: 0)
@@ -1834,7 +1948,7 @@ private struct ComposerView: View {
                     Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(recorder.isRecording ? Color.white : composerAuxiliaryForeground)
-                        .frame(width: 35, height: 35)
+                        .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
                         .background(
                             recorder.isRecording ? Color.red.opacity(0.82) : composerAuxiliaryBackground,
                             in: Circle()
@@ -1848,17 +1962,18 @@ private struct ComposerView: View {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.white.opacity(canSend ? 1 : 0.72))
-                        .frame(width: 36, height: 36)
+                        .frame(width: isNest ? 33 : 36, height: isNest ? 33 : 36)
                         .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
                 }
                 .disabled(!canSend)
             }
         }
-        .padding(10)
+        .padding(isNest ? 8 : 10)
         .background { composerContainerGlass }
-        .padding(.horizontal, 12)
-        .padding(.top, 7)
-        .padding(.bottom, 7)
+        .padding(.horizontal, isNest ? 14 : 12)
+        .padding(.top, isNest ? 4 : 7)
+        .padding(.bottom, isNest ? 5 : 7)
+        .task { await loadBrain() }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
             guard !items.isEmpty else { return }
@@ -1918,14 +2033,25 @@ private struct ComposerView: View {
         }
     }
 
+    @ViewBuilder
     private var composerContainerGlass: some View {
         let shape = RoundedRectangle(cornerRadius: 29, style: .continuous)
-        return shape
-            .fill(.ultraThinMaterial)
-            .overlay(shape.fill(palette.composer.opacity(model.theme == .paper ? 0.58 : 0.42)))
-            .overlay(shape.stroke(Color.white.opacity(model.theme == .harbor ? 0.13 : 0.42), lineWidth: 0.7))
-            .overlay(shape.stroke(palette.hairline, lineWidth: 0.5))
-            .shadow(color: Color.black.opacity(0.08), radius: 14, y: 5)
+        if isNest {
+            shape
+                .fill(Color.white.opacity(0.001))
+                .glassEffect(.clear.tint(palette.composer).interactive(), in: shape)
+                .overlay(shape.fill(Color.white.opacity(0.34)))
+                .overlay(shape.stroke(Color.white.opacity(0.72), lineWidth: 0.7))
+                .overlay(shape.stroke(palette.hairline, lineWidth: 0.45))
+                .shadow(color: Color.black.opacity(0.075), radius: 16, y: 6)
+        } else {
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay(shape.fill(palette.composer.opacity(model.theme == .paper ? 0.58 : 0.42)))
+                .overlay(shape.stroke(Color.white.opacity(model.theme == .harbor ? 0.13 : 0.42), lineWidth: 0.7))
+                .overlay(shape.stroke(palette.hairline, lineWidth: 0.5))
+                .shadow(color: Color.black.opacity(0.08), radius: 14, y: 5)
+        }
     }
 
     private var kaomojiStyle: KaomojiDrawerStyle {
@@ -1941,15 +2067,37 @@ private struct ComposerView: View {
     }
 
     private var composerAuxiliaryBackground: Color {
-        model.theme == .paper ? Color(hex: 0xF0EEE6) : palette.aiBubble
+        if isNest { return Color(hex: 0xF0F0ED) }
+        return model.theme == .paper ? Color(hex: 0xF0EEE6) : palette.aiBubble
     }
 
     private var composerAuxiliaryForeground: Color {
-        model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
+        if isNest { return Color(hex: 0x292826) }
+        return model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
     }
 
     private var composerSendBackground: Color {
-        model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
+        if isNest { return Color(hex: 0x171716) }
+        return model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
+    }
+
+    private func loadBrain() async {
+        guard !isSwitchingBrain else { return }
+        do { currentBrain = try await model.settingsBrain() }
+        catch { /* Keep the last known label while the relay reconnects. */ }
+    }
+
+    private func switchBrain(to target: BrainTarget) {
+        guard target != currentBrain, !isSwitchingBrain else { return }
+        isSwitchingBrain = true
+        Task {
+            do {
+                currentBrain = try await model.updateSettingsBrain(target)
+            } catch {
+                model.errorMessage = error.localizedDescription
+            }
+            isSwitchingBrain = false
+        }
     }
 
     private var canSend: Bool {

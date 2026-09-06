@@ -6,6 +6,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
     case mist
     case paper
     case harbor
+    case nest
 
     var id: String { rawValue }
 
@@ -14,6 +15,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
         case .mist: return "墨白"
         case .paper: return "纸白"
         case .harbor: return "夜港"
+        case .nest: return "暖巢"
         }
     }
 
@@ -22,6 +24,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
         case .mist: return "墨线、素纸与留白"
         case .paper: return "安静、克制的纸张质感"
         case .harbor: return "深海蓝与夜间微光"
+        case .nest: return "Claude 字体、暖白与原生浮层"
         }
     }
 
@@ -71,6 +74,19 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
                 // 夜港的 accent 是浅蓝，白字压不住，用底色当字色
                 onAccent: Color(hex: 0x0D1720)
             )
+        case .nest:
+            return EchoPalette(
+                backgroundTop: Color(hex: 0xF7F7F5),
+                backgroundBottom: Color(hex: 0xFBFBF9),
+                text: Color(hex: 0x1F1E1D),
+                secondaryText: Color(hex: 0x777671),
+                aiBubble: Color.clear,
+                humanBubble: Color(hex: 0xEFEFEB),
+                composer: Color.white.opacity(0.74),
+                accent: Color(hex: 0xDA7756),
+                hairline: Color.black.opacity(0.085),
+                onAccent: Color.white
+            )
         }
     }
 }
@@ -78,6 +94,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
 enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
     case system
     case serif
+    case anthropicSerif
     case rounded
     case monospaced
 
@@ -87,6 +104,7 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .system: return "黑体"
         case .serif: return "宋体"
+        case .anthropicSerif: return "Anthropic"
         case .rounded: return "圆体"
         case .monospaced: return "等宽"
         }
@@ -95,7 +113,7 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
     var design: Font.Design {
         switch self {
         case .system: return .default
-        case .serif: return .serif
+        case .serif, .anthropicSerif: return .serif
         case .rounded: return .rounded
         case .monospaced: return .monospaced
         }
@@ -109,12 +127,21 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
             return .system(size: CGFloat(size), weight: weight, design: .default)
         case .serif:
             return .custom("Songti SC", size: CGFloat(size)).weight(weight)
+        case .anthropicSerif:
+            return Font(Self.anthropicSerifFont(size: CGFloat(size), numericWeight: 400))
+                .weight(weight)
         case .rounded, .monospaced:
             return .system(size: CGFloat(size), weight: weight, design: design)
         }
     }
 
     func font(size: Double, numericWeight: Double) -> Font {
+        if self == .anthropicSerif {
+            return Font(Self.anthropicSerifFont(
+                size: CGFloat(size),
+                numericWeight: numericWeight
+            ))
+        }
         guard self == .system else {
             return font(size: size, weight: numericWeight.echoFontWeight)
         }
@@ -147,6 +174,8 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
                 .traits: [UIFontDescriptor.TraitKey.weight: weight]
             ])
             return UIFont(descriptor: descriptor, size: pointSize)
+        case .anthropicSerif:
+            return Self.anthropicSerifFont(size: pointSize, numericWeight: numericWeight)
         case .rounded:
             let base = UIFont.systemFont(ofSize: pointSize, weight: weight)
             guard let descriptor = base.fontDescriptor.withDesign(.rounded) else { return base }
@@ -177,6 +206,37 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
 
     /// 'wght' 轴的四字符标识
     static let wghtAxisID: UInt32 = 0x77676874
+
+    /// The private Nest typeface is bundled as a TTF. Different exports have
+    /// used slightly different PostScript names, so probe the known names and
+    /// keep a native serif fallback for a damaged or missing personal asset.
+    private static func anthropicSerifFont(size: CGFloat, numericWeight: Double) -> UIFont {
+        let candidates = [
+            "AnthropicSerifWebVariable-TextRegular",
+            "AnthropicSerifVariable",
+            "Anthropic Serif Web Text",
+            "Anthropic Serif"
+        ]
+        let base = candidates.lazy.compactMap { UIFont(name: $0, size: size) }.first
+            ?? UIFont.systemFont(ofSize: size).fontDescriptor.withDesign(.serif)
+                .map { UIFont(descriptor: $0, size: size) }
+            ?? UIFont.systemFont(ofSize: size)
+
+        if let ids = variationAxisIDs(of: base), ids.contains(wghtAxisID) {
+            let attribute = UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String)
+            let descriptor = base.fontDescriptor.addingAttributes([
+                attribute: [
+                    NSNumber(value: wghtAxisID): NSNumber(value: min(max(numericWeight, 300), 800))
+                ]
+            ])
+            return UIFont(descriptor: descriptor, size: size)
+        }
+
+        let descriptor = base.fontDescriptor.addingAttributes([
+            .traits: [UIFontDescriptor.TraitKey.weight: continuousWeight(numericWeight)]
+        ])
+        return UIFont(descriptor: descriptor, size: size)
+    }
 
     /// PingFang 的 wght 轴可用时，返回按 `weight` 连续插值的字体；否则 nil。
     static func variableSans(size: CGFloat, weight: Double) -> UIFont? {
@@ -219,6 +279,8 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         case .serif:
             return UIFont(name: "Songti SC", size: pointSize)?.lineHeight
                 ?? UIFont.systemFont(ofSize: pointSize).lineHeight
+        case .anthropicSerif:
+            return Self.anthropicSerifFont(size: pointSize, numericWeight: 400).lineHeight
         case .rounded:
             let descriptor = UIFont.systemFont(ofSize: pointSize).fontDescriptor.withDesign(.rounded)
             return descriptor.map { UIFont(descriptor: $0, size: pointSize).lineHeight }

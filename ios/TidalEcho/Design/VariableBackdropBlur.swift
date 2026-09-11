@@ -9,6 +9,12 @@ enum VariableBlurMask: Equatable {
     case solid
 }
 
+enum VariableBlurFalloff: Equatable {
+    case linear
+    /// Ease into the first few points of blur before building a denser fog.
+    case gentle
+}
+
 /// A live backdrop blur adapted from jtrivedi/VariableBlurView and
 /// nikstar/VariableBlur. `CAFilter` is private API, so this is intended for
 /// the app's personal sideloaded build rather than App Store distribution.
@@ -20,6 +26,7 @@ struct VariableBackdropBlur: UIViewRepresentable {
     /// clear for the rest of the view. Both endpoints stay inside the frame.
     var fadeFrom: CGFloat = 0
     var fadeTo: CGFloat = 1
+    var falloff: VariableBlurFalloff = .linear
     /// Saturation applied to the backdrop *before* it is blurred, matching the
     /// Compose `vibrancy()` effect. 1 leaves colors untouched.
     var saturation: CGFloat = 1
@@ -36,6 +43,7 @@ struct VariableBackdropBlur: UIViewRepresentable {
             mask: mask,
             fadeFrom: fadeFrom,
             fadeTo: fadeTo,
+            falloff: falloff,
             saturation: saturation,
             resolutionScale: resolutionScale
         )
@@ -47,6 +55,7 @@ struct VariableBackdropBlur: UIViewRepresentable {
             mask: mask,
             fadeFrom: fadeFrom,
             fadeTo: fadeTo,
+            falloff: falloff,
             saturation: saturation,
             resolutionScale: resolutionScale
         )
@@ -62,6 +71,8 @@ final class VariableBackdropUIView: UIVisualEffectView {
     private var blurMask: VariableBlurMask
     private var fadeFrom: CGFloat
     private var fadeTo: CGFloat
+    private var falloff: VariableBlurFalloff
+    private var cachedMaskImage: CGImage?
     private var saturation: CGFloat
     private var resolutionScale: CGFloat?
 
@@ -70,6 +81,7 @@ final class VariableBackdropUIView: UIVisualEffectView {
         mask: VariableBlurMask,
         fadeFrom: CGFloat,
         fadeTo: CGFloat,
+        falloff: VariableBlurFalloff = .linear,
         saturation: CGFloat = 1,
         resolutionScale: CGFloat? = nil
     ) {
@@ -77,6 +89,7 @@ final class VariableBackdropUIView: UIVisualEffectView {
         blurMask = mask
         self.fadeFrom = fadeFrom
         self.fadeTo = fadeTo
+        self.falloff = falloff
         self.saturation = saturation
         self.resolutionScale = resolutionScale
         super.init(effect: UIBlurEffect(style: .regular))
@@ -94,15 +107,18 @@ final class VariableBackdropUIView: UIVisualEffectView {
         mask: VariableBlurMask,
         fadeFrom: CGFloat,
         fadeTo: CGFloat,
+        falloff: VariableBlurFalloff,
         saturation: CGFloat,
         resolutionScale: CGFloat?
     ) {
         let saturationChanged = saturation != self.saturation
         let scaleChanged = resolutionScale != self.resolutionScale
-        guard radius != blurRadius
-            || mask != blurMask
+        let maskChanged = mask != blurMask
             || fadeFrom != self.fadeFrom
             || fadeTo != self.fadeTo
+            || falloff != self.falloff
+        guard radius != blurRadius
+            || maskChanged
             || saturationChanged
             || scaleChanged
         else { return }
@@ -110,6 +126,8 @@ final class VariableBackdropUIView: UIVisualEffectView {
         blurMask = mask
         self.fadeFrom = fadeFrom
         self.fadeTo = fadeTo
+        self.falloff = falloff
+        if maskChanged { cachedMaskImage = nil }
         self.saturation = saturation
         self.resolutionScale = resolutionScale
         if scaleChanged {
@@ -199,11 +217,12 @@ final class VariableBackdropUIView: UIVisualEffectView {
         saturationFilter?.setValue(saturation, forKey: "inputAmount")
         guard let variableBlurFilter else { return }
         variableBlurFilter.setValue(blurRadius, forKey: "inputRadius")
-        variableBlurFilter.setValue(makeMaskImage(), forKey: "inputMaskImage")
+        if cachedMaskImage == nil { cachedMaskImage = makeMaskImage() }
+        variableBlurFilter.setValue(cachedMaskImage, forKey: "inputMaskImage")
         variableBlurFilter.setValue(true, forKey: "inputNormalizeEdges")
     }
 
-    private func makeMaskImage(width: CGFloat = 100, height: CGFloat = 100) -> CGImage? {
+    private func makeMaskImage(width: CGFloat = 2, height: CGFloat = 512) -> CGImage? {
         let bounds = CGRect(x: 0, y: 0, width: width, height: height)
 
         if blurMask == .solid {
@@ -235,7 +254,22 @@ final class VariableBackdropUIView: UIVisualEffectView {
             break
         }
 
-        guard let output = gradient.outputImage else { return nil }
+        guard var output = gradient.outputImage else { return nil }
+        if falloff == .gentle {
+            // t is the linear mask alpha, increasing from the clear edge.
+            // smoothstep(t)^2 keeps the low-radius entrance long and soft,
+            // with zero slope at both ends. A linear 16pt ramp otherwise
+            // erases small glyphs within just a few points of scrolling.
+            let smooth = CIFilter.colorPolynomial()
+            smooth.inputImage = output
+            smooth.alphaCoefficients = CIVector(x: 0, y: 0, z: 3, w: -2)
+            guard let smoothed = smooth.outputImage else { return nil }
+            let ease = CIFilter.colorPolynomial()
+            ease.inputImage = smoothed
+            ease.alphaCoefficients = CIVector(x: 0, y: 0, z: 1, w: 0)
+            guard let eased = ease.outputImage else { return nil }
+            output = eased
+        }
         return Self.imageContext.createCGImage(output, from: bounds)
     }
 }

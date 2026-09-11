@@ -69,25 +69,27 @@ struct ChatView: View {
                 .allowsHitTesting(false)
             }
 
-            ZStack(alignment: .top) {
-                messageList
-                topFog
-                topBar
+            GeometryReader { viewport in
+                ZStack(alignment: .top) {
+                    messageList
+                    topFog(safeAreaTop: viewport.safeAreaInsets.top)
+                    topBar
 
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    ComposerView(
-                        model: model,
-                        onShowSessions: { showingSessions = true }
-                    )
-                        .background {
-                            GeometryReader { geometry in
-                                Color.clear.preference(
-                                    key: ComposerHeightPreferenceKey.self,
-                                    value: geometry.size.height
-                                )
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        ComposerView(
+                            model: model,
+                            onShowSessions: { showingSessions = true }
+                        )
+                            .background {
+                                GeometryReader { geometry in
+                                    Color.clear.preference(
+                                        key: ComposerHeightPreferenceKey.self,
+                                        value: geometry.size.height
+                                    )
+                                }
                             }
-                        }
+                    }
                 }
             }
 
@@ -295,20 +297,17 @@ struct ChatView: View {
         return device + 55
     }
 
-    private var topFog: some View {
+    private func topFog(safeAreaTop: CGFloat) -> some View {
         ZStack {
+            // One continuous field: lightly defocus below the header, then
+            // dissolve toward the status bar. Stacked linear radius ramps
+            // concentrated the change within the height of a single glyph.
             VariableBackdropBlur(
-                radius: isNest ? 9 : 16,
+                radius: isNest ? 10 : 14,
                 mask: .blurredTopClearBottom,
-                fadeFrom: isNest ? 0.16 : 0.25,
-                fadeTo: isNest ? 0.86 : 0.65
-            )
-
-            VariableBackdropBlur(
-                radius: isNest ? 3 : 3,
-                mask: .blurredTopClearBottom,
-                fadeFrom: isNest ? 0.46 : 0.50,
-                fadeTo: isNest ? 0.95 : 0.88
+                fadeFrom: 0,
+                fadeTo: 1,
+                falloff: .gentle
             )
 
             Rectangle()
@@ -321,7 +320,7 @@ struct ChatView: View {
                     )
                 )
         }
-        .frame(height: isNest ? 128 : 120)
+        .frame(height: safeAreaTop + 55 + 36)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
@@ -385,19 +384,15 @@ struct ChatView: View {
     }
 
     private var topFogStops: [Gradient.Stop] {
-        if isNest {
-            return [
-                .init(color: .black.opacity(0.60), location: 0),
-                .init(color: .black.opacity(0.38), location: 0.36),
-                .init(color: .black.opacity(0.13), location: 0.74),
-                .init(color: .clear, location: 1)
-            ]
+        // Let the glyph lose focus before the tint washes it away. Match the
+        // blur's eased entrance instead of adding another visible fade edge.
+        (0...24).map { index in
+            let location = CGFloat(index) / 24
+            let progress = 1 - location
+            let smooth = progress * progress * (3 - 2 * progress)
+            let strength = Double(smooth * smooth) * (isNest ? 0.60 : 1)
+            return .init(color: .black.opacity(strength), location: location)
         }
-        return [
-            .init(color: .black, location: 0),
-            .init(color: .black.opacity(0.78), location: 0.42),
-            .init(color: .clear, location: 0.88)
-        ]
     }
 
     private var messageList: some View {
@@ -610,6 +605,9 @@ struct ChatView: View {
                 // Ignoring all bottom safe areas made the last bubble scroll behind
                 // the raised composer with no reachable space below it.
                 .ignoresSafeArea(.container, edges: [.top, .bottom])
+                // The custom fog owns this transition; an automatic system
+                // effect at the inset would add a second blur boundary.
+                .scrollEdgeEffectHidden(true, for: .top)
                 .scrollDismissesKeyboard(.interactively)
                 .refreshable { await model.refresh() }
                 .onScrollGeometryChange(for: Bool.self) { geometry in

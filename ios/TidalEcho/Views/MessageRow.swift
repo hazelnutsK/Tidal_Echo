@@ -1580,7 +1580,9 @@ private struct ProcessRow: View {
             }
             Text(upperTailThinkingTitle)
                 .lineLimit(1)
+                .offset(y: 2)
             upperTailThinkingDisclosure
+                .offset(y: 2)
         }
         .font(chatFont.font(
             size: (isNest ? 13 : 12.5) * fontScale,
@@ -1703,25 +1705,22 @@ private struct ProcessRow: View {
     @ViewBuilder
     private func processContent(textColor: Color) -> some View {
         if isThinking {
-            VStack(alignment: .leading, spacing: 8) {
-                if offersTranslation {
-                    HStack {
-                        Spacer(minLength: 0)
-                        thinkingLanguageButton
-                    }
+            SelectableThinkingText(
+                text: displayedThinking,
+                font: chatFont.uiFont(size: processFontSize, numericWeight: chatWeight),
+                textColor: textColor,
+                selectionColor: palette.accent,
+                lineSpacing: PWAChatMetrics.lineSpacing(
+                    font: chatFont,
+                    size: processFontSize
+                ),
+                inlineActionTitle: thinkingLanguageActionTitle,
+                inlineActionEnabled: !isTranslating,
+                onInlineAction: {
+                    toggleThinkingLanguage()
                 }
-                SelectableThinkingText(
-                    text: displayedThinking,
-                    font: chatFont.uiFont(size: processFontSize, numericWeight: chatWeight),
-                    textColor: textColor,
-                    selectionColor: palette.accent,
-                    lineSpacing: PWAChatMetrics.lineSpacing(
-                        font: chatFont,
-                        size: processFontSize
-                    )
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(message.meta.steps.enumerated()), id: \.offset) { _, step in
@@ -1813,29 +1812,10 @@ private struct ProcessRow: View {
             }
     }
 
-    @ViewBuilder
-    private var thinkingLanguageButton: some View {
-        if offersTranslation {
-            Button {
-                toggleThinkingLanguage()
-            } label: {
-                HStack(spacing: 5) {
-                    if isTranslating {
-                        ProgressView()
-                            .controlSize(.mini)
-                    }
-                    Text(isTranslating ? "翻译中" : (showingTranslation ? "看原文" : "译为中文"))
-                        .font(chatFont.font(size: 11.5 * fontScale, weight: .medium))
-                }
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(palette.accent)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(palette.accent.opacity(isPaper ? 0.06 : 0.10), in: Capsule())
-            .disabled(isTranslating)
-            .accessibilityLabel(showingTranslation ? "查看思考原文" : "把思考翻译成中文")
-        }
+    private var thinkingLanguageActionTitle: String? {
+        guard offersTranslation else { return nil }
+        if isTranslating { return "翻译中…" }
+        return showingTranslation ? "看原文" : "译为中文"
     }
 
     private func toggleThinkingLanguage() {
@@ -1873,9 +1853,19 @@ private struct SelectableThinkingText: UIViewRepresentable {
     let textColor: Color
     let selectionColor: Color
     let lineSpacing: CGFloat
+    let inlineActionTitle: String?
+    let inlineActionEnabled: Bool
+    let onInlineAction: () -> Void
+
+    private static let inlineActionURL = URL(string: "tidalecho://thinking-translation")!
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onInlineAction: onInlineAction)
+    }
 
     func makeUIView(context: Context) -> UITextView {
         let textView = UITextView()
+        textView.delegate = context.coordinator
         textView.isEditable = false
         textView.isSelectable = true
         textView.isScrollEnabled = false
@@ -1883,17 +1873,22 @@ private struct SelectableThinkingText: UIViewRepresentable {
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.textContainer.lineBreakMode = .byWordWrapping
+        textView.linkTextAttributes = [:]
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.setContentHuggingPriority(.required, for: .vertical)
         return textView
     }
 
     func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.onInlineAction = onInlineAction
         let attributedText = makeAttributedText()
         if !textView.attributedText.isEqual(to: attributedText) {
             textView.attributedText = attributedText
         }
         textView.tintColor = UIColor(selectionColor)
+        textView.accessibilityLabel = [text, inlineActionTitle]
+            .compactMap { $0 }
+            .joined(separator: " ")
     }
 
     func sizeThatFits(
@@ -1923,7 +1918,79 @@ private struct SelectableThinkingText: UIViewRepresentable {
         if italicDescriptor == nil {
             attributes[.obliqueness] = 0.14
         }
-        return NSAttributedString(string: text, attributes: attributes)
+        var body = text
+        if inlineActionTitle != nil {
+            while let last = body.last, last.isWhitespace {
+                body.removeLast()
+            }
+        }
+        let result = NSMutableAttributedString(string: body, attributes: attributes)
+        if let inlineActionTitle {
+            result.append(NSAttributedString(string: "\u{00A0}", attributes: attributes))
+            result.append(makeInlineAction(title: inlineActionTitle))
+        }
+        return result
+    }
+
+    private func makeInlineAction(title: String) -> NSAttributedString {
+        let actionFont = UIFont.systemFont(ofSize: max(10.5, font.pointSize * 0.82), weight: .medium)
+        let horizontalPadding: CGFloat = 7
+        let height = max(19, ceil(actionFont.lineHeight + 4))
+        let textSize = (title as NSString).size(withAttributes: [.font: actionFont])
+        let size = CGSize(width: ceil(textSize.width + horizontalPadding * 2), height: height)
+        let tint = UIColor(selectionColor)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let image = renderer.image { _ in
+            let rect = CGRect(origin: .zero, size: size)
+            tint.withAlphaComponent(inlineActionEnabled ? 0.12 : 0.07).setFill()
+            UIBezierPath(roundedRect: rect, cornerRadius: height / 2).fill()
+            (title as NSString).draw(
+                at: CGPoint(
+                    x: horizontalPadding,
+                    y: floor((height - textSize.height) / 2)
+                ),
+                withAttributes: [
+                    .font: actionFont,
+                    .foregroundColor: inlineActionEnabled ? tint : tint.withAlphaComponent(0.55)
+                ]
+            )
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = CGRect(
+            x: 0,
+            y: (font.capHeight - height) / 2,
+            width: size.width,
+            height: size.height
+        )
+        let action = NSMutableAttributedString(attachment: attachment)
+        if inlineActionEnabled {
+            action.addAttribute(
+                .link,
+                value: Self.inlineActionURL,
+                range: NSRange(location: 0, length: action.length)
+            )
+        }
+        return action
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var onInlineAction: () -> Void
+
+        init(onInlineAction: @escaping () -> Void) {
+            self.onInlineAction = onInlineAction
+        }
+
+        func textView(
+            _ textView: UITextView,
+            shouldInteractWith URL: URL,
+            in characterRange: NSRange,
+            interaction: UITextItemInteraction
+        ) -> Bool {
+            guard URL == SelectableThinkingText.inlineActionURL else { return true }
+            onInlineAction()
+            return false
+        }
     }
 }
 
@@ -1992,6 +2059,7 @@ struct StreamingProcessRow: View {
                         )
                         Text("Thinking…")
                             .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                            .offset(y: 2)
                     }
                 }
                 streamingText

@@ -1950,7 +1950,7 @@ private struct ComposerView: View {
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(composerAuxiliaryForeground)
                         .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
-                        .background(composerAuxiliaryBackground, in: Circle())
+                        .background { composerAuxiliaryChrome(Circle()) }
                 }
                 .disabled(model.isUploading)
 
@@ -1959,7 +1959,7 @@ private struct ComposerView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(composerAuxiliaryForeground)
                         .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
-                        .background(composerAuxiliaryBackground, in: Circle())
+                        .background { composerAuxiliaryChrome(Circle()) }
                 }
                 .accessibilityLabel("打开颜文字抽屉")
 
@@ -1980,7 +1980,7 @@ private struct ComposerView: View {
                     .foregroundStyle(palette.text)
                     .padding(.horizontal, isNest ? 11 : 10)
                     .frame(height: isNest ? 32 : 35)
-                    .background(composerAuxiliaryBackground.opacity(0.86), in: Capsule())
+                    .background { composerAuxiliaryChrome(Capsule(), opacity: 0.86) }
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1998,10 +1998,13 @@ private struct ComposerView: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(recorder.isRecording ? Color.white : composerAuxiliaryForeground)
                         .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
-                        .background(
-                            recorder.isRecording ? Color.red.opacity(0.82) : composerAuxiliaryBackground,
-                            in: Circle()
-                        )
+                        .background {
+                            if recorder.isRecording {
+                                Circle().fill(Color.red.opacity(0.82))
+                            } else {
+                                composerAuxiliaryChrome(Circle())
+                            }
+                        }
                 }
                 .disabled(model.isUploadingVoice)
 
@@ -2130,7 +2133,47 @@ private struct ComposerView: View {
 
     private var composerAuxiliaryForeground: Color {
         if isNest { return Color(hex: 0x292826) }
+        if model.theme == .harbor { return Color.white.opacity(0.90) }
         return model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
+    }
+
+    @ViewBuilder
+    private func composerAuxiliaryChrome<S: Shape>(
+        _ shape: S,
+        opacity: Double = 1
+    ) -> some View {
+        if model.theme == .harbor {
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    shape.fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.10 * opacity),
+                                Color.white.opacity(0.035 * opacity)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                }
+                .overlay {
+                    shape.stroke(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.24 * opacity),
+                                Color.white.opacity(0.07 * opacity)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.65
+                    )
+                }
+                .shadow(color: Color.black.opacity(0.12 * opacity), radius: 5, y: 2)
+        } else {
+            shape.fill(composerAuxiliaryBackground.opacity(opacity))
+        }
     }
 
     private var composerSendBackground: Color {

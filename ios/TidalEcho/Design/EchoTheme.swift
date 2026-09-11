@@ -23,7 +23,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .mist: return "墨线、素纸与留白"
         case .paper: return "安静、克制的纸张质感"
-        case .harbor: return "深海蓝与夜间微光"
+        case .harbor: return "黑白夜色与雾中微光"
         case .nest: return "Claude 字体、暖白与原生浮层"
         }
     }
@@ -62,17 +62,16 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
             )
         case .harbor:
             return EchoPalette(
-                backgroundTop: Color(hex: 0x15212D),
-                backgroundBottom: Color(hex: 0x0D1720),
-                text: Color(hex: 0xE5EDF3),
-                secondaryText: Color(hex: 0x95A6B5),
-                aiBubble: Color(hex: 0x253541).opacity(0.94),
-                humanBubble: Color(hex: 0x344A5B).opacity(0.94),
-                composer: Color(hex: 0x1C2A35).opacity(0.94),
-                accent: Color(hex: 0x8AAFC6),
-                hairline: Color.white.opacity(0.10),
-                // 夜港的 accent 是浅蓝，白字压不住，用底色当字色
-                onAccent: Color(hex: 0x0D1720)
+                backgroundTop: Color(hex: 0x080808),
+                backgroundBottom: Color(hex: 0x000000),
+                text: Color(hex: 0xF8F8F6),
+                secondaryText: Color.white.opacity(0.76),
+                aiBubble: Color(hex: 0x313131),
+                humanBubble: Color(hex: 0x313131),
+                composer: Color(hex: 0x171717),
+                accent: Color.white,
+                hairline: Color.white.opacity(0.16),
+                onAccent: Color.black
             )
         case .nest:
             return EchoPalette(

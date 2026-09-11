@@ -214,6 +214,8 @@ struct MessageMeta: Decodable, Hashable {
     var album: [MessageAlbumEntry]
     /// 这轮自动浮起了几条旧记忆（relay 的 recall 挂上来的）。思维卡拿它显示一行提示。
     var recalled: Int?
+    /// 按需生成并由 relay 缓存的可见文本译文，键为 BCP-47 语言标签。
+    var translations: [String: String]
     /// 她这条消息里那条小红书链接展开出来的笔记。
     var xhs: XHSCard?
 
@@ -226,7 +228,7 @@ struct MessageMeta: Decodable, Hashable {
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
         case callStatus = "call_status"
-        case starred, timer, ask, peek, edited, glyph, steps, act, album, recalled, xhs
+        case starred, timer, ask, peek, edited, glyph, steps, act, album, recalled, translations, xhs
     }
 
     init(
@@ -254,6 +256,7 @@ struct MessageMeta: Decodable, Hashable {
         self.callStatus = nil
         self.album = []
         self.recalled = nil
+        self.translations = [:]
         self.xhs = nil
     }
 
@@ -286,6 +289,7 @@ struct MessageMeta: Decodable, Hashable {
         callStatus = Self.lenient(String.self, values, .callStatus)
         album = Self.lenient([MessageAlbumEntry].self, values, .album) ?? []
         recalled = Self.lenient(Int.self, values, .recalled)
+        translations = Self.lenient([String: String].self, values, .translations) ?? [:]
         xhs = Self.lenient(XHSCard.self, values, .xhs)
         let nestedAct = Self.lenient(ActMeta.self, values, .act)
         glyph = Self.lenient(String.self, values, .glyph) ?? nestedAct?.glyph

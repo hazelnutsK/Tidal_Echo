@@ -105,6 +105,7 @@ struct MessageRow: View {
     let peerName: String
     let showsTimestamp: Bool
     let isGroupStart: Bool
+    let showsAvatarHeader: Bool
     let isTail: Bool
     let isGroupedWithPrevious: Bool
     let isPaper: Bool
@@ -122,6 +123,7 @@ struct MessageRow: View {
     let onRegenerate: () -> Void
     let onHide: () -> Void
     let onReact: (String) -> Void
+    let onTranslateThinking: () async throws -> String
     let onCompleteTimer: () -> Void
     let onOpenAsk: () -> Void
     /// 程序化点不开系统广播面板时，这张共享卡要露出真的那颗按钮让她手点。
@@ -146,7 +148,11 @@ struct MessageRow: View {
                     isMist: isMist,
                     isNest: isNest,
                     showsAIAvatar: showsAIAvatar,
-                    bubbleWidthScale: bubbleWidthScale
+                    aiAvatarImage: aiAvatarImage,
+                    bubbleWidthScale: bubbleWidthScale,
+                    usesUpperTailAvatarLayout: usesUpperTailAvatarLayout,
+                    showsAvatarHeader: showsAvatarHeader,
+                    onTranslate: onTranslateThinking
                 )
             } else if message.kind == "call" {
                 if message.author == .ai {
@@ -221,10 +227,22 @@ struct MessageRow: View {
     }
 
     private var bubble: some View {
+        VStack(alignment: message.author == .human ? .trailing : .leading, spacing: 6) {
+            if usesUpperTailAvatarLayout && showsAvatarHeader {
+                upperTailAvatarHeader
+            }
+
+            bubbleContentRow
+        }
+        .frame(maxWidth: .infinity)
+        .contextMenu { messageActions }
+    }
+
+    private var bubbleContentRow: some View {
         HStack(alignment: bubbleRowAlignment, spacing: 8) {
             if message.author == .human { Spacer(minLength: 56) }
 
-            if message.author == .ai && showsAIAvatar {
+            if message.author == .ai && showsAIAvatar && !usesUpperTailAvatarLayout {
                 AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
             }
 
@@ -376,7 +394,7 @@ struct MessageRow: View {
                 }
             }
 
-            if message.author == .human && showsHumanAvatar {
+            if message.author == .human && showsHumanAvatar && !usesUpperTailAvatarLayout {
                 AvatarBadge(image: humanAvatarImage, fallback: "person.fill", palette: palette)
             }
 
@@ -385,7 +403,21 @@ struct MessageRow: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .contextMenu { messageActions }
+    }
+
+    private var upperTailAvatarHeader: some View {
+        HStack(spacing: 0) {
+            if message.author == .human { Spacer(minLength: 0) }
+            AvatarBadge(
+                image: message.author == .human ? humanAvatarImage : aiAvatarImage,
+                fallback: message.author == .human ? "person.fill" : "sparkle",
+                palette: palette,
+                size: 36,
+                showsShadow: true
+            )
+            if message.author == .ai { Spacer(minLength: 0) }
+        }
+        .padding(.horizontal, 2)
     }
 
     private var nestInlineActions: some View {
@@ -515,6 +547,12 @@ struct MessageRow: View {
     private var usesUpperCornerShape: Bool {
         bubbleShapeStyle == .upperTail
             && (bubbleStyle == .classic || bubbleStyle == .frosted)
+    }
+
+    private var usesUpperTailAvatarLayout: Bool {
+        // Keep every other avatar/bubble combination unchanged. The detached
+        // group header is only the paired-avatar treatment for upper corners.
+        usesUpperCornerShape && showsAIAvatar && showsHumanAvatar
     }
 
     private var bubbleRowAlignment: VerticalAlignment {
@@ -1407,9 +1445,17 @@ private struct ProcessRow: View {
     let isMist: Bool
     let isNest: Bool
     let showsAIAvatar: Bool
+    let aiAvatarImage: UIImage?
     let bubbleWidthScale: Double
+    let usesUpperTailAvatarLayout: Bool
+    let showsAvatarHeader: Bool
+    let onTranslate: () async throws -> String
     @State private var expanded = false
     @State private var showingProcessSheet = false
+    @State private var showingTranslation = false
+    @State private var loadedTranslation: String?
+    @State private var isTranslating = false
+    @State private var translationError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1423,7 +1469,9 @@ private struct ProcessRow: View {
                     }
                 }
             } label: {
-                if isNest {
+                if isThinking && usesUpperTailAvatarLayout {
+                    upperTailThinkingTrigger
+                } else if isNest {
                     nestTrigger
                 } else if isMist {
                     mistTrigger
@@ -1448,10 +1496,18 @@ private struct ProcessRow: View {
             }
         }
         .frame(maxWidth: CGFloat(280 * bubbleWidthScale), alignment: .leading)
-        .padding(.leading, showsAIAvatar ? 35 : 0)
+        .padding(.leading, showsAIAvatar && !usesUpperTailAvatarLayout ? 35 : 0)
         .padding(.trailing, 44)
         .sheet(isPresented: $showingProcessSheet) {
             processSheet
+        }
+        .alert("翻译没有成功", isPresented: Binding(
+            get: { translationError != nil },
+            set: { if !$0 { translationError = nil } }
+        )) {
+            Button("好", role: .cancel) { translationError = nil }
+        } message: {
+            Text(translationError ?? "请稍后再试")
         }
     }
 
@@ -1471,6 +1527,32 @@ private struct ProcessRow: View {
     }
     private var usesSystemSheet: Bool { isMist || isNest }
     private var isHarbor: Bool { !isPaper && !isMist && !isNest }
+    private var translatedThinking: String? {
+        let text = loadedTranslation ?? message.meta.translations["zh-Hans"]
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+    private var displayedThinking: String {
+        showingTranslation ? (translatedThinking ?? message.text) : message.text
+    }
+    private var offersTranslation: Bool {
+        guard isThinking, message.id > 0 else { return false }
+        if translatedThinking != nil { return true }
+        var latinLetters = 0
+        var hanCharacters = 0
+        for scalar in message.text.unicodeScalars {
+            switch scalar.value {
+            case 0x41...0x5A, 0x61...0x7A:
+                latinLetters += 1
+            case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF:
+                hanCharacters += 1
+            default:
+                break
+            }
+        }
+        return (hanCharacters == 0 && latinLetters >= 4)
+            || (latinLetters >= 16 && latinLetters > max(8, hanCharacters * 2))
+    }
     private var processFontSize: Double {
         PWAChatMetrics.thinkingFontSize(for: chatFont) * fontScale * processFontMultiplier
     }
@@ -1483,6 +1565,50 @@ private struct ProcessRow: View {
     /// Nest reads the sheet as a document, not as an aside: full ink, no wash.
     private var sheetTextColor: Color {
         isNest ? palette.text : palette.text.opacity(0.84)
+    }
+
+    private var upperTailThinkingTrigger: some View {
+        HStack(spacing: 9) {
+            if showsAvatarHeader {
+                AvatarBadge(
+                    image: aiAvatarImage,
+                    fallback: "sparkle",
+                    palette: palette,
+                    size: 36,
+                    showsShadow: true
+                )
+            }
+            Text(upperTailThinkingTitle)
+                .lineLimit(1)
+            upperTailThinkingDisclosure
+        }
+        .font(chatFont.font(
+            size: (isNest ? 13 : 12.5) * fontScale,
+            weight: isNest ? .regular : .medium
+        ))
+        .foregroundStyle(palette.secondaryText)
+        .padding(.vertical, 2)
+    }
+
+    private var upperTailThinkingTitle: String {
+        if isNest { return nestThinkingTitle }
+        return isPaper ? "THINKING" : "Thinking"
+    }
+
+    @ViewBuilder
+    private var upperTailThinkingDisclosure: some View {
+        if isPaper {
+            Image(systemName: "play.fill")
+                .font(.system(size: 7.5, weight: .bold))
+                .rotationEffect(.degrees(expanded ? 90 : 0))
+        } else if isHarbor {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .semibold))
+                .rotationEffect(.degrees(expanded ? 180 : 0))
+        } else {
+            Image(systemName: "chevron.right")
+                .font(.system(size: isNest ? 10 : 8, weight: .semibold))
+        }
     }
 
     private var mistTrigger: some View {
@@ -1577,17 +1703,25 @@ private struct ProcessRow: View {
     @ViewBuilder
     private func processContent(textColor: Color) -> some View {
         if isThinking {
-            SelectableThinkingText(
-                text: message.text,
-                font: chatFont.uiFont(size: processFontSize, numericWeight: chatWeight),
-                textColor: textColor,
-                selectionColor: palette.accent,
-                lineSpacing: PWAChatMetrics.lineSpacing(
-                    font: chatFont,
-                    size: processFontSize
+            VStack(alignment: .leading, spacing: 8) {
+                if offersTranslation {
+                    HStack {
+                        Spacer(minLength: 0)
+                        thinkingLanguageButton
+                    }
+                }
+                SelectableThinkingText(
+                    text: displayedThinking,
+                    font: chatFont.uiFont(size: processFontSize, numericWeight: chatWeight),
+                    textColor: textColor,
+                    selectionColor: palette.accent,
+                    lineSpacing: PWAChatMetrics.lineSpacing(
+                        font: chatFont,
+                        size: processFontSize
+                    )
                 )
-            )
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(message.meta.steps.enumerated()), id: \.offset) { _, step in
@@ -1677,6 +1811,56 @@ private struct ProcessRow: View {
                         .frame(width: 1.5)
                 }
             }
+    }
+
+    @ViewBuilder
+    private var thinkingLanguageButton: some View {
+        if offersTranslation {
+            Button {
+                toggleThinkingLanguage()
+            } label: {
+                HStack(spacing: 5) {
+                    if isTranslating {
+                        ProgressView()
+                            .controlSize(.mini)
+                    }
+                    Text(isTranslating ? "翻译中" : (showingTranslation ? "看原文" : "译为中文"))
+                        .font(chatFont.font(size: 11.5 * fontScale, weight: .medium))
+                }
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.accent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(palette.accent.opacity(isPaper ? 0.06 : 0.10), in: Capsule())
+            .disabled(isTranslating)
+            .accessibilityLabel(showingTranslation ? "查看思考原文" : "把思考翻译成中文")
+        }
+    }
+
+    private func toggleThinkingLanguage() {
+        guard offersTranslation, !isTranslating else { return }
+        if translatedThinking != nil {
+            withAnimation(.easeInOut(duration: 0.15)) {
+                showingTranslation.toggle()
+            }
+            return
+        }
+        isTranslating = true
+        translationError = nil
+        Task {
+            defer { isTranslating = false }
+            do {
+                loadedTranslation = try await onTranslate()
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    showingTranslation = true
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                translationError = error.localizedDescription
+            }
+        }
     }
 }
 
@@ -1787,12 +1971,37 @@ struct StreamingProcessRow: View {
     let isMist: Bool
     let isNest: Bool
     let showsAIAvatar: Bool
+    let aiAvatarImage: UIImage?
+    let usesUpperTailAvatarLayout: Bool
+    let showsAvatarHeader: Bool
     let chatFont: EchoChatFont
     let fontScale: Double
     let chatWeight: Double
 
     var body: some View {
-        if isNest {
+        if usesUpperTailAvatarLayout {
+            VStack(alignment: .leading, spacing: 7) {
+                if showsAvatarHeader {
+                    HStack(spacing: 9) {
+                        AvatarBadge(
+                            image: aiAvatarImage,
+                            fallback: "sparkle",
+                            palette: palette,
+                            size: 36,
+                            showsShadow: true
+                        )
+                        Text("Thinking…")
+                            .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
+                    }
+                }
+                streamingText
+                    .lineLimit(2)
+            }
+            .foregroundStyle(palette.secondaryText)
+            .frame(maxWidth: 280, alignment: .leading)
+            .padding(.trailing, 44)
+            .transition(.opacity)
+        } else if isNest {
             HStack(alignment: .top, spacing: 8) {
                 ClaudeBrandMark(size: 15, motion: .thinking, color: palette.secondaryText)
                     .padding(.top, 2)
@@ -1926,66 +2135,80 @@ struct StreamingReplyRow: View {
     let chatWeight: Double
     let isTail: Bool
     let isNest: Bool
+    let usesUpperTailAvatarLayout: Bool
+    let showsAvatarHeader: Bool
 
     var body: some View {
-        HStack(alignment: usesUpperCornerShape ? .top : .bottom, spacing: 8) {
-            if showsAIAvatar {
-                AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
+        VStack(alignment: .leading, spacing: 6) {
+            if usesUpperTailAvatarLayout && showsAvatarHeader {
+                AvatarBadge(
+                    image: aiAvatarImage,
+                    fallback: "sparkle",
+                    palette: palette,
+                    size: 36,
+                    showsShadow: true
+                )
             }
-            Text(text)
-                .font(chatFont.font(
-                    size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale,
-                    numericWeight: chatWeight
-                ))
-                .lineSpacing(PWAChatMetrics.lineSpacing(
-                    font: chatFont,
-                    size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
-                ))
-                .foregroundStyle(aiBubbleTextColor)
-                .padding(.horizontal, showsAIBubble ? bubbleHorizontalPadding : (isNest ? 0 : 2))
-                .padding(.vertical, bubbleVerticalPadding)
-                .background {
-                    if showsAIBubble {
-                        if bubbleStyle == .liquid {
-                            LiquidGlassBubbleBackground(
-                                tint: aiBubbleColor,
-                                tintOpacity: bubbleOpacity,
-                                radius: CGFloat(bubbleRadius),
-                                settings: liquidGlass
-                            )
-                        } else {
-                            let shape = streamingBubbleShape
-                            if bubbleStyle == .frosted {
-                                FrostedGlassBubbleBackground(
-                                    shape: shape,
+            HStack(alignment: usesUpperCornerShape ? .top : .bottom, spacing: 8) {
+                if showsAIAvatar && !usesUpperTailAvatarLayout {
+                    AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
+                }
+                Text(text)
+                    .font(chatFont.font(
+                        size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale,
+                        numericWeight: chatWeight
+                    ))
+                    .lineSpacing(PWAChatMetrics.lineSpacing(
+                        font: chatFont,
+                        size: PWAChatMetrics.bubbleFontSize(for: chatFont) * fontScale
+                    ))
+                    .foregroundStyle(aiBubbleTextColor)
+                    .padding(.horizontal, showsAIBubble ? bubbleHorizontalPadding : (isNest ? 0 : 2))
+                    .padding(.vertical, bubbleVerticalPadding)
+                    .background {
+                        if showsAIBubble {
+                            if bubbleStyle == .liquid {
+                                LiquidGlassBubbleBackground(
                                     tint: aiBubbleColor,
-                                    tintOpacity: bubbleOpacity
+                                    tintOpacity: bubbleOpacity,
+                                    radius: CGFloat(bubbleRadius),
+                                    settings: liquidGlass
                                 )
                             } else {
-                                shape
-                                    .fill(aiBubbleColor.opacity(bubbleOpacity))
-                                    .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
+                                let shape = streamingBubbleShape
+                                if bubbleStyle == .frosted {
+                                    FrostedGlassBubbleBackground(
+                                        shape: shape,
+                                        tint: aiBubbleColor,
+                                        tintOpacity: bubbleOpacity
+                                    )
+                                } else {
+                                    shape
+                                        .fill(aiBubbleColor.opacity(bubbleOpacity))
+                                        .shadow(color: Color.black.opacity(0.045 * bubbleOpacity), radius: 4.5, y: 2)
+                                }
                             }
                         }
                     }
-                }
-                .overlay {
-                    if showsAIBubble && bubbleBorderWidth > 0 {
-                        if bubbleStyle == .liquid {
-                            RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
-                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
-                        } else {
-                            streamingBubbleShape
-                                .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                    .overlay {
+                        if showsAIBubble && bubbleBorderWidth > 0 {
+                            if bubbleStyle == .liquid {
+                                RoundedRectangle(cornerRadius: CGFloat(bubbleRadius), style: .continuous)
+                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                            } else {
+                                streamingBubbleShape
+                                    .stroke(palette.hairline, lineWidth: CGFloat(bubbleBorderWidth))
+                            }
                         }
                     }
-                }
-                .frame(
-                    maxWidth: showsAIBubble ? streamingBubbleMaxWidth : .infinity,
-                    alignment: .leading
-                )
-            if showsAIBubble { Spacer(minLength: 0) }
+                    .frame(
+                        maxWidth: showsAIBubble ? streamingBubbleMaxWidth : .infinity,
+                        alignment: .leading
+                    )
+                if showsAIBubble { Spacer(minLength: 0) }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var streamingBubbleMaxWidth: CGFloat {
@@ -2129,6 +2352,8 @@ private struct AvatarBadge: View {
     let image: UIImage?
     let fallback: String
     let palette: EchoPalette
+    var size: CGFloat = 30
+    var showsShadow = false
 
     var body: some View {
         Group {
@@ -2138,13 +2363,25 @@ private struct AvatarBadge: View {
                     .scaledToFill()
             } else {
                 Image(systemName: fallback)
-                    .font(.system(size: 13, weight: .light))
+                    .font(.system(size: size * 0.43, weight: .light))
                     .foregroundStyle(palette.accent)
-                    .background(palette.aiBubble)
             }
         }
-        .frame(width: 30, height: 30)
+        .frame(width: size, height: size)
+        .background(image == nil ? palette.aiBubble : Color.clear, in: Circle())
         .clipShape(Circle())
+        .overlay {
+            if showsShadow {
+                Circle()
+                    .stroke(Color.white.opacity(0.28), lineWidth: 0.65)
+            }
+        }
+        .shadow(
+            color: showsShadow ? Color.black.opacity(0.13) : Color.clear,
+            radius: showsShadow ? 4.5 : 0,
+            y: showsShadow ? 2 : 0
+        )
+        .accessibilityHidden(true)
     }
 }
 
@@ -2153,19 +2390,34 @@ struct TypingRow: View {
     let showsAIAvatar: Bool
     let aiAvatarImage: UIImage?
     let isNest: Bool
+    let usesUpperTailAvatarLayout: Bool
+    let showsAvatarHeader: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            if isNest {
-                ClaudeBrandMark(size: 16, motion: .writing, color: palette.accent)
-            } else if showsAIAvatar {
-                AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
+        VStack(alignment: .leading, spacing: 6) {
+            if usesUpperTailAvatarLayout && showsAvatarHeader {
+                AvatarBadge(
+                    image: aiAvatarImage,
+                    fallback: "sparkle",
+                    palette: palette,
+                    size: 36,
+                    showsShadow: true
+                )
             }
-            JumpingDots(color: palette.secondaryText)
-                .padding(.horizontal, isNest ? 2 : 14)
-                .frame(height: 35)
-                .background(isNest ? Color.clear : palette.aiBubble, in: Capsule())
-            Spacer()
+            HStack(spacing: 8) {
+                if !usesUpperTailAvatarLayout {
+                    if isNest {
+                        ClaudeBrandMark(size: 16, motion: .writing, color: palette.accent)
+                    } else if showsAIAvatar {
+                        AvatarBadge(image: aiAvatarImage, fallback: "sparkle", palette: palette)
+                    }
+                }
+                JumpingDots(color: palette.secondaryText)
+                    .padding(.horizontal, isNest ? 2 : 14)
+                    .frame(height: 35)
+                    .background(isNest ? Color.clear : palette.aiBubble, in: Capsule())
+                Spacer()
+            }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("AI 正在输入")

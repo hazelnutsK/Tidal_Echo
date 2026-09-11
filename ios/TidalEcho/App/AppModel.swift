@@ -176,6 +176,7 @@ final class AppModel: ObservableObject {
         static let liquidGlassSize = "tidalEcho.liquidGlassSize"
         static let pwaBubbleMetricsV1 = "tidalEcho.pwaBubbleMetricsV1"
         static let paperPresetV3 = "tidalEcho.paperPresetV3"
+        static let harborPresetV1 = "tidalEcho.harborPresetV1"
         static let nestPresetV1 = "tidalEcho.nestPresetV1"
         static let peerRemark = "tidalEcho.peerRemark"
         static let aiBubbleColor = "tidalEcho.aiBubbleColor"
@@ -213,6 +214,7 @@ final class AppModel: ObservableObject {
         let rawTheme = defaults.string(forKey: Keys.theme) ?? EchoTheme.mist.rawValue
         let initialTheme = EchoTheme(rawValue: rawTheme) ?? .mist
         let shouldMigratePaperPreset = initialTheme == .paper && !defaults.bool(forKey: Keys.paperPresetV3)
+        let shouldMigrateHarborPreset = initialTheme == .harbor && !defaults.bool(forKey: Keys.harborPresetV1)
         let shouldMigrateNestPreset = initialTheme == .nest && !defaults.bool(forKey: Keys.nestPresetV1)
         theme = initialTheme
         let rawFont = defaults.string(forKey: Keys.chatFont) ?? EchoChatFont.system.rawValue
@@ -276,6 +278,10 @@ final class AppModel: ObservableObject {
             applyPaperAppearancePreset()
             defaults.set(true, forKey: Keys.paperPresetV3)
         }
+        if shouldMigrateHarborPreset {
+            applyHarborAppearancePreset()
+            defaults.set(true, forKey: Keys.harborPresetV1)
+        }
         if shouldMigrateNestPreset {
             applyNestAppearancePreset()
             defaults.set(true, forKey: Keys.nestPresetV1)
@@ -323,10 +329,13 @@ final class AppModel: ObservableObject {
         case .paper:
             applyPaperAppearancePreset()
             UserDefaults.standard.set(true, forKey: Keys.paperPresetV3)
+        case .harbor:
+            applyHarborAppearancePreset()
+            UserDefaults.standard.set(true, forKey: Keys.harborPresetV1)
         case .nest:
             applyNestAppearancePreset()
             UserDefaults.standard.set(true, forKey: Keys.nestPresetV1)
-        case .mist, .harbor:
+        case .mist:
             break
         }
     }
@@ -347,8 +356,30 @@ final class AppModel: ObservableObject {
         backgroundOpacity = 1
         showsAIAvatar = true
         showsHumanAvatar = true
-        installPaperPresetAvatar(named: "paper-ai-avatar", kind: .aiAvatar)
-        installPaperPresetAvatar(named: "paper-human-avatar", kind: .humanAvatar)
+        installPresetImage(named: "paper-ai-avatar", kind: .aiAvatar)
+        installPresetImage(named: "paper-human-avatar", kind: .humanAvatar)
+    }
+
+    private func applyHarborAppearancePreset() {
+        chatFont = .system
+        fontScale = 0.95
+        chatWeight = 440
+        showsAIBubble = true
+        showsAIAvatar = false
+        showsHumanAvatar = false
+        bubbleStyle = .classic
+        bubbleShapeStyle = .standard
+        aiBubbleColorHex = "#313131"
+        humanBubbleColorHex = "#313131"
+        aiBubbleTextColorHex = "#F8F8F6"
+        humanBubbleTextColorHex = "#F8F8F6"
+        bubbleOpacity = 0.60
+        bubbleRadius = 20
+        bubbleWidthScale = 1.20
+        bubbleBorderWidth = 0
+        backgroundOpacity = 1
+        backgroundBlur = 1
+        installPresetImage(named: "harbor-background", kind: .background)
     }
 
     private func applyNestAppearancePreset() {
@@ -371,7 +402,7 @@ final class AppModel: ObservableObject {
         backgroundOpacity = 1
     }
 
-    private func installPaperPresetAvatar(named name: String, kind: AppearanceImageKind) {
+    private func installPresetImage(named name: String, kind: AppearanceImageKind) {
         let rootURL = Bundle.main.url(forResource: name, withExtension: "jpg")
         let nestedURL = Bundle.main.url(
             forResource: name,
@@ -866,6 +897,17 @@ final class AppModel: ObservableObject {
     func reactToMessage(messageID: Int, emoji: String) async throws {
         let reactions = try await requireClient().reactToMessage(id: messageID, emoji: emoji)
         updateReactions(messageID: messageID, reactions: reactions)
+    }
+
+    func translateThinking(messageID: Int) async throws -> String {
+        let translation = try await requireClient().translateThinking(messageID: messageID)
+        if let index = messages.firstIndex(where: { $0.id == messageID }) {
+            messages[index].meta.translations["zh-Hans"] = translation
+        }
+        if let index = historyArchive.firstIndex(where: { $0.id == messageID }) {
+            historyArchive[index].meta.translations["zh-Hans"] = translation
+        }
+        return translation
     }
 
     func completeTimer(messageID: Int) async throws {

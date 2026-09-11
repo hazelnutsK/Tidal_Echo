@@ -36,6 +36,20 @@ struct ChatView: View {
 
     private var palette: EchoPalette { model.theme.palette }
     private var isNest: Bool { model.theme == .nest }
+    private var usesUpperTailAvatarLayout: Bool {
+        guard model.showsAIAvatar,
+              model.showsHumanAvatar,
+              model.bubbleShapeStyle == .upperTail else { return false }
+        return model.bubbleStyle == .classic || model.bubbleStyle == .frosted
+    }
+    private var historyEndsWithAIThinkingHeader: Bool {
+        for message in model.messages.reversed() {
+            guard message.author == .ai else { return false }
+            if message.kind == "thinking" { return true }
+            if message.kind != "act" { return false }
+        }
+        return false
+    }
 
     var body: some View {
         ZStack {
@@ -338,7 +352,7 @@ struct ChatView: View {
         switch model.theme {
         case .mist: return Color(hex: 0xF7FAFC).opacity(0.52)
         case .paper: return Color(hex: 0xF0EEE6).opacity(0.62)
-        case .harbor: return Color(hex: 0x1C2A35).opacity(0.56)
+        case .harbor: return Color.black.opacity(0.32)
         case .nest: return Color.white.opacity(0.52)
         }
     }
@@ -365,7 +379,7 @@ struct ChatView: View {
         switch model.theme {
         case .mist: return Color(hex: 0xECF1F6).opacity(0.24)
         case .paper: return Color(hex: 0xFAFAF8).opacity(0.72)
-        case .harbor: return Color(hex: 0x15212D).opacity(0.38)
+        case .harbor: return Color.black.opacity(0.38)
         case .nest: return Color(hex: 0xF7F7F5).opacity(0.46)
         }
     }
@@ -440,6 +454,7 @@ struct ChatView: View {
                             peerName: model.peerDisplayName,
                             showsTimestamp: row.showsTimestamp,
                             isGroupStart: row.isGroupStart,
+                            showsAvatarHeader: row.showsAvatarHeader,
                             isTail: model.chatMode == .short && model.bubbleStyle == .classic
                                 ? false
                                 : row.isTail,
@@ -487,6 +502,9 @@ struct ChatView: View {
                                     catch { model.errorMessage = error.localizedDescription }
                                 }
                             },
+                            onTranslateThinking: {
+                                try await model.translateThinking(messageID: message.id)
+                            },
                             onCompleteTimer: {
                                 Task {
                                     do { try await model.completeTimer(messageID: message.id) }
@@ -523,6 +541,9 @@ struct ChatView: View {
                             isMist: model.theme == .mist,
                             isNest: model.theme == .nest,
                             showsAIAvatar: model.showsAIAvatar,
+                            aiAvatarImage: model.aiAvatarImage,
+                            usesUpperTailAvatarLayout: usesUpperTailAvatarLayout,
+                            showsAvatarHeader: !historyEndsWithAIThinkingHeader,
                             chatFont: model.chatFont,
                             fontScale: model.fontScale,
                             chatWeight: model.chatWeight
@@ -549,14 +570,20 @@ struct ChatView: View {
                             liquidGlass: model.liquidGlassSettings,
                             chatWeight: model.chatWeight,
                             isTail: !(model.chatMode == .short && model.bubbleStyle == .classic),
-                            isNest: model.theme == .nest
+                            isNest: model.theme == .nest,
+                            usesUpperTailAvatarLayout: usesUpperTailAvatarLayout,
+                            showsAvatarHeader: model.streamingThinking.isEmpty
+                                && !historyEndsWithAIThinkingHeader
                         )
                     } else if model.isTyping || !model.streamingThinking.isEmpty {
                         TypingRow(
                             palette: palette,
                             showsAIAvatar: model.showsAIAvatar,
                             aiAvatarImage: model.aiAvatarImage,
-                            isNest: model.theme == .nest
+                            isNest: model.theme == .nest,
+                            usesUpperTailAvatarLayout: usesUpperTailAvatarLayout,
+                            showsAvatarHeader: model.streamingThinking.isEmpty
+                                && !historyEndsWithAIThinkingHeader
                         )
                     }
 
@@ -764,6 +791,9 @@ struct ChatView: View {
         guard !messages.isEmpty else { return [] }
         var rows: [ChatRow] = []
         rows.reserveCapacity(messages.count)
+        // In the upper-corner layout, Thinking owns the AI identity header for
+        // the reply that follows it, so the first reply bubble does not repeat it.
+        var activeAIThinkingHeader: ChatMessage?
         for index in messages.indices {
             let message = messages[index]
             let isGroupStart: Bool
@@ -778,16 +808,47 @@ struct ChatView: View {
                 isTail = !messagesShareBubbleGroup(message, messages[index + 1])
             }
 
+            if let thinkingHeader = activeAIThinkingHeader,
+               !messagesShareAvatarBurst(thinkingHeader, message) {
+                activeAIThinkingHeader = nil
+            }
+            let showsAvatarHeader: Bool
+            if message.author == .human {
+                activeAIThinkingHeader = nil
+                showsAvatarHeader = isGroupStart
+            } else if message.kind == "thinking" {
+                showsAvatarHeader = activeAIThinkingHeader == nil
+                if showsAvatarHeader { activeAIThinkingHeader = message }
+            } else if message.kind == "act" {
+                showsAvatarHeader = false
+            } else {
+                showsAvatarHeader = isGroupStart && activeAIThinkingHeader == nil
+                activeAIThinkingHeader = nil
+            }
+
             rows.append(
                 ChatRow(
                     message: message,
                     showsTimestamp: showsTimestamp(at: index, in: messages),
                     isGroupStart: isGroupStart,
+                    showsAvatarHeader: showsAvatarHeader,
                     isTail: isTail
                 )
             )
         }
         return rows
+    }
+
+    private static func messagesShareAvatarBurst(
+        _ first: ChatMessage,
+        _ second: ChatMessage
+    ) -> Bool {
+        guard first.author == second.author,
+              let date = messageDate(first.timestamp),
+              let nextDate = messageDate(second.timestamp),
+              EchoDateCache.shanghaiCalendar.isDate(date, inSameDayAs: nextDate) else { return false }
+        let interval = nextDate.timeIntervalSince(date)
+        return interval >= 0 && interval < 5 * 60
     }
 
     private static func showsTimestamp(at index: Int, in messages: [ChatMessage]) -> Bool {
@@ -1012,6 +1073,7 @@ private struct ChatRow: Identifiable {
     let message: ChatMessage
     let showsTimestamp: Bool
     let isGroupStart: Bool
+    let showsAvatarHeader: Bool
     let isTail: Bool
 
     var id: Int { message.id }
@@ -1136,7 +1198,7 @@ private struct MessageAskSheet: View {
 
     private var palette: EchoPalette { model.theme.palette }
     private var accentForeground: Color {
-        model.theme == .harbor ? Color(hex: 0x15212D) : .white
+        palette.onAccent
     }
     private var ask: MessageAsk {
         model.messages.first(where: { $0.id == context.messageID })?.meta.ask ?? context.initialAsk
@@ -1948,7 +2010,7 @@ private struct ComposerView: View {
                 } label: {
                     Image(systemName: isNest ? "waveform" : "arrow.up")
                         .font(.system(size: isNest ? 17 : 16, weight: isNest ? .semibold : .bold))
-                        .foregroundStyle(Color.white.opacity(canSend ? 1 : 0.72))
+                        .foregroundStyle(composerSendForeground.opacity(canSend ? 1 : 0.72))
                         .frame(width: isNest ? 33 : 36, height: isNest ? 33 : 36)
                         .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
                 }
@@ -2031,6 +2093,14 @@ private struct ComposerView: View {
                 .overlay(shape.stroke(Color.white.opacity(0.72), lineWidth: 0.7))
                 .overlay(shape.stroke(palette.hairline, lineWidth: 0.45))
                 .shadow(color: Color.black.opacity(0.075), radius: 16, y: 6)
+        } else if model.theme == .harbor {
+            shape
+                .fill(Color.black.opacity(0.06))
+                .glassEffect(.clear.tint(palette.composer.opacity(0.14)), in: shape)
+                .overlay(shape.fill(palette.composer.opacity(0.12)))
+                .overlay(shape.stroke(Color.white.opacity(0.18), lineWidth: 0.7))
+                .overlay(shape.stroke(palette.hairline, lineWidth: 0.45))
+                .shadow(color: Color.black.opacity(0.16), radius: 12, y: 4)
         } else {
             shape
                 .fill(.ultraThinMaterial)
@@ -2066,6 +2136,10 @@ private struct ComposerView: View {
     private var composerSendBackground: Color {
         if isNest { return Color(hex: 0x171716) }
         return model.theme == .paper ? Color(hex: 0x2B2A27) : palette.accent
+    }
+
+    private var composerSendForeground: Color {
+        model.theme == .harbor ? palette.onAccent : Color.white
     }
 
     private func loadBrain() async {

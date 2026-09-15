@@ -387,6 +387,29 @@ private struct AppearanceSettingsView: View {
                 }
             }
 
+            Section("AI 回复时机") {
+                Picker("AI 回复时机", selection: $model.aiReplyTiming) {
+                    ForEach(AIReplyTiming.allCases) { timing in
+                        Text(timing.title).tag(timing)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(model.aiReplyTiming == .immediate
+                    ? "每次点击发送后，AI 会马上收到消息。"
+                    : "逐条加入待发送合集；输入框为空时再点一次发送，AI 才会一次收到全部内容。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+
+                if !model.bundledMessageParts.isEmpty {
+                    HStack {
+                        Label("已暂存 \(model.bundledMessageParts.count) 条", systemImage: "tray.full.fill")
+                        Spacer()
+                        Button("清空", role: .destructive) { model.clearBundledMessageParts() }
+                    }
+                }
+            }
+
             bubbleSettingsSection
 
             Section("聊天背景") {
@@ -467,6 +490,13 @@ private struct AppearanceSettingsView: View {
             }
             .pickerStyle(.segmented)
 
+            Picker("气泡形状", selection: $model.bubbleShapeStyle) {
+                ForEach(EchoBubbleShapeStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+
             ColorPicker("AI 气泡颜色", selection: Binding(
                 get: { model.resolvedAIBubbleColor(default: palette.aiBubble) },
                 set: { model.setAIBubbleColor($0) }
@@ -478,19 +508,33 @@ private struct AppearanceSettingsView: View {
             ), supportsOpacity: false)
 
             settingSlider(
-                title: "气泡透明度",
-                valueText: "\(Int((model.bubbleOpacity * 100).rounded()))%",
-                value: $model.bubbleOpacity,
+                title: "AI 气泡透明度",
+                valueText: "\(Int((model.aiBubbleOpacity * 100).rounded()))%",
+                value: $model.aiBubbleOpacity,
                 range: 0...1,
                 step: 0.05
             )
             settingSlider(
-                title: "气泡圆角",
-                valueText: "\(Int(model.bubbleRadius.rounded()))",
-                value: $model.bubbleRadius,
-                range: 4...26,
-                step: 1
+                title: "我的气泡透明度",
+                valueText: "\(Int((model.humanBubbleOpacity * 100).rounded()))%",
+                value: $model.humanBubbleOpacity,
+                range: 0...1,
+                step: 0.05
             )
+            if model.bubbleShapeStyle == .standard {
+                settingSlider(
+                    title: "气泡圆角",
+                    valueText: "\(Int(model.bubbleRadius.rounded()))",
+                    value: $model.bubbleRadius,
+                    range: 4...26,
+                    step: 1
+                )
+            } else {
+                LabeledContent("气泡圆角", value: "15 / 6")
+                Text("连缀气泡使用 15pt 主圆角和 6pt 衔接圆角。")
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+            }
             settingSlider(
                 title: "气泡宽度",
                 valueText: "\(Int(model.bubbleWidthScale * 100))%",
@@ -513,11 +557,13 @@ private struct AppearanceSettingsView: View {
                 model.showsAIAvatar = true
                 model.showsHumanAvatar = false
                 model.showsAIBubble = true
-                model.bubbleOpacity = 1
+                model.aiBubbleOpacity = 1
+                model.humanBubbleOpacity = 1
                 model.bubbleRadius = 14
                 model.bubbleWidthScale = 1
                 model.bubbleBorderWidth = 0
                 model.bubbleStyle = .classic
+                model.bubbleShapeStyle = .telegram
                 model.chatWeight = 400
                 model.backgroundOpacity = 1
                 model.resetBubbleColors()

@@ -19,6 +19,32 @@ enum EchoBubbleStyle: String, Codable, CaseIterable, Identifiable {
     var title: String { self == .classic ? "经典" : "磨砂" }
 }
 
+enum EchoBubbleShapeStyle: String, Codable, CaseIterable, Identifiable {
+    case standard
+    case telegram
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .standard: return "默认"
+        case .telegram: return "仿 TG"
+        }
+    }
+}
+
+enum AIReplyTiming: String, Codable, CaseIterable, Identifiable {
+    case immediate
+    case bundled
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .immediate: return "立即回复"
+        case .bundled: return "统一发送"
+        }
+    }
+}
+
 struct MessageTimer: Codable, Hashable {
     var label: String
     var minutes: Int
@@ -56,6 +82,18 @@ struct Attachment: Codable, Hashable, Identifiable {
 
     var id: String { "\(url)#\(name)" }
     var isImage: Bool { kind == "image" || mime?.hasPrefix("image/") == true }
+}
+
+struct BundledMessagePart: Hashable, Identifiable {
+    let id = UUID()
+    let text: String
+    let attachments: [Attachment]
+
+    var preview: String {
+        if !text.isEmpty { return text.replacingOccurrences(of: "\n", with: " ") }
+        if attachments.count == 1 { return attachments[0].name }
+        return "\(attachments.count) 个附件"
+    }
 }
 
 struct MessageMeta: Decodable, Hashable {

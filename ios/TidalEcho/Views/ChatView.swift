@@ -292,6 +292,7 @@ struct ChatView: View {
                     }
 
                     ForEach(model.messages) { message in
+                        let groupStart = isBubbleGroupStart(message)
                         MessageRow(
                             message: message,
                             palette: palette,
@@ -304,15 +305,20 @@ struct ChatView: View {
                             showsAIBubble: model.showsAIBubble,
                             aiBubbleColor: model.resolvedAIBubbleColor(default: palette.aiBubble),
                             humanBubbleColor: model.resolvedHumanBubbleColor(default: palette.humanBubble),
-                            bubbleOpacity: model.bubbleOpacity,
+                            bubbleOpacity: message.author == .human
+                                ? model.humanBubbleOpacity
+                                : model.aiBubbleOpacity,
                             bubbleRadius: model.bubbleRadius,
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,
+                            bubbleShapeStyle: model.bubbleShapeStyle,
                             chatWeight: model.chatWeight,
                             peerName: model.peerDisplayName,
                             showsTimestamp: shouldShowTimestamp(for: message),
+                            isGroupStart: groupStart,
                             isTail: isBubbleTail(message),
+                            isGroupedWithPrevious: !groupStart,
                             isPaper: model.theme == .paper,
                             onToggleStar: {
                                 Task {
@@ -384,11 +390,12 @@ struct ChatView: View {
                             aiAvatarImage: model.aiAvatarImage,
                             showsAIBubble: model.showsAIBubble,
                             aiBubbleColor: model.resolvedAIBubbleColor(default: palette.aiBubble),
-                            bubbleOpacity: model.bubbleOpacity,
+                            bubbleOpacity: model.aiBubbleOpacity,
                             bubbleRadius: model.bubbleRadius,
                             bubbleWidthScale: model.bubbleWidthScale,
                             bubbleBorderWidth: model.bubbleBorderWidth,
                             bubbleStyle: model.bubbleStyle,
+                            bubbleShapeStyle: model.bubbleShapeStyle,
                             chatWeight: model.chatWeight
                         )
                     } else if model.isTyping {
@@ -458,14 +465,27 @@ struct ChatView: View {
         guard message.kind != "thinking", message.kind != "act",
               let index = model.messages.firstIndex(where: { $0.id == message.id }),
               model.messages.indices.contains(index + 1) else { return true }
-        let next = model.messages[index + 1]
-        guard next.kind != "thinking", next.kind != "act", next.author == message.author,
-              let date = Self.messageDate(message.timestamp),
-              let nextDate = Self.messageDate(next.timestamp) else { return true }
+        return !Self.messagesShareBubbleGroup(message, model.messages[index + 1])
+    }
+
+    private func isBubbleGroupStart(_ message: ChatMessage) -> Bool {
+        guard message.kind != "thinking", message.kind != "act",
+              let index = model.messages.firstIndex(where: { $0.id == message.id }),
+              index > model.messages.startIndex else { return true }
+        return !Self.messagesShareBubbleGroup(model.messages[index - 1], message)
+    }
+
+    private static func messagesShareBubbleGroup(_ first: ChatMessage, _ second: ChatMessage) -> Bool {
+        guard first.kind != "thinking", first.kind != "act",
+              second.kind != "thinking", second.kind != "act",
+              first.author == second.author,
+              let date = messageDate(first.timestamp),
+              let nextDate = messageDate(second.timestamp) else { return false }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        guard calendar.isDate(date, inSameDayAs: nextDate) else { return true }
-        return nextDate.timeIntervalSince(date) >= 5 * 60
+        guard calendar.isDate(date, inSameDayAs: nextDate) else { return false }
+        let interval = nextDate.timeIntervalSince(date)
+        return interval >= 0 && interval < 5 * 60
     }
 
     private static func messageDate(_ raw: String) -> Date? {
@@ -967,6 +987,7 @@ private struct ComposerView: View {
     @State private var importingAttachments = false
     @State private var importedTypes: [UTType] = [.item]
     @State private var draftText = ""
+    @FocusState private var isDraftFocused: Bool
 
     private var palette: EchoPalette { model.theme.palette }
 
@@ -1037,6 +1058,55 @@ private struct ComposerView: View {
                 }
             }
 
+            if !model.bundledMessageParts.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 7) {
+                        Label(
+                            "待统一发送 · \(model.bundledMessageParts.count) 条",
+                            systemImage: "tray.full.fill"
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.accent)
+
+                        Spacer()
+
+                        Text("输入框留空，再点发送")
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText)
+
+                        Button { model.clearBundledMessageParts() } label: {
+                            Image(systemName: "trash")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(palette.secondaryText)
+                        .accessibilityLabel("清空待统一发送的消息")
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(model.bundledMessageParts) { part in
+                                HStack(spacing: 6) {
+                                    Image(systemName: part.attachments.isEmpty ? "text.bubble" : "paperclip")
+                                    Text(part.preview)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: 170, alignment: .leading)
+                                    Button { model.removeBundledMessagePart(part) } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                    }
+                                    .accessibilityLabel("移除这条暂存消息")
+                                }
+                                .font(.caption)
+                                .foregroundStyle(palette.text)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 6)
+                                .background(palette.aiBubble, in: Capsule())
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+
             HStack(alignment: .bottom, spacing: 10) {
                 Button { showingAttachmentMenu = true } label: {
                     Image(systemName: "plus")
@@ -1055,6 +1125,7 @@ private struct ComposerView: View {
                     .padding(.vertical, 10)
                     .background(palette.composer, in: RoundedRectangle(cornerRadius: 19, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 19).stroke(palette.hairline))
+                    .focused($isDraftFocused)
 
                 Button {
                     toggleRecording()
@@ -1070,14 +1141,22 @@ private struct ComposerView: View {
                 Button {
                     send()
                 } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .frame(width: 39, height: 39)
-                        .background(palette.accent, in: Circle())
+                    Group {
+                        if model.isSendingBundledMessage {
+                            ProgressView().controlSize(.small).tint(.white)
+                        } else {
+                            Image(systemName: sendButtonIcon)
+                                .font(.system(size: 16, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(Color.white)
+                    .frame(width: 39, height: 39)
+                    .background(palette.accent, in: Circle())
                 }
                 .disabled(!canSend)
                 .opacity(canSend ? 1 : 0.45)
+                .accessibilityLabel(sendButtonAccessibilityLabel)
+                .accessibilityHint(sendButtonAccessibilityHint)
             }
             .padding(.horizontal, 14)
         }
@@ -1111,7 +1190,32 @@ private struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pendingAttachments.isEmpty
+        !model.isSendingBundledMessage
+            && (hasCurrentComposerContent || !model.bundledMessageParts.isEmpty)
+    }
+
+    private var hasCurrentComposerContent: Bool {
+        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !model.pendingAttachments.isEmpty
+    }
+
+    private var sendButtonIcon: String {
+        if !hasCurrentComposerContent && !model.bundledMessageParts.isEmpty { return "paperplane.fill" }
+        return model.aiReplyTiming == .bundled ? "tray.full.fill" : "arrow.up"
+    }
+
+    private var sendButtonAccessibilityLabel: String {
+        if !hasCurrentComposerContent && !model.bundledMessageParts.isEmpty {
+            return "将 \(model.bundledMessageParts.count) 条消息统一发送给 AI"
+        }
+        return model.aiReplyTiming == .bundled ? "加入待统一发送" : "发送消息"
+    }
+
+    private var sendButtonAccessibilityHint: String {
+        if model.aiReplyTiming == .bundled && hasCurrentComposerContent {
+            return "内容会暂存，AI 还不会收到"
+        }
+        return "AI 会收到消息"
     }
 
     private func presentPhotoPicker() {
@@ -1179,9 +1283,20 @@ private struct ComposerView: View {
 
     private func send() {
         guard canSend else { return }
-        let text = draftText
-        draftText = ""
-        Task { await model.sendMessage(text: text) }
+        if hasCurrentComposerContent {
+            let text = draftText
+            draftText = ""
+            if model.aiReplyTiming == .bundled {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    model.stageBundledMessage(text: text)
+                }
+            } else {
+                Task { await model.sendMessage(text: text) }
+            }
+            isDraftFocused = true
+        } else {
+            Task { await model.sendBundledMessages() }
+        }
     }
 
     private func toggleRecording() {

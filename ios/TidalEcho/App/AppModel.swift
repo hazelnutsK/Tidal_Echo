@@ -54,8 +54,11 @@ final class AppModel: ObservableObject {
     @Published var showsAIAvatar: Bool {
         didSet { UserDefaults.standard.set(showsAIAvatar, forKey: Keys.showsAIAvatar) }
     }
-    @Published var bubbleOpacity: Double {
-        didSet { UserDefaults.standard.set(bubbleOpacity, forKey: Keys.bubbleOpacity) }
+    @Published var aiBubbleOpacity: Double {
+        didSet { UserDefaults.standard.set(aiBubbleOpacity, forKey: Keys.aiBubbleOpacity) }
+    }
+    @Published var humanBubbleOpacity: Double {
+        didSet { UserDefaults.standard.set(humanBubbleOpacity, forKey: Keys.humanBubbleOpacity) }
     }
     @Published var bubbleRadius: Double {
         didSet { UserDefaults.standard.set(bubbleRadius, forKey: Keys.bubbleRadius) }
@@ -93,6 +96,11 @@ final class AppModel: ObservableObject {
     @Published var bubbleShapeStyle: EchoBubbleShapeStyle {
         didSet { UserDefaults.standard.set(bubbleShapeStyle.rawValue, forKey: Keys.bubbleShapeStyle) }
     }
+    @Published var aiReplyTiming: AIReplyTiming {
+        didSet { UserDefaults.standard.set(aiReplyTiming.rawValue, forKey: Keys.aiReplyTiming) }
+    }
+    @Published private(set) var bundledMessageParts: [BundledMessagePart] = []
+    @Published private(set) var isSendingBundledMessage = false
     @Published var liquidGlassStrength: Double {
         didSet { UserDefaults.standard.set(liquidGlassStrength, forKey: Keys.liquidGlassStrength) }
     }
@@ -159,6 +167,8 @@ final class AppModel: ObservableObject {
         static let fontScale = "tidalEcho.fontScale"
         static let showsAIAvatar = "tidalEcho.showsAIAvatar"
         static let bubbleOpacity = "tidalEcho.bubbleOpacity"
+        static let aiBubbleOpacity = "tidalEcho.aiBubbleOpacity"
+        static let humanBubbleOpacity = "tidalEcho.humanBubbleOpacity"
         static let bubbleRadius = "tidalEcho.bubbleRadius"
         static let bubbleInflation = "tidalEcho.bubbleInflation"
         static let chatWeight = "tidalEcho.chatWeight"
@@ -171,6 +181,7 @@ final class AppModel: ObservableObject {
         static let bubbleBorderWidth = "tidalEcho.bubbleBorderWidth"
         static let bubbleStyle = "tidalEcho.bubbleStyle"
         static let bubbleShapeStyle = "tidalEcho.bubbleShapeStyle"
+        static let aiReplyTiming = "tidalEcho.aiReplyTiming"
         static let telegramBubbleMetricsV1 = "tidalEcho.telegramBubbleMetricsV1"
         static let liquidGlassStrength = "tidalEcho.liquidGlassStrength"
         static let liquidGlassDispersion = "tidalEcho.liquidGlassDispersion"
@@ -225,7 +236,15 @@ final class AppModel: ObservableObject {
         chatFont = EchoChatFont(rawValue: rawFont) ?? .system
         fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
         showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
-        bubbleOpacity = defaults.object(forKey: Keys.bubbleOpacity) == nil ? 1 : defaults.double(forKey: Keys.bubbleOpacity)
+        let legacyBubbleOpacity = defaults.object(forKey: Keys.bubbleOpacity) == nil
+            ? 1
+            : defaults.double(forKey: Keys.bubbleOpacity)
+        aiBubbleOpacity = defaults.object(forKey: Keys.aiBubbleOpacity) == nil
+            ? legacyBubbleOpacity
+            : defaults.double(forKey: Keys.aiBubbleOpacity)
+        humanBubbleOpacity = defaults.object(forKey: Keys.humanBubbleOpacity) == nil
+            ? legacyBubbleOpacity
+            : defaults.double(forKey: Keys.humanBubbleOpacity)
         let savedBubbleRadius = defaults.object(forKey: Keys.bubbleRadius) == nil ? 14 : defaults.double(forKey: Keys.bubbleRadius)
         if !defaults.bool(forKey: Keys.pwaBubbleMetricsV1), abs(savedBubbleRadius - 18) < 0.001 {
             // v1.11 used 18 as its native default; PWA resolves clamp(14px, 2vw, 20px)
@@ -259,6 +278,9 @@ final class AppModel: ObservableObject {
         } else {
             bubbleShapeStyle = savedBubbleShapeStyle
         }
+        aiReplyTiming = AIReplyTiming(
+            rawValue: defaults.string(forKey: Keys.aiReplyTiming) ?? ""
+        ) ?? .immediate
         liquidGlassStrength = defaults.object(forKey: Keys.liquidGlassStrength) == nil ? 56.8 : defaults.double(forKey: Keys.liquidGlassStrength)
         liquidGlassDispersion = defaults.object(forKey: Keys.liquidGlassDispersion) == nil ? 0.39 : defaults.double(forKey: Keys.liquidGlassDispersion)
         liquidGlassRimWidth = defaults.object(forKey: Keys.liquidGlassRimWidth) == nil ? 0.28 : defaults.double(forKey: Keys.liquidGlassRimWidth)
@@ -355,7 +377,8 @@ final class AppModel: ObservableObject {
         bubbleShapeStyle = .standard
         aiBubbleColorHex = "#EEEBE4"
         humanBubbleColorHex = "#E2C2C5"
-        bubbleOpacity = 0.60
+        aiBubbleOpacity = 0.60
+        humanBubbleOpacity = 0.60
         bubbleRadius = 21
         bubbleWidthScale = 1.20
         bubbleBorderWidth = 0
@@ -379,7 +402,8 @@ final class AppModel: ObservableObject {
         humanBubbleColorHex = "#313131"
         aiBubbleTextColorHex = "#F8F8F6"
         humanBubbleTextColorHex = "#F8F8F6"
-        bubbleOpacity = 0.60
+        aiBubbleOpacity = 0.60
+        humanBubbleOpacity = 0.60
         bubbleRadius = 20
         bubbleWidthScale = 1.20
         bubbleBorderWidth = 0
@@ -401,7 +425,8 @@ final class AppModel: ObservableObject {
         humanBubbleColorHex = "#EFEFEB"
         aiBubbleTextColorHex = "#1F1E1D"
         humanBubbleTextColorHex = "#1F1E1D"
-        bubbleOpacity = 1
+        aiBubbleOpacity = 1
+        humanBubbleOpacity = 1
         bubbleRadius = 22
         bubbleWidthScale = 1.16
         bubbleBorderWidth = 0
@@ -464,6 +489,8 @@ final class AppModel: ObservableObject {
         sessions = []
         canLoadOlderHistory = false
         pendingAttachments = []
+        bundledMessageParts = []
+        isSendingBundledMessage = false
         streamingThinking = ""
         streamingReply = ""
         updateTypingState(false)
@@ -697,10 +724,49 @@ final class AppModel: ObservableObject {
     }
 
     func sendMessage(text rawText: String) async {
-        guard let client else { return }
+        guard client != nil else { return }
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = pendingAttachments
         guard !text.isEmpty || !attachments.isEmpty else { return }
+        pendingAttachments = []
+        _ = await deliverMessage(text: text, attachments: attachments)
+    }
+
+    func stageBundledMessage(text rawText: String) {
+        let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let attachments = pendingAttachments
+        guard !text.isEmpty || !attachments.isEmpty else { return }
+        bundledMessageParts.append(BundledMessagePart(text: text, attachments: attachments))
+        pendingAttachments = []
+    }
+
+    func removeBundledMessagePart(_ part: BundledMessagePart) {
+        bundledMessageParts.removeAll { $0.id == part.id }
+    }
+
+    func clearBundledMessageParts() {
+        bundledMessageParts = []
+    }
+
+    func sendBundledMessages() async {
+        guard client != nil, !isSendingBundledMessage, !bundledMessageParts.isEmpty else { return }
+        let parts = bundledMessageParts
+        let text = parts
+            .map(\.text)
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
+        let attachments = parts.flatMap(\.attachments)
+        isSendingBundledMessage = true
+        defer { isSendingBundledMessage = false }
+        if await deliverMessage(text: text, attachments: attachments) {
+            let deliveredIDs = Set(parts.map(\.id))
+            bundledMessageParts.removeAll { deliveredIDs.contains($0.id) }
+        }
+    }
+
+    @discardableResult
+    private func deliverMessage(text: String, attachments: [Attachment]) async -> Bool {
+        guard let client else { return false }
 
         temporaryID -= 1
         let tempID = temporaryID
@@ -717,7 +783,6 @@ final class AppModel: ObservableObject {
             delivery: .sending
         )
         messages.append(optimistic)
-        pendingAttachments = []
         // Show feedback immediately. The relay also broadcasts a typing event,
         // but that frame can arrive before the POST response on some iOS stacks.
         typingSuppressedUntil = .distantPast
@@ -738,12 +803,14 @@ final class AppModel: ObservableObject {
                 historyArchive.append(messages[tempIndex])
                 historyArchive.sort(by: Self.messageComesBefore)
             }
+            return true
         } catch {
             updateTypingState(false)
             if let index = messages.firstIndex(where: { $0.id == tempID }) {
                 messages[index].delivery = .failed
             }
             errorMessage = "发送失败：\(error.localizedDescription)"
+            return false
         }
     }
 

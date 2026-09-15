@@ -438,7 +438,9 @@ struct ChatView: View {
                             humanBubbleColor: model.resolvedHumanBubbleColor(default: palette.humanBubble),
                             aiBubbleTextColor: model.resolvedAIBubbleTextColor(default: palette.text),
                             humanBubbleTextColor: model.resolvedHumanBubbleTextColor(default: palette.text),
-                            bubbleOpacity: model.bubbleOpacity,
+                            bubbleOpacity: message.author == .human
+                                ? model.humanBubbleOpacity
+                                : model.aiBubbleOpacity,
                             bubbleRadius: model.bubbleRadius,
                             bubbleInflation: model.bubbleInflation,
                             bubbleWidthScale: model.bubbleWidthScale,
@@ -557,7 +559,7 @@ struct ChatView: View {
                             showsAIBubble: model.showsAIBubble,
                             aiBubbleColor: model.resolvedAIBubbleColor(default: palette.aiBubble),
                             aiBubbleTextColor: model.resolvedAIBubbleTextColor(default: palette.text),
-                            bubbleOpacity: model.bubbleOpacity,
+                            bubbleOpacity: model.aiBubbleOpacity,
                             bubbleRadius: model.bubbleRadius,
                             bubbleInflation: model.bubbleInflation,
                             bubbleWidthScale: model.bubbleWidthScale,
@@ -1855,6 +1857,7 @@ private struct ComposerView: View {
     @State private var importedTypes: [UTType] = [.item]
     @State private var draftText = ""
     @State private var currentBrain: BrainTarget = .desktop
+    @FocusState private var isDraftFocused: Bool
 
     private var palette: EchoPalette { model.theme.palette }
     private var isNest: Bool { model.theme == .nest }
@@ -1924,6 +1927,55 @@ private struct ComposerView: View {
                 }
             }
 
+            if !model.bundledMessageParts.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 7) {
+                        Label(
+                            "待统一发送 · \(model.bundledMessageParts.count) 条",
+                            systemImage: "tray.full.fill"
+                        )
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.accent)
+
+                        Spacer()
+
+                        Text("输入框留空，再点发送")
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText)
+
+                        Button { model.clearBundledMessageParts() } label: {
+                            Image(systemName: "trash")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .foregroundStyle(palette.secondaryText)
+                        .accessibilityLabel("清空待统一发送的消息")
+                    }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(model.bundledMessageParts) { part in
+                                HStack(spacing: 6) {
+                                    Image(systemName: part.attachments.isEmpty ? "text.bubble" : "paperclip")
+                                    Text(part.preview)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: 170, alignment: .leading)
+                                    Button { model.removeBundledMessagePart(part) } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                    }
+                                    .accessibilityLabel("移除这条暂存消息")
+                                }
+                                .font(.caption)
+                                .foregroundStyle(palette.text)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 6)
+                                .background(composerAuxiliaryBackground, in: Capsule())
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+
             TextField(isNest ? "" : "和Altair说话…", text: $draftText, axis: .vertical)
                 .lineLimit(1...(isNest ? 4 : 5))
                 .font(model.chatFont.font(
@@ -1943,6 +1995,7 @@ private struct ComposerView: View {
                 .padding(.horizontal, 4)
                 .padding(.top, isNest ? 1 : 3)
                 .padding(.bottom, isNest ? 0 : 2)
+                .focused($isDraftFocused)
 
             HStack(alignment: .center, spacing: isNest ? 6 : 7) {
                 Button { showingAttachmentMenu = true } label: {
@@ -2011,13 +2064,21 @@ private struct ComposerView: View {
                 Button {
                     send()
                 } label: {
-                    Image(systemName: isNest ? "waveform" : "arrow.up")
-                        .font(.system(size: isNest ? 17 : 16, weight: isNest ? .semibold : .bold))
-                        .foregroundStyle(composerSendForeground.opacity(canSend ? 1 : 0.72))
-                        .frame(width: isNest ? 33 : 36, height: isNest ? 33 : 36)
-                        .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
+                    Group {
+                        if model.isSendingBundledMessage {
+                            ProgressView().controlSize(.small).tint(composerSendForeground)
+                        } else {
+                            Image(systemName: sendButtonIcon)
+                                .font(.system(size: isNest ? 17 : 16, weight: isNest ? .semibold : .bold))
+                        }
+                    }
+                    .foregroundStyle(composerSendForeground.opacity(canSend ? 1 : 0.72))
+                    .frame(width: isNest ? 33 : 36, height: isNest ? 33 : 36)
+                    .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
                 }
                 .disabled(!canSend)
+                .accessibilityLabel(sendButtonAccessibilityLabel)
+                .accessibilityHint(sendButtonAccessibilityHint)
             }
         }
         .padding(isNest ? 13 : 10)
@@ -2196,7 +2257,33 @@ private struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.pendingAttachments.isEmpty
+        !model.isSendingBundledMessage
+            && (hasCurrentComposerContent || !model.bundledMessageParts.isEmpty)
+    }
+
+    private var hasCurrentComposerContent: Bool {
+        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !model.pendingAttachments.isEmpty
+    }
+
+    private var sendButtonIcon: String {
+        if !hasCurrentComposerContent && !model.bundledMessageParts.isEmpty { return "paperplane.fill" }
+        if model.aiReplyTiming == .bundled { return "tray.full.fill" }
+        return isNest ? "waveform" : "arrow.up"
+    }
+
+    private var sendButtonAccessibilityLabel: String {
+        if !hasCurrentComposerContent && !model.bundledMessageParts.isEmpty {
+            return "将 \(model.bundledMessageParts.count) 条消息统一发送给 AI"
+        }
+        return model.aiReplyTiming == .bundled ? "加入待统一发送" : "发送消息"
+    }
+
+    private var sendButtonAccessibilityHint: String {
+        if model.aiReplyTiming == .bundled && hasCurrentComposerContent {
+            return "内容会暂存，AI 还不会收到"
+        }
+        return "AI 会收到消息"
     }
 
     private func presentPhotoPicker() {
@@ -2303,9 +2390,20 @@ private struct ComposerView: View {
 
     private func send() {
         guard canSend else { return }
-        let text = draftText
-        draftText = ""
-        Task { await model.sendMessage(text: text) }
+        if hasCurrentComposerContent {
+            let text = draftText
+            draftText = ""
+            if model.aiReplyTiming == .bundled {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    model.stageBundledMessage(text: text)
+                }
+            } else {
+                Task { await model.sendMessage(text: text) }
+            }
+            isDraftFocused = true
+        } else {
+            Task { await model.sendBundledMessages() }
+        }
     }
 
     private func toggleRecording() {

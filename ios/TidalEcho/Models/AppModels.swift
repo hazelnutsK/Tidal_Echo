@@ -41,6 +41,19 @@ enum EchoBubbleShapeStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum AIReplyTiming: String, Codable, CaseIterable, Identifiable {
+    case immediate
+    case bundled
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .immediate: return "立即回复"
+        case .bundled: return "统一发送"
+        }
+    }
+}
+
 struct LiquidGlassSettings: Hashable {
     let strength: Double
     let dispersion: Double
@@ -91,6 +104,18 @@ struct Attachment: Codable, Hashable, Identifiable {
     var isImage: Bool { kind == "image" || mime?.hasPrefix("image/") == true }
     var isAudio: Bool { voice == true || kind == "audio" || mime?.hasPrefix("audio/") == true }
     var isXHS: Bool { xhs == true }
+}
+
+struct BundledMessagePart: Hashable, Identifiable {
+    let id = UUID()
+    let text: String
+    let attachments: [Attachment]
+
+    var preview: String {
+        if !text.isEmpty { return text.replacingOccurrences(of: "\n", with: " ") }
+        if attachments.count == 1 { return attachments[0].name }
+        return "\(attachments.count) 个附件"
+    }
 }
 
 /// 她丢来的小红书链接，relay 替她读回来的那篇笔记（backend/xhs.py）。

@@ -628,6 +628,29 @@ private struct AppearanceSettingsView: View {
                 }
             }
 
+            Section("AI 回复时机") {
+                Picker("AI 回复时机", selection: $model.aiReplyTiming) {
+                    ForEach(AIReplyTiming.allCases) { timing in
+                        Text(timing.title).tag(timing)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(model.aiReplyTiming == .immediate
+                    ? "每次点击发送后，AI 会马上收到消息。"
+                    : "逐条加入待发送合集；输入框为空时再点一次发送，AI 才会一次收到全部内容。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+
+                if !model.bundledMessageParts.isEmpty {
+                    HStack {
+                        Label("已暂存 \(model.bundledMessageParts.count) 条", systemImage: "tray.full.fill")
+                        Spacer()
+                        Button("清空", role: .destructive) { model.clearBundledMessageParts() }
+                    }
+                }
+            }
+
             bubbleSettingsSection
 
             Section("聊天背景") {
@@ -766,7 +789,7 @@ private struct AppearanceSettingsView: View {
                             .background {
                                 LiquidGlassBubbleBackground(
                                     tint: model.resolvedAIBubbleColor(default: palette.aiBubble),
-                                    tintOpacity: model.bubbleOpacity,
+                                    tintOpacity: model.aiBubbleOpacity,
                                     radius: CGFloat(model.bubbleRadius),
                                     settings: model.liquidGlassSettings
                                 )
@@ -786,7 +809,7 @@ private struct AppearanceSettingsView: View {
                             .background {
                                 LiquidGlassBubbleBackground(
                                     tint: model.resolvedHumanBubbleColor(default: palette.humanBubble),
-                                    tintOpacity: model.bubbleOpacity,
+                                    tintOpacity: model.humanBubbleOpacity,
                                     radius: CGFloat(model.bubbleRadius),
                                     settings: model.liquidGlassSettings
                                 )
@@ -817,9 +840,16 @@ private struct AppearanceSettingsView: View {
             ), supportsOpacity: false)
 
             settingSlider(
-                title: "气泡透明度",
-                valueText: "\(Int((model.bubbleOpacity * 100).rounded()))%",
-                value: $model.bubbleOpacity,
+                title: "AI 气泡透明度",
+                valueText: "\(Int((model.aiBubbleOpacity * 100).rounded()))%",
+                value: $model.aiBubbleOpacity,
+                range: 0...1,
+                step: 0.05
+            )
+            settingSlider(
+                title: "我的气泡透明度",
+                valueText: "\(Int((model.humanBubbleOpacity * 100).rounded()))%",
+                value: $model.humanBubbleOpacity,
                 range: 0...1,
                 step: 0.05
             )
@@ -916,7 +946,8 @@ private struct AppearanceSettingsView: View {
                 model.showsAIAvatar = true
                 model.showsHumanAvatar = false
                 model.showsAIBubble = true
-                model.bubbleOpacity = 1
+                model.aiBubbleOpacity = 1
+                model.humanBubbleOpacity = 1
                 model.bubbleRadius = 14
                 model.bubbleInflation = 0
                 model.bubbleWidthScale = 1
@@ -959,7 +990,9 @@ private struct AppearanceSettingsView: View {
                 .background {
                     shape.fill((isHuman
                         ? model.resolvedHumanBubbleColor(default: palette.humanBubble)
-                        : model.resolvedAIBubbleColor(default: palette.aiBubble)).opacity(model.bubbleOpacity))
+                        : model.resolvedAIBubbleColor(default: palette.aiBubble)).opacity(
+                            isHuman ? model.humanBubbleOpacity : model.aiBubbleOpacity
+                        ))
                 }
                 .overlay {
                     shape.stroke(palette.hairline, lineWidth: CGFloat(model.bubbleBorderWidth))

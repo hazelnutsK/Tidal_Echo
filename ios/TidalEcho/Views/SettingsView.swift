@@ -620,6 +620,10 @@ private struct AppearanceSettingsView: View {
                         Text(EchoChatFont.weightDiagnostic(model.chatWeight))
                             .font(.caption2)
                             .foregroundStyle(palette.secondaryText)
+                    } else if model.chatFont == .wenKai {
+                        Text(EchoChatFont.wenKaiWeightDiagnostic(model.chatWeight))
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText)
                     }
                 }
             }
@@ -730,6 +734,22 @@ private struct AppearanceSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+            }
+
+            if model.bubbleStyle == .classic && model.bubbleShapeStyle == .standard {
+                settingSlider(
+                    title: "气泡膨胀度",
+                    valueText: "\(Int((model.bubbleInflation * 100).rounded()))%",
+                    value: $model.bubbleInflation,
+                    range: 0...1,
+                    step: 0.01,
+                    note: "往右拉，上下边缘会慢慢鼓起来；0% 保持原来的形状。"
+                )
+                VStack(spacing: 12) {
+                    inflationPreviewBubble("像这样，慢慢鼓起来", isHuman: false)
+                    inflationPreviewBubble("圆鼓鼓一点", isHuman: true)
+                }
+                .padding(.vertical, 7)
             }
 
             if model.bubbleStyle == .liquid {
@@ -898,6 +918,7 @@ private struct AppearanceSettingsView: View {
                 model.showsAIBubble = true
                 model.bubbleOpacity = 1
                 model.bubbleRadius = 14
+                model.bubbleInflation = 0
                 model.bubbleWidthScale = 1
                 model.bubbleBorderWidth = 0
                 model.bubbleStyle = .classic
@@ -912,6 +933,38 @@ private struct AppearanceSettingsView: View {
                 model.backgroundOpacity = 1
                 model.resetBubbleColors()
             }
+        }
+    }
+
+    @ViewBuilder
+    private func inflationPreviewBubble(_ text: String, isHuman: Bool) -> some View {
+        let shape = PWAChatBubbleShape(
+            radius: CGFloat(model.bubbleRadius),
+            bottomLeftRadius: isHuman ? CGFloat(model.bubbleRadius) : 5,
+            bottomRightRadius: isHuman ? 5 : CGFloat(model.bubbleRadius),
+            inflation: CGFloat(model.bubbleInflation)
+        )
+        HStack {
+            if isHuman { Spacer(minLength: 24) }
+            Text(text)
+                .font(model.chatFont.font(
+                    size: PWAChatMetrics.bubbleFontSize(for: model.chatFont) * model.fontScale,
+                    numericWeight: model.chatWeight
+                ))
+                .foregroundStyle(isHuman
+                    ? model.resolvedHumanBubbleTextColor(default: palette.text)
+                    : model.resolvedAIBubbleTextColor(default: palette.text))
+                .padding(.horizontal, 13)
+                .padding(.vertical, 9 + PWAChatBubbleShape.inflationPadding(CGFloat(model.bubbleInflation)))
+                .background {
+                    shape.fill((isHuman
+                        ? model.resolvedHumanBubbleColor(default: palette.humanBubble)
+                        : model.resolvedAIBubbleColor(default: palette.aiBubble)).opacity(model.bubbleOpacity))
+                }
+                .overlay {
+                    shape.stroke(palette.hairline, lineWidth: CGFloat(model.bubbleBorderWidth))
+                }
+            if !isHuman { Spacer(minLength: 24) }
         }
     }
 

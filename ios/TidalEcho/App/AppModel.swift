@@ -60,6 +60,9 @@ final class AppModel: ObservableObject {
     @Published var bubbleRadius: Double {
         didSet { UserDefaults.standard.set(bubbleRadius, forKey: Keys.bubbleRadius) }
     }
+    @Published var bubbleInflation: Double {
+        didSet { UserDefaults.standard.set(bubbleInflation, forKey: Keys.bubbleInflation) }
+    }
     @Published var chatWeight: Double {
         didSet { UserDefaults.standard.set(chatWeight, forKey: Keys.chatWeight) }
     }
@@ -157,6 +160,7 @@ final class AppModel: ObservableObject {
         static let showsAIAvatar = "tidalEcho.showsAIAvatar"
         static let bubbleOpacity = "tidalEcho.bubbleOpacity"
         static let bubbleRadius = "tidalEcho.bubbleRadius"
+        static let bubbleInflation = "tidalEcho.bubbleInflation"
         static let chatWeight = "tidalEcho.chatWeight"
         static let backgroundOpacity = "tidalEcho.backgroundOpacity"
         static let backgroundBlur = "tidalEcho.backgroundBlur"
@@ -232,6 +236,8 @@ final class AppModel: ObservableObject {
             bubbleRadius = savedBubbleRadius
         }
         defaults.set(true, forKey: Keys.pwaBubbleMetricsV1)
+        let savedInflation = defaults.double(forKey: Keys.bubbleInflation)
+        bubbleInflation = savedInflation.isFinite ? min(max(savedInflation, 0), 1) : 0
         chatWeight = defaults.object(forKey: Keys.chatWeight) == nil ? 400 : defaults.double(forKey: Keys.chatWeight)
         backgroundOpacity = defaults.object(forKey: Keys.backgroundOpacity) == nil ? 1 : defaults.double(forKey: Keys.backgroundOpacity)
         backgroundBlur = defaults.object(forKey: Keys.backgroundBlur) == nil ? 0 : defaults.double(forKey: Keys.backgroundBlur)

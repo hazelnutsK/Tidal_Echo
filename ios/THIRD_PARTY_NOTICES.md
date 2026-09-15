@@ -13,3 +13,14 @@ https://polyformproject.org/licenses/noncommercial/1.0.0/
 This adaptation is intended for Tidal Echo's personal, noncommercial use. A
 separate commercial license from the original author is required before using
 it for an anticipated commercial application.
+
+## LXGW WenKai
+
+Copyright 2021-2025 LXGW (https://github.com/lxgw/LxgwWenKai)
+Copyright 2020 The Klee Project Authors (https://github.com/fontworks-fonts/Klee)
+
+License: SIL Open Font License 1.1
+https://openfontlicense.org/
+
+The bundled Light and Regular files are font subsets retaining GB2312 common
+Chinese characters, common UI punctuation and symbols, and Japanese kana.

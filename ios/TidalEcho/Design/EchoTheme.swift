@@ -93,6 +93,7 @@ enum EchoTheme: String, CaseIterable, Hashable, Identifiable {
 enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
     case system
     case serif
+    case wenKai
     case anthropicSerif
     case rounded
     case monospaced
@@ -103,6 +104,7 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .system: return "黑体"
         case .serif: return "宋体"
+        case .wenKai: return "霞鹜文楷"
         case .anthropicSerif: return "Anthropic"
         case .rounded: return "圆体"
         case .monospaced: return "等宽"
@@ -112,7 +114,7 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
     var design: Font.Design {
         switch self {
         case .system: return .default
-        case .serif, .anthropicSerif: return .serif
+        case .serif, .wenKai, .anthropicSerif: return .serif
         case .rounded: return .rounded
         case .monospaced: return .monospaced
         }
@@ -126,6 +128,14 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
             return .system(size: CGFloat(size), weight: weight, design: .default)
         case .serif:
             return .custom("Songti SC", size: CGFloat(size)).weight(weight)
+        case .wenKai:
+            let numericWeight: Double
+            if weight == .ultraLight || weight == .thin || weight == .light {
+                numericWeight = 300
+            } else {
+                numericWeight = 400
+            }
+            return Font(Self.wenKaiFont(size: CGFloat(size), numericWeight: numericWeight))
         case .anthropicSerif:
             return Font(Self.anthropicSerifFont(size: CGFloat(size), numericWeight: 400))
                 .weight(weight)
@@ -137,6 +147,12 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
     func font(size: Double, numericWeight: Double) -> Font {
         if self == .anthropicSerif {
             return Font(Self.anthropicSerifFont(
+                size: CGFloat(size),
+                numericWeight: numericWeight
+            ))
+        }
+        if self == .wenKai {
+            return Font(Self.wenKaiFont(
                 size: CGFloat(size),
                 numericWeight: numericWeight
             ))
@@ -173,6 +189,8 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
                 .traits: [UIFontDescriptor.TraitKey.weight: weight]
             ])
             return UIFont(descriptor: descriptor, size: pointSize)
+        case .wenKai:
+            return Self.wenKaiFont(size: pointSize, numericWeight: numericWeight)
         case .anthropicSerif:
             return Self.anthropicSerifFont(size: pointSize, numericWeight: numericWeight)
         case .rounded:
@@ -205,6 +223,28 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
 
     /// 'wght' 轴的四字符标识
     static let wghtAxisID: UInt32 = 0x77676874
+
+    /// 霞鹜文楷随 App 打包的是两个常用字子集。滑块落在中间或更粗的数值时，
+    /// 取距离最近的真实字重，避免系统伪粗体破坏文楷的笔画形态。
+    private static func wenKaiFont(size: CGFloat, numericWeight: Double) -> UIFont {
+        let postScriptName: String
+        switch numericWeight {
+        case ..<350:
+            postScriptName = "LXGWWenKai-Light"
+        default:
+            postScriptName = "LXGWWenKai-Regular"
+        }
+        return UIFont(name: postScriptName, size: size)
+            ?? UIFont(name: "Kaiti SC", size: size)
+            ?? UIFont.systemFont(ofSize: size, weight: continuousWeight(numericWeight))
+    }
+
+    static func wenKaiWeightDiagnostic(_ current: Double) -> String {
+        switch current {
+        case ..<350: return "霞鹜文楷 Light · 300"
+        default: return "霞鹜文楷 Regular · 400"
+        }
+    }
 
     /// The private Nest typeface is bundled as a TTF. Different exports have
     /// used slightly different PostScript names, so probe the known names and
@@ -278,6 +318,8 @@ enum EchoChatFont: String, CaseIterable, Hashable, Identifiable {
         case .serif:
             return UIFont(name: "Songti SC", size: pointSize)?.lineHeight
                 ?? UIFont.systemFont(ofSize: pointSize).lineHeight
+        case .wenKai:
+            return Self.wenKaiFont(size: pointSize, numericWeight: 400).lineHeight
         case .anthropicSerif:
             return Self.anthropicSerifFont(size: pointSize, numericWeight: 400).lineHeight
         case .rounded:

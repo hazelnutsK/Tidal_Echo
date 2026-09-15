@@ -96,6 +96,7 @@ struct MessageRow: View {
     let humanBubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
+    let bubbleInflation: Double
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
@@ -525,6 +526,7 @@ struct MessageRow: View {
             author: message.author,
             radius: CGFloat(bubbleRadius),
             isGroupStart: isGroupStart,
+            inflation: effectiveBubbleInflation,
             // ChatNest has no tail: every corner keeps the full radius.
             isTail: isNest ? false : isTail
         )
@@ -584,8 +586,12 @@ struct MessageRow: View {
     }
 
     private var bubbleVerticalPadding: CGFloat {
-        if isNest { return carriesBubble ? 10 : 2 }
-        return usesTelegramShape ? 8 : 9
+        let base: CGFloat = isNest ? (carriesBubble ? 10 : 2) : (usesTelegramShape ? 8 : 9)
+        return base + (carriesBubble ? PWAChatBubbleShape.inflationPadding(effectiveBubbleInflation) : 0)
+    }
+
+    private var effectiveBubbleInflation: CGFloat {
+        bubbleStyle == .classic && bubbleShapeStyle == .standard ? CGFloat(bubbleInflation) : 0
     }
 
     private var displayedMessageText: String {
@@ -1162,12 +1168,18 @@ private struct SendingClock: View {
 /// CSS-like independent corner radii. PWA gives the last bubble in a same-author
 /// five-minute group a 5px corner toward the avatar; the other corners use the
 /// user-selected radius (14px by default on iPhone).
-private struct PWAChatBubbleShape: Shape {
+struct PWAChatBubbleShape: Shape {
     let radius: CGFloat
     let bottomLeftRadius: CGFloat
     let bottomRightRadius: CGFloat
+    var inflation: CGFloat = 0
+
+    static func inflationPadding(_ inflation: CGFloat) -> CGFloat {
+        inflation.isFinite ? 12 * min(max(inflation, 0), 1) : 0
+    }
 
     func path(in rect: CGRect) -> Path {
+        if inflation > 0 { return inflatedPath(in: rect) }
         let limit = min(rect.width, rect.height) / 2
         let topLeft = min(max(0, radius), limit)
         let topRight = topLeft
@@ -1202,6 +1214,62 @@ private struct PWAChatBubbleShape: Shape {
         path.closeSubpath()
         return path
     }
+
+    private func inflatedPath(in bounds: CGRect) -> Path {
+        // Reserve the bow in layout, keeping the original text rectangle inside
+        // the silhouette. Limit curvature on tiny bubbles and large radii.
+        let padding = min(Self.inflationPadding(inflation), max(0, bounds.height / 2 - 1))
+        let rect = bounds.insetBy(dx: 0, dy: padding)
+        let limit = max(0, min(rect.width, rect.height) / 2)
+        let r = min(max(0, radius), limit)
+        let bl = min(max(0, bottomLeftRadius), limit)
+        let br = min(max(0, bottomRightRadius), limit)
+        let topSpan = max(0, rect.width - 2 * r)
+        let bottomSpan = max(0, rect.width - bl - br)
+        let bow = min(padding, min(topSpan, bottomSpan) * 0.2)
+        let topSlope = topSpan > 0 ? 4 * bow / topSpan : 0
+        let bottomSlope = bottomSpan > 0 ? 4 * bow / bottomSpan : 0
+        let k: CGFloat = 0.5522847498
+        let x0 = rect.minX, x1 = rect.maxX
+        let y0 = rect.minY, y1 = rect.maxY
+        var path = Path()
+        path.move(to: CGPoint(x: x0 + r, y: y0))
+        path.addCurve(
+            to: CGPoint(x: x1 - r, y: y0),
+            control1: CGPoint(x: x0 + r + topSpan / 3, y: y0 - 4 * bow / 3),
+            control2: CGPoint(x: x1 - r - topSpan / 3, y: y0 - 4 * bow / 3)
+        )
+        // Corner tangents follow the bowed edges, avoiding a kink at each join.
+        path.addCurve(
+            to: CGPoint(x: x1, y: y0 + r),
+            control1: CGPoint(x: x1 - r + k * r, y: y0 + k * r * topSlope),
+            control2: CGPoint(x: x1, y: y0 + r - k * r)
+        )
+        path.addLine(to: CGPoint(x: x1, y: y1 - br))
+        path.addCurve(
+            to: CGPoint(x: x1 - br, y: y1),
+            control1: CGPoint(x: x1, y: y1 - br + k * br),
+            control2: CGPoint(x: x1 - br + k * br, y: y1 - k * br * bottomSlope)
+        )
+        path.addCurve(
+            to: CGPoint(x: x0 + bl, y: y1),
+            control1: CGPoint(x: x1 - br - bottomSpan / 3, y: y1 + 4 * bow / 3),
+            control2: CGPoint(x: x0 + bl + bottomSpan / 3, y: y1 + 4 * bow / 3)
+        )
+        path.addCurve(
+            to: CGPoint(x: x0, y: y1 - bl),
+            control1: CGPoint(x: x0 + bl - k * bl, y: y1 - k * bl * bottomSlope),
+            control2: CGPoint(x: x0, y: y1 - bl + k * bl)
+        )
+        path.addLine(to: CGPoint(x: x0, y: y0 + r))
+        path.addCurve(
+            to: CGPoint(x: x0 + r, y: y0),
+            control1: CGPoint(x: x0, y: y0 + r - k * r),
+            control2: CGPoint(x: x0 + r - k * r, y: y0 + k * r * topSlope)
+        )
+        path.closeSubpath()
+        return path
+    }
 }
 
 /// Material and silhouette are separate settings: classic/frosted bubbles can
@@ -1211,6 +1279,7 @@ private struct EchoMessageBubbleShape: Shape {
     let author: MessageAuthor
     let radius: CGFloat
     let isGroupStart: Bool
+    let inflation: CGFloat
     let isTail: Bool
 
     func path(in rect: CGRect) -> Path {
@@ -1231,7 +1300,8 @@ private struct EchoMessageBubbleShape: Shape {
             return PWAChatBubbleShape(
                 radius: radius,
                 bottomLeftRadius: author == .ai && isTail ? 5 : radius,
-                bottomRightRadius: author == .human && isTail ? 5 : radius
+                bottomRightRadius: author == .human && isTail ? 5 : radius,
+                inflation: inflation
             ).path(in: rect)
         }
     }
@@ -1578,11 +1648,17 @@ private struct ProcessRow: View {
                     showsShadow: true
                 )
             }
+            if isMist {
+                upperTailThinkingDisclosure
+                    .offset(y: 2)
+            }
             Text(upperTailThinkingTitle)
                 .lineLimit(1)
                 .offset(y: 2)
-            upperTailThinkingDisclosure
-                .offset(y: 2)
+            if !isMist {
+                upperTailThinkingDisclosure
+                    .offset(y: 2)
+            }
         }
         .font(chatFont.font(
             size: (isNest ? 13 : 12.5) * fontScale,
@@ -1615,11 +1691,9 @@ private struct ProcessRow: View {
 
     private var mistTrigger: some View {
         HStack(spacing: 6) {
-            Image(systemName: isThinking ? "cloud" : "wrench")
-                .font(.system(size: isThinking ? 12 : 11, weight: .medium))
-            Text(isThinking ? "Thinking" : "Action")
             Image(systemName: "chevron.right")
                 .font(.system(size: 8, weight: .semibold))
+            Text(isThinking ? "Thinking" : "Action")
         }
         .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
         .foregroundStyle(palette.secondaryText)
@@ -2111,12 +2185,8 @@ struct StreamingProcessRow: View {
             .transition(.move(edge: .bottom).combined(with: .opacity))
         } else if isMist {
             VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 7) {
-                    Image(systemName: "cloud")
-                        .font(.system(size: 11, weight: .medium))
-                    Text("Thinking…")
-                        .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
-                }
+                Text("Thinking…")
+                    .font(chatFont.font(size: 12.5 * fontScale, weight: .medium))
                 streamingText
                     .lineLimit(2)
             }
@@ -2195,6 +2265,7 @@ struct StreamingReplyRow: View {
     let aiBubbleTextColor: Color
     let bubbleOpacity: Double
     let bubbleRadius: Double
+    let bubbleInflation: Double
     let bubbleWidthScale: Double
     let bubbleBorderWidth: Double
     let bubbleStyle: EchoBubbleStyle
@@ -2290,6 +2361,7 @@ struct StreamingReplyRow: View {
             author: .ai,
             radius: CGFloat(bubbleRadius),
             isGroupStart: true,
+            inflation: effectiveBubbleInflation,
             isTail: isTail
         )
     }
@@ -2308,8 +2380,12 @@ struct StreamingReplyRow: View {
     }
 
     private var bubbleVerticalPadding: CGFloat {
-        if isNest { return showsAIBubble ? 10 : 2 }
-        return usesTelegramShape ? 8 : 9
+        let base: CGFloat = isNest ? (showsAIBubble ? 10 : 2) : (usesTelegramShape ? 8 : 9)
+        return base + (showsAIBubble ? PWAChatBubbleShape.inflationPadding(effectiveBubbleInflation) : 0)
+    }
+
+    private var effectiveBubbleInflation: CGFloat {
+        bubbleStyle == .classic && bubbleShapeStyle == .standard ? CGFloat(bubbleInflation) : 0
     }
 }
 

@@ -19,12 +19,39 @@ struct APIClient {
         return try decoder.decode(HistoryResponse.self, from: data).messages
     }
 
-    func send(text: String, attachments: [Attachment], sessionID: String? = nil) async throws -> SendResponse {
+    func send(
+        text: String,
+        attachments: [Attachment],
+        sessionID: String? = nil,
+        deferReply: Bool = false,
+        bundleID: String? = nil
+    ) async throws -> SendResponse {
         var req = request(url: endpoint("app/send"), method: "POST")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONEncoder().encode(SendPayload(text: text, attachments: attachments, apiSession: sessionID))
+        req.httpBody = try JSONEncoder().encode(
+            SendPayload(
+                text: text,
+                attachments: attachments,
+                apiSession: sessionID,
+                deferReply: deferReply,
+                bundleID: bundleID
+            )
+        )
         let responseData = try await data(for: req)
         return try decoder.decode(SendResponse.self, from: responseData)
+    }
+
+    func releaseReplyBundle(
+        bundleID: String,
+        messageIDs: [Int],
+        sessionID: String? = nil
+    ) async throws -> BundleReleaseResponse {
+        var req = request(url: endpoint("app/send/bundle"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(
+            BundleReleasePayload(bundleID: bundleID, messageIDs: messageIDs, apiSession: sessionID)
+        )
+        return try decoder.decode(BundleReleaseResponse.self, from: try await data(for: req))
     }
 
     func search(_ query: String, limit: Int = 80) async throws -> [ChatMessage] {
@@ -563,9 +590,25 @@ private struct SendPayload: Encodable {
     let text: String
     let attachments: [Attachment]
     let apiSession: String?
+    let deferReply: Bool
+    let bundleID: String?
 
     enum CodingKeys: String, CodingKey {
         case text, attachments
+        case apiSession = "api_session"
+        case deferReply = "defer_reply"
+        case bundleID = "bundle_id"
+    }
+}
+
+private struct BundleReleasePayload: Encodable {
+    let bundleID: String
+    let messageIDs: [Int]
+    let apiSession: String?
+
+    enum CodingKeys: String, CodingKey {
+        case bundleID = "bundle_id"
+        case messageIDs = "message_ids"
         case apiSession = "api_session"
     }
 }

@@ -110,6 +110,7 @@ struct BundledMessagePart: Hashable, Identifiable {
     let id = UUID()
     let text: String
     let attachments: [Attachment]
+    var messageID: Int? = nil
 
     var preview: String {
         if !text.isEmpty { return text.replacingOccurrences(of: "\n", with: " ") }
@@ -243,6 +244,10 @@ struct MessageMeta: Decodable, Hashable {
     var translations: [String: String]
     /// 她这条消息里那条小红书链接展开出来的笔记。
     var xhs: XHSCard?
+    /// 统一回复模式下，这条消息属于哪一批；消息本身仍然独立落库、独立显示。
+    var replyBundleID: String?
+    /// true 表示这条已发到聊天页，但还没有放行给 AI。
+    var replyDeferred: Bool
 
     enum CodingKeys: String, CodingKey {
         case attachments
@@ -253,6 +258,8 @@ struct MessageMeta: Decodable, Hashable {
         case sortAfter = "sort_after"
         case bookRef = "book_ref"
         case callStatus = "call_status"
+        case replyBundleID = "reply_bundle_id"
+        case replyDeferred = "reply_deferred"
         case starred, timer, ask, peek, edited, glyph, steps, act, album, recalled, translations, xhs
     }
 
@@ -283,6 +290,8 @@ struct MessageMeta: Decodable, Hashable {
         self.recalled = nil
         self.translations = [:]
         self.xhs = nil
+        self.replyBundleID = nil
+        self.replyDeferred = false
     }
 
     /// meta 是个松散口袋，relay 侧偶尔会往同名键塞别的形状（2026-08-21：hidden 的
@@ -316,6 +325,8 @@ struct MessageMeta: Decodable, Hashable {
         recalled = Self.lenient(Int.self, values, .recalled)
         translations = Self.lenient([String: String].self, values, .translations) ?? [:]
         xhs = Self.lenient(XHSCard.self, values, .xhs)
+        replyBundleID = Self.lenient(String.self, values, .replyBundleID)
+        replyDeferred = Self.lenient(Bool.self, values, .replyDeferred) ?? false
         let nestedAct = Self.lenient(ActMeta.self, values, .act)
         glyph = Self.lenient(String.self, values, .glyph) ?? nestedAct?.glyph
         steps = Self.lenient([ToolStep].self, values, .steps) ?? nestedAct?.steps ?? []
@@ -442,6 +453,11 @@ struct MessageNavigationRequest: Equatable {
 
 struct SendResponse: Decodable {
     let id: Int
+}
+
+struct BundleReleaseResponse: Decodable {
+    let id: Int
+    let released: Int
 }
 
 struct VoiceResponse: Decodable {

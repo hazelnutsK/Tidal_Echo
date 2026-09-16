@@ -638,16 +638,15 @@ private struct AppearanceSettingsView: View {
 
                 Text(model.aiReplyTiming == .immediate
                     ? "每次点击发送后，AI 会马上收到消息。"
-                    : "逐条加入待发送合集；输入框为空时再点一次发送，AI 才会一次收到全部内容。")
+                    : "每条消息会立刻成为独立气泡；输入框为空时再点一次发送，AI 才会统一收到并回复。")
                     .font(.footnote)
                     .foregroundStyle(palette.secondaryText)
 
                 if !model.bundledMessageParts.isEmpty {
-                    HStack {
-                        Label("已暂存 \(model.bundledMessageParts.count) 条", systemImage: "tray.full.fill")
-                        Spacer()
-                        Button("清空", role: .destructive) { model.clearBundledMessageParts() }
-                    }
+                    Label(
+                        "已有 \(model.bundledMessageParts.count) 条消息等待 AI 统一回复",
+                        systemImage: "tray.full.fill"
+                    )
                 }
             }
 

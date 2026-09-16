@@ -867,9 +867,9 @@ struct ChatView: View {
                   let date = messageDate(message.timestamp),
                   let nextDate = messageDate(next.timestamp) else { return true }
             let interval = nextDate.timeIntervalSince(date)
-            // Within a two-minute burst, only the last message carries the
-            // timestamp. A longer pause starts a new visible time boundary.
-            return interval < 0 || interval > 2 * 60
+            // 小雪连续发消息时，只在最后一条下面落时间；AI 的原有节奏保持不变。
+            let burstWindow = message.author == .human ? 3 * 60.0 : 2 * 60.0
+            return interval < 0 || interval > burstWindow
         }
         return true
     }
@@ -1927,55 +1927,6 @@ private struct ComposerView: View {
                 }
             }
 
-            if !model.bundledMessageParts.isEmpty {
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack(spacing: 7) {
-                        Label(
-                            "待统一发送 · \(model.bundledMessageParts.count) 条",
-                            systemImage: "tray.full.fill"
-                        )
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(palette.accent)
-
-                        Spacer()
-
-                        Text("输入框留空，再点发送")
-                            .font(.caption2)
-                            .foregroundStyle(palette.secondaryText)
-
-                        Button { model.clearBundledMessageParts() } label: {
-                            Image(systemName: "trash")
-                                .font(.caption.weight(.semibold))
-                        }
-                        .foregroundStyle(palette.secondaryText)
-                        .accessibilityLabel("清空待统一发送的消息")
-                    }
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 7) {
-                            ForEach(model.bundledMessageParts) { part in
-                                HStack(spacing: 6) {
-                                    Image(systemName: part.attachments.isEmpty ? "text.bubble" : "paperclip")
-                                    Text(part.preview)
-                                        .lineLimit(1)
-                                        .frame(maxWidth: 170, alignment: .leading)
-                                    Button { model.removeBundledMessagePart(part) } label: {
-                                        Image(systemName: "xmark.circle.fill")
-                                    }
-                                    .accessibilityLabel("移除这条暂存消息")
-                                }
-                                .font(.caption)
-                                .foregroundStyle(palette.text)
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 6)
-                                .background(composerAuxiliaryBackground, in: Capsule())
-                            }
-                        }
-                    }
-                }
-                .padding(.horizontal, 2)
-            }
-
             TextField(isNest ? "" : "和Altair说话…", text: $draftText, axis: .vertical)
                 .lineLimit(1...(isNest ? 4 : 5))
                 .font(model.chatFont.font(
@@ -2257,8 +2208,9 @@ private struct ComposerView: View {
     }
 
     private var canSend: Bool {
-        !model.isSendingBundledMessage
-            && (hasCurrentComposerContent || !model.bundledMessageParts.isEmpty)
+        guard !model.isSendingBundledMessage else { return false }
+        if hasCurrentComposerContent { return true }
+        return !model.bundledMessageParts.isEmpty && !model.hasPendingBundledMessageUploads
     }
 
     private var hasCurrentComposerContent: Bool {
@@ -2274,14 +2226,14 @@ private struct ComposerView: View {
 
     private var sendButtonAccessibilityLabel: String {
         if !hasCurrentComposerContent && !model.bundledMessageParts.isEmpty {
-            return "将 \(model.bundledMessageParts.count) 条消息统一发送给 AI"
+            return "让 AI 统一回复上面的 \(model.bundledMessageParts.count) 条消息"
         }
-        return model.aiReplyTiming == .bundled ? "加入待统一发送" : "发送消息"
+        return model.aiReplyTiming == .bundled ? "发送消息，稍后统一回复" : "发送消息"
     }
 
     private var sendButtonAccessibilityHint: String {
         if model.aiReplyTiming == .bundled && hasCurrentComposerContent {
-            return "内容会暂存，AI 还不会收到"
+            return "消息会立刻显示在聊天页，AI 暂时不会回复"
         }
         return "AI 会收到消息"
     }
@@ -2394,9 +2346,7 @@ private struct ComposerView: View {
             let text = draftText
             draftText = ""
             if model.aiReplyTiming == .bundled {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    model.stageBundledMessage(text: text)
-                }
+                Task { await model.stageBundledMessage(text: text) }
             } else {
                 Task { await model.sendMessage(text: text) }
             }

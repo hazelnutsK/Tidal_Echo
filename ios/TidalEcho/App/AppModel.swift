@@ -101,6 +101,9 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var bundledMessageParts: [BundledMessagePart] = []
     @Published private(set) var isSendingBundledMessage = false
+    var hasPendingBundledMessageUploads: Bool {
+        bundledMessageParts.contains { $0.messageID == nil }
+    }
     @Published var liquidGlassStrength: Double {
         didSet { UserDefaults.standard.set(liquidGlassStrength, forKey: Keys.liquidGlassStrength) }
     }
@@ -154,6 +157,7 @@ final class AppModel: ObservableObject {
     private var pendingMissedCallMessageIDs: Set<Int> = []
     private var currentGiftTokens: Set<String> = []
     private var currentAIPostIDs: Set<Int> = []
+    private var replyBundleID: String?
 
     private static let initialHistoryWindow = 120
     private static let olderHistoryPageSize = 80
@@ -490,6 +494,7 @@ final class AppModel: ObservableObject {
         canLoadOlderHistory = false
         pendingAttachments = []
         bundledMessageParts = []
+        replyBundleID = nil
         isSendingBundledMessage = false
         streamingThinking = ""
         streamingReply = ""
@@ -629,6 +634,8 @@ final class AppModel: ObservableObject {
         historyArchive = []
         messages = []
         canLoadOlderHistory = false
+        bundledMessageParts = []
+        replyBundleID = nil
     }
 
     func renameSession(id: String, title: String) async throws {
@@ -732,67 +739,96 @@ final class AppModel: ObservableObject {
         _ = await deliverMessage(text: text, attachments: attachments)
     }
 
-    func stageBundledMessage(text rawText: String) {
+    func stageBundledMessage(text rawText: String) async {
+        guard client != nil else { return }
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let attachments = pendingAttachments
         guard !text.isEmpty || !attachments.isEmpty else { return }
-        bundledMessageParts.append(BundledMessagePart(text: text, attachments: attachments))
         pendingAttachments = []
-    }
+        let bundleID = replyBundleID ?? UUID().uuidString
+        replyBundleID = bundleID
+        let part = BundledMessagePart(text: text, attachments: attachments)
+        bundledMessageParts.append(part)
 
-    func removeBundledMessagePart(_ part: BundledMessagePart) {
-        bundledMessageParts.removeAll { $0.id == part.id }
-    }
-
-    func clearBundledMessageParts() {
-        bundledMessageParts = []
+        guard let messageID = await deliverMessage(
+            text: text,
+            attachments: attachments,
+            deferReply: true,
+            bundleID: bundleID
+        ) else {
+            bundledMessageParts.removeAll { $0.id == part.id }
+            if bundledMessageParts.isEmpty { replyBundleID = nil }
+            return
+        }
+        if let index = bundledMessageParts.firstIndex(where: { $0.id == part.id }) {
+            bundledMessageParts[index].messageID = messageID
+        }
     }
 
     func sendBundledMessages() async {
-        guard client != nil, !isSendingBundledMessage, !bundledMessageParts.isEmpty else { return }
-        let parts = bundledMessageParts
-        let text = parts
-            .map(\.text)
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n\n")
-        let attachments = parts.flatMap(\.attachments)
+        guard let client, !isSendingBundledMessage, !bundledMessageParts.isEmpty,
+              let bundleID = replyBundleID else { return }
+        let messageIDs = bundledMessageParts.compactMap(\.messageID)
+        guard messageIDs.count == bundledMessageParts.count else { return }
         isSendingBundledMessage = true
         defer { isSendingBundledMessage = false }
-        if await deliverMessage(text: text, attachments: attachments) {
-            let deliveredIDs = Set(parts.map(\.id))
-            bundledMessageParts.removeAll { deliveredIDs.contains($0.id) }
+        typingSuppressedUntil = .distantPast
+        updateTypingState(true)
+        do {
+            _ = try await client.releaseReplyBundle(
+                bundleID: bundleID,
+                messageIDs: messageIDs,
+                sessionID: activeSessionID == Self.legacySessionID ? nil : activeSessionID
+            )
+            bundledMessageParts = []
+            replyBundleID = nil
+        } catch {
+            updateTypingState(false)
+            errorMessage = "统一发送失败：\(error.localizedDescription)"
         }
     }
 
     @discardableResult
-    private func deliverMessage(text: String, attachments: [Attachment]) async -> Bool {
-        guard let client else { return false }
+    private func deliverMessage(
+        text: String,
+        attachments: [Attachment],
+        deferReply: Bool = false,
+        bundleID: String? = nil
+    ) async -> Int? {
+        guard let client else { return nil }
 
         temporaryID -= 1
         let tempID = temporaryID
+        var optimisticMeta = MessageMeta(
+            attachments: attachments,
+            apiSession: activeSessionID == Self.legacySessionID ? nil : activeSessionID
+        )
+        optimisticMeta.replyBundleID = bundleID
+        optimisticMeta.replyDeferred = deferReply
         let optimistic = ChatMessage(
             id: tempID,
             timestamp: ISO8601DateFormatter().string(from: Date()),
             author: .human,
             kind: "user",
             text: text,
-            meta: MessageMeta(
-                attachments: attachments,
-                apiSession: activeSessionID == Self.legacySessionID ? nil : activeSessionID
-            ),
+            meta: optimisticMeta,
             delivery: .sending
         )
         messages.append(optimistic)
-        // Show feedback immediately. The relay also broadcasts a typing event,
-        // but that frame can arrive before the POST response on some iOS stacks.
-        typingSuppressedUntil = .distantPast
-        updateTypingState(true)
+        if !deferReply {
+            // Show feedback immediately. The relay also broadcasts a typing event,
+            // but that frame can arrive before the POST response on some iOS stacks.
+            typingSuppressedUntil = .distantPast
+            updateTypingState(true)
+        }
 
         do {
             let response = try await client.send(
                 text: text,
                 attachments: attachments,
-                sessionID: activeSessionID == Self.legacySessionID ? nil : activeSessionID
+                sessionID: activeSessionID == Self.legacySessionID ? nil : activeSessionID,
+                deferReply: deferReply,
+                bundleID: bundleID
             )
             if let realIndex = messages.firstIndex(where: { $0.id == response.id }) {
                 messages[realIndex].delivery = .sent
@@ -803,14 +839,14 @@ final class AppModel: ObservableObject {
                 historyArchive.append(messages[tempIndex])
                 historyArchive.sort(by: Self.messageComesBefore)
             }
-            return true
+            return response.id
         } catch {
-            updateTypingState(false)
+            if !deferReply { updateTypingState(false) }
             if let index = messages.firstIndex(where: { $0.id == tempID }) {
                 messages[index].delivery = .failed
             }
             errorMessage = "发送失败：\(error.localizedDescription)"
-            return false
+            return nil
         }
     }
 
@@ -1486,6 +1522,7 @@ final class AppModel: ObservableObject {
                 merged[message.id] = message
             }
             messages = merged.values.sorted(by: Self.messageComesBefore)
+            restoreBundledMessagesFromHistory()
             canLoadOlderHistory = historyArchive.count > visibleHistory.count
             historyNeedsReload = false
             if UIApplication.shared.applicationState == .active {
@@ -1497,6 +1534,28 @@ final class AppModel: ObservableObject {
             guard !Self.isCancellation(error) else { return }
             errorMessage = "聊天记录加载失败：\(error.localizedDescription)"
         }
+    }
+
+    private func restoreBundledMessagesFromHistory() {
+        guard !bundledMessageParts.contains(where: { $0.messageID == nil }) else { return }
+        guard let bundleID = historyArchive.last(where: {
+            $0.author == .human && $0.meta.replyDeferred && $0.meta.replyBundleID != nil
+        })?.meta.replyBundleID else {
+            bundledMessageParts = []
+            replyBundleID = nil
+            return
+        }
+        bundledMessageParts = historyArchive.compactMap { message in
+            guard message.author == .human,
+                  message.meta.replyDeferred,
+                  message.meta.replyBundleID == bundleID else { return nil }
+            return BundledMessagePart(
+                text: message.text,
+                attachments: message.meta.attachments,
+                messageID: message.id
+            )
+        }
+        replyBundleID = bundledMessageParts.isEmpty ? nil : bundleID
     }
 
     private func loadInitialSessions(using client: APIClient) async {

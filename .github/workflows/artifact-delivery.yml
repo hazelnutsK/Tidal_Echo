@@ -1,0 +1,36 @@
+name: Temporary IPA Delivery
+
+on:
+  push:
+    paths:
+      - ".github/workflows/artifact-delivery.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  deliver:
+    if: github.ref == 'refs/heads/ios-reading-room'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download successful IPA artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run download 35096935497 --repo "$GITHUB_REPOSITORY" --name TidalEcho-unsigned-ipa --dir artifact
+
+      - name: Publish to temporary delivery branch
+        run: |
+          mkdir -p delivery
+          cp artifact/TidalEcho-unsigned.ipa delivery/TidalEcho-unsigned.ipa
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -f delivery/TidalEcho-unsigned.ipa
+          tree=$(git write-tree)
+          commit=$(printf '%s\n' 'Temporary IPA delivery for run 35096935497' | git commit-tree "$tree" -p "$GITHUB_SHA")
+          git push --force origin "$commit:refs/heads/ios-build-delivery"

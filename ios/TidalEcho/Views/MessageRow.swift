@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import QuickLook
+import Photos
 
 private enum CallLifecycleEvent: Equatable {
     case started
@@ -2559,7 +2560,6 @@ struct TypingRow: View {
                 JumpingDots(color: palette.secondaryText)
                     .padding(.horizontal, isNest ? 2 : 14)
                     .frame(height: 35)
-                    .background(isNest ? Color.clear : palette.aiBubble, in: Capsule())
                 Spacer()
             }
         }
@@ -2612,9 +2612,13 @@ private struct AttachmentView: View {
 
     var body: some View {
         if attachment.isImage {
-            AuthenticatedImageView(request: request, palette: palette)
+            AuthenticatedImageView(
+                request: request,
+                palette: palette,
+                previewCornerRadius: 18
+            )
                 .frame(maxWidth: 260, minHeight: 120, maxHeight: 330)
-                .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         } else if attachment.isAudio {
             VoiceAttachmentView(attachment: attachment, request: request, palette: palette)
         } else {
@@ -2886,6 +2890,7 @@ struct AuthenticatedImageView: View {
     let palette: EchoPalette
     var contentMode: ContentMode = .fit
     var allowsPreview = true
+    var previewCornerRadius: CGFloat = 0
     @StateObject private var loader = AuthenticatedImageLoader()
     @State private var previewImage: ImagePreviewItem?
 
@@ -2893,12 +2898,14 @@ struct AuthenticatedImageView: View {
         request: URLRequest?,
         palette: EchoPalette,
         contentMode: ContentMode = .fit,
-        allowsPreview: Bool = true
+        allowsPreview: Bool = true,
+        previewCornerRadius: CGFloat = 0
     ) {
         self.request = request
         self.palette = palette
         self.contentMode = contentMode
         self.allowsPreview = allowsPreview
+        self.previewCornerRadius = previewCornerRadius
     }
 
     var body: some View {
@@ -2908,7 +2915,8 @@ struct AuthenticatedImageView: View {
                     .resizable()
                     .aspectRatio(contentMode: contentMode)
                     .scaleEffect(imageOverscan)
-                    .contentShape(Rectangle())
+                    .clipShape(RoundedRectangle(cornerRadius: previewCornerRadius, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: previewCornerRadius, style: .continuous))
                     .onTapGesture {
                         guard allowsPreview else { return }
                         previewImage = ImagePreviewItem(image: image)
@@ -3075,9 +3083,12 @@ private struct FullScreenImagePreview: View {
     @Environment(\.dismiss) private var dismiss
     @State private var scale = 1.0
     @State private var settledScale = 1.0
+    @State private var isSaving = false
+    @State private var didSave = false
+    @State private var saveErrorMessage: String?
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
 
             Image(uiImage: image)
@@ -3102,19 +3113,90 @@ private struct FullScreenImagePreview: View {
                     }
                 }
 
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.black.opacity(0.58), in: Circle())
+            VStack {
+                HStack {
+                    Button(action: saveImage) {
+                        Group {
+                            if isSaving {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 15, weight: .semibold))
+                            }
+                        }
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.black.opacity(0.58), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSaving)
+                    .accessibilityLabel(isSaving ? "正在保存图片" : "保存图片")
+
+                    Spacer()
+
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(Color.black.opacity(0.58), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("关闭图片预览")
+                }
+                .padding(.top, 12)
+                .padding(.horizontal, 14)
+
+                Spacer()
+
+                if didSave {
+                    Label("已保存到照片", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(Color.black.opacity(0.62), in: Capsule())
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
-            .buttonStyle(.plain)
-            .padding(.top, 12)
-            .padding(.trailing, 14)
-            .accessibilityLabel("关闭图片预览")
         }
         .statusBarHidden()
+        .alert("图片没有保存", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) {
+            Button("好", role: .cancel) { saveErrorMessage = nil }
+        } message: {
+            Text(saveErrorMessage ?? "请稍后再试")
+        }
+    }
+
+    private func saveImage() {
+        guard !isSaving else { return }
+        isSaving = true
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                isSaving = false
+                saveErrorMessage = "请在系统设置中允许 Tidal Echo 添加照片。"
+                return
+            }
+
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAsset(from: image)
+                }
+                isSaving = false
+                withAnimation(.easeOut(duration: 0.18)) { didSave = true }
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                withAnimation(.easeIn(duration: 0.18)) { didSave = false }
+            } catch {
+                isSaving = false
+                saveErrorMessage = error.localizedDescription
+            }
+        }
     }
 }
 

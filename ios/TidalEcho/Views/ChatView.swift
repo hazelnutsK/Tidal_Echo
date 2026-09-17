@@ -43,10 +43,13 @@ struct ChatView: View {
         return model.bubbleStyle == .classic || model.bubbleStyle == .frosted
     }
     private var historyEndsWithAIThinkingHeader: Bool {
-        for message in model.messages.reversed() {
-            guard message.author == .ai else { return false }
-            if message.kind == "thinking" { return true }
-            if message.kind != "act" { return false }
+        for row in chatRows.reversed() {
+            guard row.message.author == .ai else { return false }
+            if row.message.kind == "thinking" {
+                if row.showsAvatarHeader { return true }
+                continue
+            }
+            if row.message.kind != "act" { return false }
         }
         return false
     }
@@ -777,7 +780,10 @@ struct ChatView: View {
     /// pass, which is what made scrolling feel sticky. Build the whole plan in
     /// one forward pass instead.
     private var chatRows: [ChatRow] {
-        Self.buildRows(model.messages)
+        Self.buildRows(
+            model.messages,
+            liveAIReplyFollowsHistory: !model.streamingReply.isEmpty
+        )
     }
 
     private var latestAIReplyID: Int? {
@@ -789,7 +795,10 @@ struct ChatView: View {
         })?.id
     }
 
-    private static func buildRows(_ messages: [ChatMessage]) -> [ChatRow] {
+    private static func buildRows(
+        _ messages: [ChatMessage],
+        liveAIReplyFollowsHistory: Bool
+    ) -> [ChatRow] {
         guard !messages.isEmpty else { return [] }
         var rows: [ChatRow] = []
         rows.reserveCapacity(messages.count)
@@ -819,7 +828,12 @@ struct ChatView: View {
                 activeAIThinkingHeader = nil
                 showsAvatarHeader = isGroupStart
             } else if message.kind == "thinking" {
-                showsAvatarHeader = activeAIThinkingHeader == nil
+                let ownsReplyAvatar = hasFollowingAIReply(
+                    after: index,
+                    in: messages,
+                    liveAIReplyFollowsHistory: liveAIReplyFollowsHistory
+                )
+                showsAvatarHeader = activeAIThinkingHeader == nil && ownsReplyAvatar
                 if showsAvatarHeader { activeAIThinkingHeader = message }
             } else if message.kind == "act" {
                 showsAvatarHeader = false
@@ -839,6 +853,25 @@ struct ChatView: View {
             )
         }
         return rows
+    }
+
+    /// In the upper-corner layout, Thinking borrows the avatar from the reply it
+    /// introduces. A thought-only turn has no reply bubble, so it must not leave
+    /// a standalone avatar beside the Thinking disclosure.
+    private static func hasFollowingAIReply(
+        after index: Int,
+        in messages: [ChatMessage],
+        liveAIReplyFollowsHistory: Bool
+    ) -> Bool {
+        let thinking = messages[index]
+        var cursor = index + 1
+        while cursor < messages.count {
+            let candidate = messages[cursor]
+            guard messagesShareAvatarBurst(thinking, candidate) else { return false }
+            if candidate.kind == "reply" { return true }
+            cursor += 1
+        }
+        return liveAIReplyFollowsHistory
     }
 
     private static func messagesShareAvatarBurst(

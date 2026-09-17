@@ -22,5 +22,5 @@ Copyright 2020 The Klee Project Authors (https://github.com/fontworks-fonts/Klee
 License: SIL Open Font License 1.1
 https://openfontlicense.org/
 
-The bundled Light and Regular files are font subsets retaining GB2312 common
+The bundled Light, Regular, and Medium files are font subsets retaining GB2312 common
 Chinese characters, common UI punctuation and symbols, and Japanese kana.

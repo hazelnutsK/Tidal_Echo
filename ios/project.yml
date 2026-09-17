@@ -49,6 +49,7 @@ targets:
           - AnthropicSerifVariable.ttf
           - LXGWWenKai-Light.ttf
           - LXGWWenKai-Regular.ttf
+          - LXGWWenKai-Medium.ttf
           - Sacramento-Regular.ttf
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true

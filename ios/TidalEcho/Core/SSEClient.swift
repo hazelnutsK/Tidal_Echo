@@ -19,17 +19,11 @@ final class SSEClient {
                     }
                     await onConnection(true)
 
-                    var dataLines: [String] = []
-                    for try await line in bytes.lines {
+                    var parser = SSEEventParser()
+                    for try await byte in bytes {
                         if Task.isCancelled { return }
-                        if line.isEmpty {
-                            if !dataLines.isEmpty,
-                               let data = dataLines.joined(separator: "\n").data(using: .utf8) {
-                                await onEvent(data)
-                            }
-                            dataLines.removeAll(keepingCapacity: true)
-                        } else if line.hasPrefix("data:") {
-                            dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
+                        if let data = parser.append(byte) {
+                            await onEvent(data)
                         }
                     }
                 } catch {
@@ -51,4 +45,3 @@ final class SSEClient {
         task = nil
     }
 }
-

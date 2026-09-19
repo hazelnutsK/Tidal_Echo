@@ -27,6 +27,17 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Verify SSE framing and live delivery
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          swiftc -parse-as-library -target "$(uname -m)-apple-macosx13.0" \
+            TidalEcho/Core/SSEEventParser.swift \
+            TidalEcho/Core/SSEClient.swift \
+            Tests/SSERegressionTests.swift \
+            -o "$RUNNER_TEMP/sse-regressions"
+          python3 Tests/run_sse_regressions.py "$RUNNER_TEMP/sse-regressions"
+
       - name: Prepare app icons
         working-directory: ios
         run: bash scripts/prepare-assets.sh

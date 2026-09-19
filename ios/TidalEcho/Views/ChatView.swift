@@ -2235,9 +2235,22 @@ private struct ComposerView: View {
         catch { /* Keep the last known label while the relay reconnects. */ }
     }
 
-    /// The desktop body is Claude Code — the chip says so instead of "Desktop".
+    /// Keep the fixed body labels for Claude Code / Codex, but let each API
+    /// window carry the custom title she gave that conversation.
     private var brainLabel: String {
-        currentBrain == .desktop ? "Claude Code" : currentBrain.title
+        if model.activeSessionID == AppModel.legacySessionID { return "Claude Code" }
+        if let session = model.sessions.first(where: { $0.id == model.activeSessionID }) {
+            switch session.body {
+            case .desktop:
+                return "Claude Code"
+            case .codex:
+                return "Codex"
+            case .loop:
+                let customTitle = session.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                return customTitle.isEmpty ? "API" : customTitle
+            }
+        }
+        return currentBrain == .desktop ? "Claude Code" : currentBrain.title
     }
 
     private var canSend: Bool {

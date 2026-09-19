@@ -1638,6 +1638,12 @@ private struct APIControlView: View {
     @State private var pendingPreset: APIPreset?
     @State private var showingAddPreset = false
     @State private var showingRecent = false
+    @State private var effort = "high"
+    @State private var effortLevels = ["low", "medium", "high", "xhigh", "max"]
+    /// 服务器上那一档。load 回填和切换失败回滚都会改 effort，靠它把 onChange 里那些
+    /// 不是她点出来的变化挡掉，免得白发一次请求。
+    @State private var serverEffort = "high"
+    @State private var effortNote = ""
     private var palette: EchoPalette { model.theme.palette }
 
     var body: some View {
@@ -1671,6 +1677,27 @@ private struct APIControlView: View {
                 }
             }
 
+            Section {
+                Picker("思考力度", selection: $effort) {
+                    ForEach(effortLevels, id: \.self) { level in
+                        Text(level).tag(level)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(isLoading)
+                .onChange(of: effort) { value in applyEffort(value) }
+
+                if !effortNote.isEmpty {
+                    Text(effortNote)
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                }
+            } header: {
+                Text("思考力度")
+            } footer: {
+                Text("只管 API 身体。越高想得越细、越慢越贵，low 基本不思考。xhigh 是 Opus 4.7 以上才有的档。换档会让缓存重写一次，下一句贵一点。")
+            }
+
             if let stats {
                 Section("API 用量") {
                     metric("消息数", value: "\(stats.messages)")
@@ -1679,9 +1706,9 @@ private struct APIControlView: View {
                     metric("输出", value: tokenText(stats.total.output))
                     metric("缓存命中", value: tokenText(stats.total.cacheRead))
                     metric("缓存写入", value: tokenText(stats.total.cacheWrite))
-                    metric("累计估价", value: String(format: "$%.2f", stats.totalCostUSD))
+                    metric("累计花费", value: String(format: "$%.2f", stats.totalCostUSD))
                     metric("每条均价", value: String(format: "$%.4f", stats.average.costUSD ?? 0))
-                    Text("心跳 \(stats.keepalive.beats) 次 ≈ \(String(format: "$%.3f", stats.keepalive.costUSD)) · 缓存 \(stats.cacheTTL)")
+                    Text("心跳 \(stats.keepalive.beats) 次 ≈ \(String(format: "$%.3f", stats.keepalive.costUSD)) · 缓存 \(stats.cacheTTL) · \(billingNote(stats))")
                         .font(.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
@@ -1699,7 +1726,8 @@ private struct APIControlView: View {
                                     Text(cacheHitText(entry))
                                         .font(.caption.weight(.semibold).monospacedDigit())
                                         .foregroundStyle(cacheStateColor(entry))
-                                    Text(String(format: "$%.4f", entry.costUSD)).monospacedDigit()
+                                    Text(String(format: entry.billed ? "$%.4f" : "$%.4f≈", entry.costUSD))
+                                        .monospacedDigit()
                                 }
                                 Text("读 \(tokenText(entry.cacheRead)) · 写 \(tokenText(entry.cacheWrite)) · 入 \(tokenText(entry.input)) · 出 \(tokenText(entry.output))")
                                     .font(.caption2)
@@ -1752,6 +1780,11 @@ private struct APIControlView: View {
         LabeledContent(title, value: value)
     }
 
+    /// OpenRouter 每条响应都报它实际扣的钱，用实数；不报价的中转才落到本地价目表估算。
+    private func billingNote(_ stats: APIUsageStats) -> String {
+        stats.billedRows > 0 ? "\(stats.billedRows)/\(stats.messages) 条按上游实报" : "全部为本地估算"
+    }
+
     private func tokenText(_ value: Int) -> String {
         if value >= 1_000_000 { return String(format: "%.2fM", Double(value) / 1_000_000) }
         if value >= 1_000 { return String(format: "%.1fk", Double(value) / 1_000) }
@@ -1773,7 +1806,9 @@ private struct APIControlView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            presets = try await model.settingsLoopConfig().apiPresets
+            let config = try await model.settingsLoopConfig()
+            presets = config.apiPresets
+            applyConfigEffort(config)
         } catch {
             errorText = "接口列表：\(error.localizedDescription)"
         }
@@ -1787,8 +1822,36 @@ private struct APIControlView: View {
     private func activate(_ preset: APIPreset) async {
         isLoading = true
         defer { isLoading = false }
-        do { presets = try await model.activateAPIPreset(preset.index).apiPresets }
+        do {
+            let config = try await model.activateAPIPreset(preset.index)
+            presets = config.apiPresets
+            applyConfigEffort(config)
+        }
         catch { errorText = error.localizedDescription }
+    }
+
+    private func applyConfigEffort(_ config: LoopConfigResponse) {
+        if !config.effortLevels.isEmpty { effortLevels = config.effortLevels }
+        serverEffort = config.effort
+        effort = config.effort
+        effortNote = ""
+    }
+
+    private func applyEffort(_ value: String) {
+        guard value != serverEffort else { return }   // 回填/回滚引起的变化，不是她点的
+        effortNote = "切到 \(value)…"
+        Task {
+            do {
+                let config = try await model.setLoopEffort(value)
+                serverEffort = config.effort
+                if config.effort != value { effort = config.effort }
+                effortNote = "已切到 \(config.effort)，下一句开始生效"
+            } catch {
+                effort = serverEffort
+                effortNote = ""
+                errorText = "思考力度：\(error.localizedDescription)"
+            }
+        }
     }
 
     private func deletePreset(_ preset: APIPreset) async {

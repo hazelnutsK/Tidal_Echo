@@ -311,6 +311,13 @@ struct APIClient {
         return try decoder.decode(LoopConfigResponse.self, from: try await data(for: req))
     }
 
+    func setLoopEffort(_ effort: String) async throws -> LoopConfigResponse {
+        var req = request(url: endpoint("app/loop_config"), method: "POST")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(LoopEffortPayload(effort: effort))
+        return try decoder.decode(LoopConfigResponse.self, from: try await data(for: req))
+    }
+
     func chatMode() async throws -> ChatModeResponse {
         let responseData = try await data(for: request(url: endpoint("app/chat_mode")))
         return try decoder.decode(ChatModeResponse.self, from: responseData)
@@ -744,6 +751,8 @@ private struct LoopPresetPayload: Encodable {
         case apiPresets = "api_presets"
     }
 }
+
+private struct LoopEffortPayload: Encodable { let effort: String }
 
 private struct ChatModePayload: Encodable {
     let mode: ChatMode?

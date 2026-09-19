@@ -147,7 +147,11 @@ final class AppModel: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var incrementalSyncTask: Task<Void, Never>?
     private var typingTimeoutTask: Task<Void, Never>?
+    private var streamFlushTask: Task<Void, Never>?
     private var typingSuppressedUntil = Date.distantPast
+    private var streamingDraftTexts: [String: String] = [:]
+    private var activeThinkingStreamID: String?
+    private var activeReplyStreamID: String?
     private var isCatchingUp = false
     private var temporaryID = -1
     private var didBootstrap = false
@@ -161,7 +165,13 @@ final class AppModel: ObservableObject {
 
     private static let initialHistoryWindow = 120
     private static let olderHistoryPageSize = 80
+    private static let streamFlushIntervalNanoseconds: UInt64 = 80_000_000
     static let legacySessionID = "__legacy__"
+
+    private enum StreamDraftKind: String {
+        case thinking
+        case reply
+    }
 
     private enum Keys {
         static let relayURL = "tidalEcho.relayURL"
@@ -496,8 +506,7 @@ final class AppModel: ObservableObject {
         bundledMessageParts = []
         replyBundleID = nil
         isSendingBundledMessage = false
-        streamingThinking = ""
-        streamingReply = ""
+        resetStreamingDrafts()
         updateTypingState(false)
         isStreamConnected = false
         clawdPetState = .idle
@@ -611,8 +620,7 @@ final class AppModel: ObservableObject {
             applySessionsResponse(try await client.updateSession(id: next, active: true), chooseServerActiveWhenNeeded: false)
             activeSessionID = next
             UserDefaults.standard.set(next, forKey: Keys.activeSessionID)
-            streamingThinking = ""
-            streamingReply = ""
+            resetStreamingDrafts()
             updateTypingState(false)
             await loadHistory(showLoadingState: false)
         } catch {
@@ -636,6 +644,7 @@ final class AppModel: ObservableObject {
         canLoadOlderHistory = false
         bundledMessageParts = []
         replyBundleID = nil
+        resetStreamingDrafts()
     }
 
     func renameSession(id: String, title: String) async throws {
@@ -1361,6 +1370,10 @@ final class AppModel: ObservableObject {
         try await requireClient().replaceAPIPresets(presets)
     }
 
+    func setLoopEffort(_ effort: String) async throws -> LoopConfigResponse {
+        try await requireClient().setLoopEffort(effort)
+    }
+
     func settingsChatMode() async throws -> ChatModeResponse {
         let settings = try await requireClient().chatMode()
         chatMode = settings.mode
@@ -1756,6 +1769,118 @@ final class AppModel: ObservableObject {
         updateTypingState(false)
     }
 
+    private func queueStreamDelta(_ envelope: StreamEnvelope, kind: StreamDraftKind) {
+        guard let streamID = envelope.streamID?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !streamID.isEmpty else { return }
+
+        let key = streamDraftKey(kind: kind, streamID: streamID)
+        switch kind {
+        case .thinking:
+            if let previous = activeThinkingStreamID, previous != streamID {
+                streamingDraftTexts.removeValue(forKey: streamDraftKey(kind: .thinking, streamID: previous))
+                streamingThinking = ""
+            }
+            activeThinkingStreamID = streamID
+        case .reply:
+            if let previous = activeReplyStreamID, previous != streamID {
+                streamingDraftTexts.removeValue(forKey: streamDraftKey(kind: .reply, streamID: previous))
+                streamingReply = ""
+            }
+            activeReplyStreamID = streamID
+        }
+
+        let current = streamingDraftTexts[key] ?? ""
+        streamingDraftTexts[key] = Self.appendingStreamText(envelope.text ?? "", to: current)
+        scheduleStreamFlush()
+    }
+
+    private func scheduleStreamFlush() {
+        guard streamFlushTask == nil else { return }
+        streamFlushTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.streamFlushIntervalNanoseconds)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            self?.flushStreamingDrafts()
+        }
+    }
+
+    private func flushStreamingDrafts() {
+        streamFlushTask = nil
+        if let streamID = activeThinkingStreamID {
+            let next = streamingDraftTexts[streamDraftKey(kind: .thinking, streamID: streamID)] ?? ""
+            if streamingThinking != next { streamingThinking = next }
+        }
+        if let streamID = activeReplyStreamID {
+            let next = streamingDraftTexts[streamDraftKey(kind: .reply, streamID: streamID)] ?? ""
+            if streamingReply != next { streamingReply = next }
+        }
+    }
+
+    private func finishStream(kind: StreamDraftKind, streamID: String?) {
+        let trimmedID = streamID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedID = trimmedID?.isEmpty == false ? trimmedID : nil
+        switch kind {
+        case .thinking:
+            guard normalizedID == nil || normalizedID == activeThinkingStreamID else {
+                if let normalizedID, !normalizedID.isEmpty {
+                    streamingDraftTexts.removeValue(forKey: streamDraftKey(kind: .thinking, streamID: normalizedID))
+                }
+                return
+            }
+            if let activeThinkingStreamID {
+                streamingDraftTexts.removeValue(forKey: streamDraftKey(kind: .thinking, streamID: activeThinkingStreamID))
+            }
+            activeThinkingStreamID = nil
+            streamingThinking = ""
+        case .reply:
+            guard normalizedID == nil || normalizedID == activeReplyStreamID else {
+                if let normalizedID, !normalizedID.isEmpty {
+                    streamingDraftTexts.removeValue(forKey: streamDraftKey(kind: .reply, streamID: normalizedID))
+                }
+                return
+            }
+            if let activeReplyStreamID {
+                streamingDraftTexts.removeValue(forKey: streamDraftKey(kind: .reply, streamID: activeReplyStreamID))
+            }
+            activeReplyStreamID = nil
+            streamingReply = ""
+        }
+    }
+
+    private func resetStreamingDrafts() {
+        streamFlushTask?.cancel()
+        streamFlushTask = nil
+        streamingDraftTexts.removeAll()
+        activeThinkingStreamID = nil
+        activeReplyStreamID = nil
+        streamingThinking = ""
+        streamingReply = ""
+    }
+
+    private func streamDraftKey(kind: StreamDraftKind, streamID: String) -> String {
+        "\(kind.rawValue):\(streamID)"
+    }
+
+    private static func appendingStreamText(_ addition: String, to current: String) -> String {
+        guard !addition.isEmpty else { return current }
+        guard !current.isEmpty else { return addition }
+        if addition.hasPrefix(current) { return addition }
+        if current.hasSuffix(addition) { return current }
+
+        let maximumOverlap = min(current.count, addition.count)
+        if maximumOverlap > 0 {
+            for length in stride(from: maximumOverlap, through: 1, by: -1) {
+                if current.suffix(length) == addition.prefix(length) {
+                    return current + String(addition.dropFirst(length))
+                }
+            }
+        }
+        return current + addition
+    }
+
     private func receiveStreamEvent(_ data: Data) {
         let decoder = JSONDecoder()
         if let envelope = try? decoder.decode(StreamEnvelope.self, from: data),
@@ -1823,12 +1948,12 @@ final class AppModel: ObservableObject {
                 return
             case "thinking_delta":
                 guard normalizedSessionID(envelope.apiSession) == activeSessionID else { return }
-                streamingThinking += envelope.text ?? ""
+                queueStreamDelta(envelope, kind: .thinking)
                 updateTypingState(false)
                 return
             case "reply_delta":
                 guard normalizedSessionID(envelope.apiSession) == activeSessionID else { return }
-                streamingReply += envelope.text ?? ""
+                queueStreamDelta(envelope, kind: .reply)
                 updateTypingState(false)
                 return
             default:
@@ -1841,9 +1966,11 @@ final class AppModel: ObservableObject {
         upsert(message)
         if message.author == .ai && messageBelongsToActiveSession(message) {
             finishTypingAfterAIActivity()
-            if message.kind == "thinking" { streamingThinking = "" }
+            if message.kind == "thinking" {
+                finishStream(kind: .thinking, streamID: message.meta.streamID)
+            }
             if message.kind == "reply" {
-                streamingReply = ""
+                finishStream(kind: .reply, streamID: message.meta.streamID)
             }
         }
     }

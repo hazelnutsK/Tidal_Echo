@@ -584,16 +584,24 @@ struct LoopRoute: Codable {
 struct LoopConfigResponse: Decodable {
     let mainChain: [LoopRoute]
     let apiPresets: [APIPreset]
+    /// output_config.effort：API 身体的思考力度。旧版 relay 不吐这两个字段，按默认档走。
+    let effort: String
+    let effortLevels: [String]
 
     enum CodingKeys: String, CodingKey {
         case mainChain = "main_chain"
         case apiPresets = "api_presets"
+        case effort
+        case effortLevels = "effort_levels"
     }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         mainChain = try values.decodeIfPresent([LoopRoute].self, forKey: .mainChain) ?? []
         apiPresets = try values.decodeIfPresent([APIPreset].self, forKey: .apiPresets) ?? []
+        effort = try values.decodeIfPresent(String.self, forKey: .effort) ?? "high"
+        effortLevels = try values.decodeIfPresent([String].self, forKey: .effortLevels)
+            ?? ["low", "medium", "high", "xhigh", "max"]
     }
 }
 
@@ -754,13 +762,28 @@ struct APIUsageEntry: Decodable, Identifiable {
     let cacheRead: Int
     let cacheWrite: Int
     let costUSD: Double
+    /// true = 上游报的实际花费（OpenRouter 每条都报）；false = 本地价目表估的
+    let billed: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, model, input, output
+        case id, model, input, output, billed
         case timestamp = "ts"
         case cacheRead = "cache_read"
         case cacheWrite = "cache_write"
         case costUSD = "cost_usd"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(Int.self, forKey: .id)
+        timestamp = try values.decode(String.self, forKey: .timestamp)
+        model = try values.decodeIfPresent(String.self, forKey: .model)
+        input = try values.decodeIfPresent(Int.self, forKey: .input) ?? 0
+        output = try values.decodeIfPresent(Int.self, forKey: .output) ?? 0
+        cacheRead = try values.decodeIfPresent(Int.self, forKey: .cacheRead) ?? 0
+        cacheWrite = try values.decodeIfPresent(Int.self, forKey: .cacheWrite) ?? 0
+        costUSD = try values.decodeIfPresent(Double.self, forKey: .costUSD) ?? 0
+        billed = try values.decodeIfPresent(Bool.self, forKey: .billed) ?? false
     }
 
     var cacheHitRate: Double? {
@@ -779,6 +802,8 @@ struct APIUsageStats: Decodable {
     let keepalive: APIKeepaliveStats
     let cacheTTL: String
     let recent: [APIUsageEntry]
+    /// 这批里有几条用的是上游实报金额，其余是本地估算
+    let billedRows: Int
 
     enum CodingKeys: String, CodingKey {
         case messages, total, keepalive, recent
@@ -786,6 +811,20 @@ struct APIUsageStats: Decodable {
         case average = "avg_per_message"
         case cacheHitRate = "cache_hit_rate"
         case cacheTTL = "cache_ttl"
+        case billedRows = "billed_rows"
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        messages = try values.decodeIfPresent(Int.self, forKey: .messages) ?? 0
+        total = try values.decode(APIUsageNumbers.self, forKey: .total)
+        totalCostUSD = try values.decodeIfPresent(Double.self, forKey: .totalCostUSD) ?? 0
+        average = try values.decode(APIUsageNumbers.self, forKey: .average)
+        cacheHitRate = try values.decodeIfPresent(Double.self, forKey: .cacheHitRate) ?? 0
+        keepalive = try values.decode(APIKeepaliveStats.self, forKey: .keepalive)
+        cacheTTL = try values.decodeIfPresent(String.self, forKey: .cacheTTL) ?? "?"
+        recent = try values.decodeIfPresent([APIUsageEntry].self, forKey: .recent) ?? []
+        billedRows = try values.decodeIfPresent(Int.self, forKey: .billedRows) ?? 0
     }
 }
 

@@ -42,6 +42,16 @@ jobs:
         working-directory: ios
         run: bash scripts/prepare-assets.sh
 
+      - name: Verify per-message API usage
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          swiftc -parse-as-library \
+            TidalEcho/Models/APIMessageUsage.swift \
+            Tests/APIMessageUsageTests.swift \
+            -o "$RUNNER_TEMP/api-usage-tests"
+          "$RUNNER_TEMP/api-usage-tests"
+
       - name: Generate Xcode project
         working-directory: ios
         run: xcodegen generate

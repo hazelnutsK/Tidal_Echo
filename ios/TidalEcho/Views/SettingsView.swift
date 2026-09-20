@@ -1648,6 +1648,14 @@ private struct APIControlView: View {
 
     var body: some View {
         List {
+            Section {
+                Toggle("消息旁显示 API 用量", isOn: $model.showsAPIMessageUsage)
+            } header: {
+                Text("聊天显示")
+            } footer: {
+                Text("在每条 API 回复的时间后显示缓存命中率与美元花费。优先使用接口报价，估算费用标记为 ≈；没有数据时显示 —。")
+            }
+
             Section("API 接口") {
                 ForEach(presets) { preset in
                     Button { if !preset.active { pendingPreset = preset } } label: {

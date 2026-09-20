@@ -54,6 +54,16 @@ final class AppModel: ObservableObject {
     @Published var showsAIAvatar: Bool {
         didSet { UserDefaults.standard.set(showsAIAvatar, forKey: Keys.showsAIAvatar) }
     }
+    @Published var showsAPIMessageUsage: Bool {
+        didSet {
+            UserDefaults.standard.set(showsAPIMessageUsage, forKey: Keys.showsAPIMessageUsage)
+            if showsAPIMessageUsage {
+                Task { _ = try? await settingsLoopConfig() }
+            }
+        }
+    }
+    @Published private(set) var apiUsagePrices = APIUsagePrices()
+    @Published private(set) var apiUsageCacheTTL = "5m"
     @Published var aiBubbleOpacity: Double {
         didSet { UserDefaults.standard.set(aiBubbleOpacity, forKey: Keys.aiBubbleOpacity) }
     }
@@ -180,6 +190,7 @@ final class AppModel: ObservableObject {
         static let chatFont = "tidalEcho.chatFont"
         static let fontScale = "tidalEcho.fontScale"
         static let showsAIAvatar = "tidalEcho.showsAIAvatar"
+        static let showsAPIMessageUsage = "tidalEcho.showsAPIMessageUsage"
         static let bubbleOpacity = "tidalEcho.bubbleOpacity"
         static let aiBubbleOpacity = "tidalEcho.aiBubbleOpacity"
         static let humanBubbleOpacity = "tidalEcho.humanBubbleOpacity"
@@ -250,6 +261,7 @@ final class AppModel: ObservableObject {
         chatFont = EchoChatFont(rawValue: rawFont) ?? .system
         fontScale = defaults.object(forKey: Keys.fontScale) == nil ? 1 : defaults.double(forKey: Keys.fontScale)
         showsAIAvatar = defaults.object(forKey: Keys.showsAIAvatar) == nil ? true : defaults.bool(forKey: Keys.showsAIAvatar)
+        showsAPIMessageUsage = defaults.bool(forKey: Keys.showsAPIMessageUsage)
         let legacyBubbleOpacity = defaults.object(forKey: Keys.bubbleOpacity) == nil
             ? 1
             : defaults.double(forKey: Keys.bubbleOpacity)
@@ -1355,7 +1367,16 @@ final class AppModel: ObservableObject {
     }
 
     func settingsLoopConfig() async throws -> LoopConfigResponse {
-        try await requireClient().loopConfig()
+        let config = try await requireClient().loopConfig()
+        apiUsagePrices = config.prices
+        apiUsageCacheTTL = config.cacheTTL
+        return config
+    }
+
+    func apiUsageText(for message: ChatMessage) -> String? {
+        guard showsAPIMessageUsage, message.author == .ai, message.kind == "reply",
+              let api = message.meta.api, api.runtime == "api_loop" else { return nil }
+        return api.usage?.summary(prices: apiUsagePrices, cacheTTL: apiUsageCacheTTL)
     }
 
     func updateLoopModel(_ modelID: String, chainCount: Int) async throws -> LoopConfigResponse {
@@ -1490,6 +1511,7 @@ final class AppModel: ObservableObject {
             await catchUp(using: nextClient)
             await flushPendingCallDeclines()
             startHeartbeat()
+            if showsAPIMessageUsage { _ = try? await settingsLoopConfig() }
         } catch {
             client = nil
             if Self.isCancellation(error) {

@@ -226,6 +226,7 @@ struct MessageMeta: Decodable, Hashable {
     var reactions: [String: String]
     var hidden: Bool
     var apiSession: String?
+    var api: APIMessageUsage?
     var streamID: String?
     var sortAfter: Int?
     var starred: String?
@@ -250,7 +251,7 @@ struct MessageMeta: Decodable, Hashable {
     var replyDeferred: Bool
 
     enum CodingKeys: String, CodingKey {
-        case attachments
+        case attachments, api
         case reactions
         case hidden
         case apiSession = "api_session"
@@ -275,6 +276,7 @@ struct MessageMeta: Decodable, Hashable {
         self.reactions = reactions
         self.hidden = hidden
         self.apiSession = apiSession
+        self.api = nil
         self.streamID = streamID
         self.sortAfter = sortAfter
         self.starred = nil
@@ -312,6 +314,11 @@ struct MessageMeta: Decodable, Hashable {
         reactions = Self.lenient([String: String].self, values, .reactions) ?? [:]
         hidden = Self.lenient(Bool.self, values, .hidden) ?? false
         apiSession = Self.lenient(String.self, values, .apiSession)
+        api = Self.lenient(APIMessageUsage.self, values, .api)
+        if api == nil {
+            let legacyAPI = try? APIMessageUsage(from: decoder)
+            if legacyAPI?.runtime == "api_loop" { api = legacyAPI }
+        }
         streamID = Self.lenient(String.self, values, .streamID)
         sortAfter = Self.lenient(Int.self, values, .sortAfter)
         starred = Self.lenient(String.self, values, .starred)
@@ -587,12 +594,16 @@ struct LoopConfigResponse: Decodable {
     /// output_config.effort：API 身体的思考力度。旧版 relay 不吐这两个字段，按默认档走。
     let effort: String
     let effortLevels: [String]
+    let prices: APIUsagePrices
+    let cacheTTL: String
 
     enum CodingKeys: String, CodingKey {
         case mainChain = "main_chain"
         case apiPresets = "api_presets"
         case effort
         case effortLevels = "effort_levels"
+        case prices
+        case cacheTTL = "cache_ttl"
     }
 
     init(from decoder: Decoder) throws {
@@ -602,6 +613,8 @@ struct LoopConfigResponse: Decodable {
         effort = try values.decodeIfPresent(String.self, forKey: .effort) ?? "high"
         effortLevels = try values.decodeIfPresent([String].self, forKey: .effortLevels)
             ?? ["low", "medium", "high", "xhigh", "max"]
+        prices = (try? values.decode(APIUsagePrices.self, forKey: .prices)) ?? APIUsagePrices()
+        cacheTTL = (try? values.decode(String.self, forKey: .cacheTTL)) ?? "5m"
     }
 }
 

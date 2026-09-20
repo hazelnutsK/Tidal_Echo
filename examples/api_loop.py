@@ -619,6 +619,7 @@ def public_config() -> dict[str, Any]:
         "keepalive_enabled": keepalive_enabled(),
         "cache_ttl": CACHE_TTL,
         "mcp_url": MCP_URL,
+        "prices": usage_prices(),
         "mcp_tools": [t.get("name") for t in (MCP.tools if MCP else [])],
         "api_presets": presets_public(),
         "active_session": active_session_id(),
@@ -1275,6 +1276,12 @@ async def healthz():
 DEFAULT_PRICES = {"input": 15.0, "output": 75.0, "cache_read": 1.5, "cache_write_5m": 18.75, "cache_write_1h": 30.0}
 
 
+def usage_prices() -> dict[str, float]:
+    overrides = load_config().get("prices")
+    overrides = overrides if isinstance(overrides, dict) else {}
+    return {key: overrides.get(key, value) for key, value in DEFAULT_PRICES.items()}
+
+
 def usage_normalize(usage: dict[str, Any]) -> dict[str, int]:
     read = int(usage.get("cache_read_input_tokens") or 0)
     written = int(usage.get("cache_creation_input_tokens") or 0)
@@ -1288,8 +1295,7 @@ def usage_normalize(usage: dict[str, Any]) -> dict[str, int]:
 
 
 def usage_cost_usd(n: dict[str, int]) -> float:
-    cfg_prices = load_config().get("prices")
-    prices = {**DEFAULT_PRICES, **(cfg_prices if isinstance(cfg_prices, dict) else {})}
+    prices = usage_prices()
     write_price = prices["cache_write_1h"] if CACHE_TTL == "1h" else prices["cache_write_5m"]
     return (
         n["input"] * prices["input"]

@@ -106,6 +106,7 @@ struct MessageRow: View {
     let chatWeight: Double
     let peerName: String
     let showsTimestamp: Bool
+    let apiUsageText: String?
     let isGroupStart: Bool
     let showsAvatarHeader: Bool
     let isTail: Bool
@@ -374,6 +375,10 @@ struct MessageRow: View {
                                     Text(Self.formatTime(message.timestamp))
                                 }
                             }
+                        } else if let apiUsageText {
+                            Text("\(Self.formatTime(message.timestamp)) · \(apiUsageText)")
+                                .monospacedDigit()
+                                .fixedSize(horizontal: false, vertical: true)
                         } else if showsTimestamp && !isNest {
                             Text(Self.formatTime(message.timestamp))
                         }
@@ -441,9 +446,11 @@ struct MessageRow: View {
             ) { onReact(myReaction == "❤️" ? "" : "❤️") }
             HStack(spacing: 6) {
                 nestActionButton("arrow.clockwise", label: "重新生成", action: onRegenerate)
-                Text(Self.formatTime(message.timestamp))
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(palette.secondaryText.opacity(0.62))
+                if apiUsageText == nil {
+                    Text(Self.formatTime(message.timestamp))
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundStyle(palette.secondaryText.opacity(0.62))
+                }
             }
         }
         .font(.system(size: 14, weight: .regular))
@@ -665,6 +672,7 @@ struct MessageRow: View {
     }
 
     private var shouldShowMetaLine: Bool {
+        if apiUsageText != nil { return true }
         if showsTimestamp || message.meta.edited { return true }
         guard message.author == .human else { return false }
         switch message.delivery {

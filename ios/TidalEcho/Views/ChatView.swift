@@ -454,6 +454,7 @@ struct ChatView: View {
                             chatWeight: model.chatWeight,
                             peerName: model.peerDisplayName,
                             showsTimestamp: row.showsTimestamp,
+                            apiUsageText: model.apiUsageText(for: message),
                             isGroupStart: row.isGroupStart,
                             showsAvatarHeader: row.showsAvatarHeader,
                             isTail: model.chatMode == .short && model.bubbleStyle == .classic

@@ -89,7 +89,6 @@ struct IMessageComposerBar: View {
     let metrics: IMessageLayoutMetrics
     let palette: EchoPalette
     let font: Font
-    let fontSize: CGFloat
     let action: IMessageComposerAction
     let actionDisabled: Bool
     let sendLabel: String
@@ -124,14 +123,16 @@ struct IMessageComposerBar: View {
                 .accessibilityIdentifier("chat.add")
 
                 HStack(alignment: .bottom, spacing: 0) {
-                    TextField("和Altair说话…", text: $text, axis: .vertical)
+                    TextField("和Altair说话…", text: $text,
+                              prompt: Text("和Altair说话…").foregroundStyle(palette.secondaryText),
+                              axis: .vertical)
                         .lineLimit(1...4)
                         .font(font)
                         .foregroundStyle(palette.text)
                         .tint(palette.accent)
                         .focused(focus)
                         .padding(.leading, metrics.textInset)
-                        .padding(.vertical, max(5, (metrics.composerHeight - fontSize * 1.2) / 2))
+                        .padding(.vertical, 5)
                         .frame(minHeight: metrics.composerHeight)
                         .accessibilityIdentifier("chat.draft")
 
@@ -156,7 +157,6 @@ struct IMessageComposerBar: View {
                         .strokeBorder(.white.opacity(0.45), lineWidth: 0.6)
                         .allowsHitTesting(false)
                 }
-                .accessibilityIdentifier("chat.inputPill")
             }
         }
     }

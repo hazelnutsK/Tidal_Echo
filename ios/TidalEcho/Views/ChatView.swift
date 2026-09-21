@@ -2192,7 +2192,6 @@ private struct ComposerView: View {
                 size: Double(iMessageMetrics.composerFontSize) * model.fontScale,
                 numericWeight: model.chatWeight
             ),
-            fontSize: iMessageMetrics.composerFontSize * model.fontScale,
             action: iMessageAction,
             actionDisabled: model.isSendingBundledMessage || model.isUploadingVoice,
             sendLabel: sendButtonAccessibilityLabel,

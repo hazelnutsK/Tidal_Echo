@@ -34,8 +34,10 @@ final class IMessageLayoutUITests: XCTestCase {
         XCTAssertEqual(action.label, "录语音")
         capture("01-idle-reference-proportions")
 
-        let draft = app.textViews["chat.draft"]
+        let draft = app.textViews["chat.draft"].exists
+            ? app.textViews["chat.draft"] : app.textFields["chat.draft"]
         XCTAssertTrue(draft.exists)
+        XCTAssertLessThanOrEqual(draft.frame.height, add.frame.height + 2)
         draft.tap()
         draft.typeText("Hello Altair")
         XCTAssertEqual(action.label, "发送消息")
@@ -58,7 +60,8 @@ final class IMessageLayoutUITests: XCTestCase {
         XCTAssertTrue(app.buttons["照片"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["文件"].exists)
         capture("05-attachment-choices")
-        app.buttons["取消"].tap()
+        // iOS 26 presents this as a popover; tap the conversation to dismiss.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
         app.buttons["chat.add"].tap()
         app.buttons["表情包"].tap()
         XCTAssertTrue(app.staticTexts["颜文字"].waitForExistence(timeout: 5))

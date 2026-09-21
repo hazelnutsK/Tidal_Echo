@@ -115,6 +115,7 @@ jobs:
           retention-days: 14
 
       - name: Verify iMessage layout on iOS Simulator
+        timeout-minutes: 12
         working-directory: ios
         run: |
           set -euo pipefail
@@ -146,5 +147,16 @@ jobs:
           path: |
             ios/IMessageReview.xcresult
             ios/IMessageScreenshots
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload screenshots separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-imessage-screenshots
+          path: |
+            ios/IMessageScreenshots/*.png
+            ios/IMessageScreenshots/manifest.json
           if-no-files-found: ignore
           retention-days: 14

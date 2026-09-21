@@ -11,13 +11,13 @@ struct IMessageGlassBackground: UIViewRepresentable {
         let glass = UIGlassEffect(style: .clear)
         let view = UIVisualEffectView(effect: glass)
         view.isUserInteractionEnabled = false
-        view.layer.cornerCurve = .continuous
-        view.layer.cornerRadius = cornerRadius
-        view.clipsToBounds = true
+        // Describe the shape to the effect itself so its rim/refractive edges
+        // follow the pill; clipping a rectangular glass layer is insufficient.
+        view.cornerConfiguration = .corners(radius: .fixed(Double(cornerRadius)))
         return view
     }
 
     func updateUIView(_ view: UIVisualEffectView, context: Context) {
-        view.layer.cornerRadius = cornerRadius
+        view.cornerConfiguration = .corners(radius: .fixed(Double(cornerRadius)))
     }
 }

@@ -13,7 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Check out repository
@@ -26,6 +26,12 @@ jobs:
 
       - name: Install XcodeGen
         run: brew install xcodegen
+
+      - name: Start review simulator
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; ds=[d for devices in json.load(sys.stdin)["devices"].values() for d in devices if "iPhone" in d["name"]]; preferred=[d for d in ds if d["name"] == "iPhone 17 Pro"]; print((preferred or ds)[0]["udid"])')
+          echo "REVIEW_DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID" || true
 
       - name: Verify SSE framing and live delivery
         working-directory: ios
@@ -69,6 +75,27 @@ jobs:
             -derivedDataPath DerivedData-Simulator \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Capture native layout previews
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$REVIEW_DEVICE_ID" -b
+          xcrun simctl status_bar "$REVIEW_DEVICE_ID" override --time '11:48' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          xcrun simctl install "$REVIEW_DEVICE_ID" 'DerivedData-Simulator/Build/Products/Debug-iphonesimulator/Tidal Echo.app'
+          mkdir -p NativePreviews
+          for theme in mist harbor; do
+            SIMCTL_CHILD_REVIEW_THEME="$theme" xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --imessage-ui-review
+            sleep 4
+            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "NativePreviews/$theme.png"
+          done
+          xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
+
+      - name: Upload native previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-native-previews
+          path: ios/NativePreviews/*.png
 
       - name: Build unsigned device app
         working-directory: ios
@@ -115,17 +142,13 @@ jobs:
           retention-days: 14
 
       - name: Verify iMessage layout on iOS Simulator
-        timeout-minutes: 12
+        timeout-minutes: 20
         working-directory: ios
         run: |
           set -euo pipefail
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; ds=[d for devices in json.load(sys.stdin)["devices"].values() for d in devices if "iPhone" in d["name"]]; preferred=[d for d in ds if d["name"] == "iPhone 17 Pro"]; print((preferred or ds)[0]["udid"])')
-          xcrun simctl boot "$DEVICE_ID" || true
-          xcrun simctl bootstatus "$DEVICE_ID" -b
-          xcrun simctl status_bar "$DEVICE_ID" override --time '11:48' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
           xcodebuild \
             -project TidalEcho.xcodeproj -scheme TidalEcho \
-            -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE_ID" \
+            -configuration Debug -destination "platform=iOS Simulator,id=$REVIEW_DEVICE_ID" \
             -derivedDataPath DerivedData-Simulator \
             -resultBundlePath IMessageReview.xcresult \
             -parallel-testing-enabled NO \

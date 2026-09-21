@@ -39,10 +39,12 @@ final class IMessageLayoutUITests: XCTestCase {
         XCTAssertTrue(draft.exists)
         XCTAssertLessThanOrEqual(draft.frame.height, add.frame.height + 2)
         draft.tap()
-        draft.typeText("Hello Altair")
+        // A numeric draft avoids system autocorrection appending/replacing words
+        // while this test verifies the empty/nonempty action transition.
+        draft.typeText("1234567890")
         XCTAssertEqual(action.label, "发送消息")
         capture("02-keyboard-send-button")
-        draft.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
+        draft.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 10))
         XCTAssertEqual(action.label, "录语音")
         draft.typeText("One line\nTwo lines\nThree lines\nFour lines")
         XCTAssertGreaterThan(draft.frame.height, add.frame.height)

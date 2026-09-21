@@ -75,14 +75,32 @@ struct ChatView: View {
 
             GeometryReader { viewport in
                 ZStack(alignment: .top) {
-                    messageList
-                    topFog(safeAreaTop: viewport.safeAreaInsets.top)
-                    topBar
+                    let metrics = IMessageLayoutMetrics(viewportWidth: viewport.size.width)
+                    messageList(topInset: usesIMessageLayout
+                        ? viewport.safeAreaInsets.top + metrics.headerHeight
+                        : (isNest ? nestTopInset : 76))
+                        .zIndex(0)
+                    topFog(safeAreaTop: viewport.safeAreaInsets.top,
+                           headerHeight: usesIMessageLayout ? metrics.headerHeight : 55)
+                        .zIndex(1)
+                    if usesIMessageLayout {
+                        IMessageChatHeader(
+                            model: model, metrics: metrics,
+                            onSettings: { showingSettings = true },
+                            onTerminal: { showingTerminal = true },
+                            onSpaces: { showingSpaces = true },
+                            onSessions: { showingSessions = true }
+                        )
+                        .zIndex(2)
+                    } else {
+                        topBar.zIndex(2)
+                    }
 
                     VStack(spacing: 0) {
                         Spacer(minLength: 0)
                         ComposerView(
                             model: model,
+                            viewportWidth: viewport.size.width,
                             onShowSessions: { showingSessions = true }
                         )
                             .background {
@@ -94,6 +112,7 @@ struct ChatView: View {
                                 }
                             }
                     }
+                    .zIndex(3)
                 }
             }
 
@@ -226,24 +245,16 @@ struct ChatView: View {
     }
 
     private var topBar: some View {
-        Group {
-            if usesIMessageLayout {
-                GlassEffectContainer(spacing: 0) { topBarContent }
-            } else {
-                topBarContent
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 9)
-        .padding(.bottom, 8)
+        topBarContent
+            .padding(.horizontal, 16)
+            .padding(.top, 9)
+            .padding(.bottom, 8)
     }
 
     @ViewBuilder
     private var topBarContent: some View {
         HStack(spacing: 10) {
-            if usesIMessageLayout {
-                headerButton(icon: "slider.horizontal.3", size: 19) { showingSettings = true }
-            } else if isNest {
+            if isNest {
                 Button { showingSettings = true } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 16, weight: .medium))
@@ -266,12 +277,7 @@ struct ChatView: View {
                     .tint(palette.accent)
             }
 
-            if usesIMessageLayout {
-                HStack(spacing: 10) {
-                    headerButton(icon: "terminal", size: 19) { showingTerminal = true }
-                    headerButton(icon: "square.grid.2x2", size: 19) { showingSpaces = true }
-                }
-            } else if isNest {
+            if isNest {
                 HStack(spacing: 0) {
                     nestHeaderButton(icon: "terminal", size: 15) { showingTerminal = true }
                     Rectangle()
@@ -286,31 +292,6 @@ struct ChatView: View {
                     headerButton(icon: "terminal", size: 15) { showingTerminal = true }
                     headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
                 }
-            }
-        }
-        .overlay {
-            if usesIMessageLayout {
-                Button { showingSessions = true } label: {
-                    Group {
-                        if let image = model.aiAvatarImage {
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                        } else {
-                            Image("ClaudeMark")
-                                .resizable()
-                                .scaledToFit()
-                                .padding(12)
-                        }
-                    }
-                    .frame(width: 52, height: 52)
-                    .background { headerGlass(shape: Circle()) }
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(headerGlassRing, lineWidth: 0.8))
-                    .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("切换对话窗口")
             }
         }
     }
@@ -339,7 +320,7 @@ struct ChatView: View {
         return device + 55
     }
 
-    private func topFog(safeAreaTop: CGFloat) -> some View {
+    private func topFog(safeAreaTop: CGFloat, headerHeight: CGFloat) -> some View {
         ZStack {
             // One continuous field: lightly defocus below the header, then
             // dissolve toward the status bar. Stacked linear radius ramps
@@ -362,28 +343,20 @@ struct ChatView: View {
                     )
                 )
         }
-        .frame(height: safeAreaTop + 55 + 36)
+        .frame(height: safeAreaTop + headerHeight + 36)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
 
     @ViewBuilder
     private func headerGlass<S: InsettableShape>(shape: S) -> some View {
-        if usesIMessageLayout {
-            shape
-                .fill(Color.white.opacity(0.001))
-                .glassEffect(.clear.interactive(), in: shape)
-                .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
-                .shadow(color: headerShadowColor, radius: 9, y: 3)
-        } else {
-            ZStack {
-                VariableBackdropBlur(radius: 18, mask: .solid)
-                shape.fill(headerGlassTint)
-            }
-            .clipShape(shape)
-            .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
-            .shadow(color: headerShadowColor, radius: model.theme == .paper ? 10 : 11, y: 3.5)
+        ZStack {
+            VariableBackdropBlur(radius: 18, mask: .solid)
+            shape.fill(headerGlassTint)
         }
+        .clipShape(shape)
+        .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
+        .shadow(color: headerShadowColor, radius: model.theme == .paper ? 10 : 11, y: 3.5)
     }
 
     private func headerButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
@@ -391,7 +364,7 @@ struct ChatView: View {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(palette.text)
-                .frame(width: usesIMessageLayout ? 44 : 32, height: usesIMessageLayout ? 44 : 32)
+                .frame(width: 32, height: 32)
                 .background { headerGlass(shape: Circle()) }
         }
         .buttonStyle(.plain)
@@ -445,7 +418,7 @@ struct ChatView: View {
         }
     }
 
-    private var messageList: some View {
+    private func messageList(topInset: CGFloat) -> some View {
         ScrollViewReader { proxy in
             GeometryReader { viewport in
                 ScrollView {
@@ -651,7 +624,7 @@ struct ChatView: View {
                     }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    Color.clear.frame(height: isNest ? nestTopInset : 76)
+                    Color.clear.frame(height: topInset)
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     Color.clear.frame(height: composerHeight)
@@ -1925,6 +1898,7 @@ private struct ComposerHeightPreferenceKey: PreferenceKey {
 
 private struct ComposerView: View {
     @ObservedObject var model: AppModel
+    let viewportWidth: CGFloat
     let onShowSessions: () -> Void
     @StateObject private var recorder = VoiceRecorder()
     @StateObject private var kaomojiStore = KaomojiLibraryStore()
@@ -2009,6 +1983,18 @@ private struct ComposerView: View {
             }
 
             if usesIMessageLayout {
+                if !model.bundledMessageParts.isEmpty {
+                    Button { Task { await model.sendBundledMessages() } } label: {
+                        Label("让 AI 回复这 \(model.bundledMessageParts.count) 条", systemImage: "paperplane")
+                            .font(.footnote)
+                            .foregroundStyle(palette.text)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.regularMaterial, in: Capsule())
+                    }
+                    .disabled(model.isSendingBundledMessage || model.hasPendingBundledMessageUploads)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
                 iMessageComposer
             } else {
                 TextField(isNest ? "" : "和Altair说话…", text: $draftText, axis: .vertical)
@@ -2121,9 +2107,9 @@ private struct ComposerView: View {
         .background {
             if !usesIMessageLayout { composerContainerGlass }
         }
-        .padding(.horizontal, isNest ? 14 : 12)
-        .padding(.top, isNest ? 4 : 7)
-        .padding(.bottom, isNest ? 5 : 7)
+        .padding(.horizontal, usesIMessageLayout ? iMessageMetrics.composerInset : (isNest ? 14 : 12))
+        .padding(.top, usesIMessageLayout ? 6 : (isNest ? 4 : 7))
+        .padding(.bottom, usesIMessageLayout ? 4 : (isNest ? 5 : 7))
         .task { await loadBrain() }
         .onDisappear { recorder.cancel() }
         .onChange(of: photoItems) { items in
@@ -2186,80 +2172,54 @@ private struct ComposerView: View {
 
     private var usesIMessageLayout: Bool { model.chatLayoutStyle == .imessage }
 
+    private var iMessageMetrics: IMessageLayoutMetrics {
+        IMessageLayoutMetrics(viewportWidth: viewportWidth)
+    }
+
+    private var iMessageAction: IMessageComposerAction {
+        IMessageComposerAction(
+            hasContent: hasCurrentComposerContent,
+            isRecording: recorder.isRecording,
+            isSending: model.isSendingBundledMessage
+        )
+    }
+
     private var iMessageComposer: some View {
-        GlassEffectContainer(spacing: 0) {
-            HStack(alignment: .bottom, spacing: 10) {
-                Menu {
-                    Menu {
-                        Button { presentCamera() } label: { Label("相机", systemImage: "camera") }
-                        Button { presentPhotoPicker() } label: { Label("照片", systemImage: "photo") }
-                        Button { presentFileImporter(types: [.item]) } label: { Label("文件", systemImage: "doc") }
-                        Button { presentFileImporter(types: [.audio]) } label: { Label("音乐", systemImage: "music.note") }
-                    } label: {
-                        Label("添加附件", systemImage: "paperclip")
-                    }
-                    .disabled(model.isUploading)
-                    Button { showingKaomojiDrawer = true } label: {
-                        Label("表情包", systemImage: "face.smiling")
-                    }
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 25, weight: .light))
-                        .foregroundStyle(palette.text)
-                        .frame(width: 48, height: 48)
-                        .contentShape(Circle())
+        IMessageComposerBar(
+            text: $draftText, focus: $isDraftFocused,
+            metrics: iMessageMetrics, palette: palette,
+            font: model.chatFont.font(
+                size: Double(iMessageMetrics.composerFontSize) * model.fontScale,
+                numericWeight: model.chatWeight
+            ),
+            fontSize: iMessageMetrics.composerFontSize * model.fontScale,
+            action: iMessageAction,
+            actionDisabled: model.isSendingBundledMessage || model.isUploadingVoice,
+            sendLabel: sendButtonAccessibilityLabel,
+            sendHint: sendButtonAccessibilityHint,
+            uploading: model.isUploading,
+            onAttachments: {
+                isDraftFocused = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showingAttachmentMenu = true
                 }
-                .buttonStyle(.plain)
-                .glassEffect(.clear.interactive(), in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(model.theme == .harbor ? 0.28 : 0.72), lineWidth: 0.8))
-                .accessibilityLabel("添加附件或表情包")
-
-                HStack(alignment: .bottom, spacing: 4) {
-                    TextField("和Altair说话…", text: $draftText, axis: .vertical)
-                        .lineLimit(1...4)
-                        .font(model.chatFont.font(
-                            size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
-                            numericWeight: model.chatWeight
-                        ))
-                        .foregroundStyle(palette.text)
-                        .focused($isDraftFocused)
-                        .padding(.leading, 17)
-                        .padding(.vertical, 10)
-                        .frame(minHeight: 48)
-
-                    Button {
-                        if canSend { send() } else { toggleRecording() }
-                    } label: {
-                        Group {
-                            if model.isSendingBundledMessage {
-                                ProgressView().controlSize(.small).tint(palette.accent)
-                            } else {
-                                Image(systemName: canSend ? "arrow.up.circle.fill" : (recorder.isRecording ? "stop.fill" : "waveform"))
-                                    .font(.system(size: canSend ? 29 : 21, weight: .medium))
-                                    .foregroundStyle(recorder.isRecording && !canSend ? Color.red : (canSend ? palette.accent : palette.text))
-                            }
-                        }
-                        .frame(width: 40, height: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(model.isSendingBundledMessage || (!canSend && model.isUploadingVoice))
-                    .accessibilityLabel(canSend ? sendButtonAccessibilityLabel : (recorder.isRecording ? "停止录音" : "录语音"))
-                    .accessibilityHint(canSend ? sendButtonAccessibilityHint : "开始录制语音")
-                    .padding(.trailing, 5)
-                    .padding(.bottom, 2)
+            },
+            onFaces: {
+                isDraftFocused = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    showingKaomojiDrawer = true
                 }
-                .background {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .fill(Color.white.opacity(0.001))
-                        .glassEffect(.clear.tint(palette.composer.opacity(0.14)), in: .rect(cornerRadius: 26))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 26, style: .continuous)
-                                .stroke(Color.white.opacity(model.theme == .harbor ? 0.28 : 0.72), lineWidth: 0.8)
-                        }
+            },
+            onAction: {
+                switch iMessageAction {
+                case .send: send()
+                case .voice, .stopRecording:
+                    isDraftFocused = false
+                    toggleRecording()
+                case .sending: break
                 }
             }
-        }
+        )
     }
 
     @ViewBuilder

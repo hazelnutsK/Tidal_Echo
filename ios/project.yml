@@ -67,6 +67,20 @@ targets:
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
     scheme:
       gatherCoverageData: false
+      testTargets:
+        - TidalEchoUITests
+
+  TidalEchoUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: TidalEcho
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tidalecho.personal.uitests
+        GENERATE_INFOPLIST_FILE: YES
 
   TidalEchoScreenShareUpload:
     type: app-extension

@@ -36,6 +36,7 @@ struct ChatView: View {
 
     private var palette: EchoPalette { model.theme.palette }
     private var isNest: Bool { model.theme == .nest }
+    private var usesIMessageLayout: Bool { model.chatLayoutStyle == .imessage }
     private var usesUpperTailAvatarLayout: Bool {
         guard model.showsAIAvatar,
               model.showsHumanAvatar,
@@ -225,7 +226,13 @@ struct ChatView: View {
     }
 
     private var topBar: some View {
-        topBarContent
+        Group {
+            if usesIMessageLayout {
+                GlassEffectContainer(spacing: 0) { topBarContent }
+            } else {
+                topBarContent
+            }
+        }
         .padding(.horizontal, 16)
         .padding(.top, 9)
         .padding(.bottom, 8)
@@ -234,7 +241,9 @@ struct ChatView: View {
     @ViewBuilder
     private var topBarContent: some View {
         HStack(spacing: 10) {
-            if isNest {
+            if usesIMessageLayout {
+                headerButton(icon: "slider.horizontal.3", size: 19) { showingSettings = true }
+            } else if isNest {
                 Button { showingSettings = true } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 16, weight: .medium))
@@ -257,7 +266,12 @@ struct ChatView: View {
                     .tint(palette.accent)
             }
 
-            if isNest {
+            if usesIMessageLayout {
+                HStack(spacing: 10) {
+                    headerButton(icon: "terminal", size: 19) { showingTerminal = true }
+                    headerButton(icon: "square.grid.2x2", size: 19) { showingSpaces = true }
+                }
+            } else if isNest {
                 HStack(spacing: 0) {
                     nestHeaderButton(icon: "terminal", size: 15) { showingTerminal = true }
                     Rectangle()
@@ -272,6 +286,31 @@ struct ChatView: View {
                     headerButton(icon: "terminal", size: 15) { showingTerminal = true }
                     headerButton(icon: "square.grid.2x2", size: 16) { showingSpaces = true }
                 }
+            }
+        }
+        .overlay {
+            if usesIMessageLayout {
+                Button { showingSessions = true } label: {
+                    Group {
+                        if let image = model.aiAvatarImage {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Image("ClaudeMark")
+                                .resizable()
+                                .scaledToFit()
+                                .padding(12)
+                        }
+                    }
+                    .frame(width: 52, height: 52)
+                    .background { headerGlass(shape: Circle()) }
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(headerGlassRing, lineWidth: 0.8))
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("切换对话窗口")
             }
         }
     }
@@ -330,13 +369,21 @@ struct ChatView: View {
 
     @ViewBuilder
     private func headerGlass<S: InsettableShape>(shape: S) -> some View {
-        ZStack {
-            VariableBackdropBlur(radius: 18, mask: .solid)
-            shape.fill(headerGlassTint)
+        if usesIMessageLayout {
+            shape
+                .fill(Color.white.opacity(0.001))
+                .glassEffect(.clear.interactive(), in: shape)
+                .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
+                .shadow(color: headerShadowColor, radius: 9, y: 3)
+        } else {
+            ZStack {
+                VariableBackdropBlur(radius: 18, mask: .solid)
+                shape.fill(headerGlassTint)
+            }
+            .clipShape(shape)
+            .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
+            .shadow(color: headerShadowColor, radius: model.theme == .paper ? 10 : 11, y: 3.5)
         }
-        .clipShape(shape)
-        .overlay(shape.stroke(headerGlassRing, lineWidth: 0.65))
-        .shadow(color: headerShadowColor, radius: model.theme == .paper ? 10 : 11, y: 3.5)
     }
 
     private func headerButton(icon: String, size: CGFloat, action: @escaping () -> Void) -> some View {
@@ -344,7 +391,7 @@ struct ChatView: View {
             Image(systemName: icon)
                 .font(.system(size: size, weight: .medium))
                 .foregroundStyle(palette.text)
-                .frame(width: 32, height: 32)
+                .frame(width: usesIMessageLayout ? 44 : 32, height: usesIMessageLayout ? 44 : 32)
                 .background { headerGlass(shape: Circle()) }
         }
         .buttonStyle(.plain)
@@ -1961,113 +2008,119 @@ private struct ComposerView: View {
                 }
             }
 
-            TextField(isNest ? "" : "和Altair说话…", text: $draftText, axis: .vertical)
-                .lineLimit(1...(isNest ? 4 : 5))
-                .font(model.chatFont.font(
-                    size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
-                    numericWeight: model.chatWeight
-                ))
-                .foregroundStyle(palette.text)
-                .overlay(alignment: .topLeading) {
-                    // ChatNest writes its prompt in the UI sans, never the serif body face.
-                    if isNest && draftText.isEmpty {
-                        Text("Reply to Claude")
-                            .font(.system(size: 16 * model.fontScale, weight: .regular))
-                            .foregroundStyle(palette.secondaryText.opacity(0.8))
-                            .allowsHitTesting(false)
-                    }
-                }
-                .padding(.horizontal, 4)
-                .padding(.top, isNest ? 1 : 3)
-                .padding(.bottom, isNest ? 0 : 2)
-                .focused($isDraftFocused)
-
-            HStack(alignment: .center, spacing: isNest ? 6 : 7) {
-                Button { showingAttachmentMenu = true } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(composerAuxiliaryForeground)
-                        .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
-                        .background { composerAuxiliaryChrome(Circle()) }
-                }
-                .disabled(model.isUploading)
-
-                Button { showingKaomojiDrawer = true } label: {
-                    Image(systemName: "face.smiling")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(composerAuxiliaryForeground)
-                        .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
-                        .background { composerAuxiliaryChrome(Circle()) }
-                }
-                .accessibilityLabel("打开颜文字抽屉")
-
-                Button(action: onShowSessions) {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(model.isStreamConnected ? Color.green.opacity(0.86) : palette.secondaryText.opacity(0.72))
-                            .frame(width: 6, height: 6)
-                        Text(brainLabel)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.9)
-                            .layoutPriority(1)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(palette.secondaryText)
-                    }
+            if usesIMessageLayout {
+                iMessageComposer
+            } else {
+                TextField(isNest ? "" : "和Altair说话…", text: $draftText, axis: .vertical)
+                    .lineLimit(1...(isNest ? 4 : 5))
+                    .font(model.chatFont.font(
+                        size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
+                        numericWeight: model.chatWeight
+                    ))
                     .foregroundStyle(palette.text)
-                    .padding(.horizontal, isNest ? 11 : 10)
-                    .frame(height: isNest ? 32 : 35)
-                    .background { composerAuxiliaryChrome(Capsule(), opacity: 0.86) }
-                    .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .layoutPriority(1)
-                .accessibilityLabel(
-                    "对话窗口，当前身体 \(brainLabel)，\(model.isStreamConnected ? "在线" : "离线")"
-                )
+                    .overlay(alignment: .topLeading) {
+                        // ChatNest writes its prompt in the UI sans, never the serif body face.
+                        if isNest && draftText.isEmpty {
+                            Text("Reply to Claude")
+                                .font(.system(size: 16 * model.fontScale, weight: .regular))
+                                .foregroundStyle(palette.secondaryText.opacity(0.8))
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.top, isNest ? 1 : 3)
+                    .padding(.bottom, isNest ? 0 : 2)
+                    .focused($isDraftFocused)
 
-                Spacer(minLength: 0)
+                HStack(alignment: .center, spacing: isNest ? 6 : 7) {
+                    Button { showingAttachmentMenu = true } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(composerAuxiliaryForeground)
+                            .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
+                            .background { composerAuxiliaryChrome(Circle()) }
+                    }
+                    .disabled(model.isUploading)
 
-                Button {
-                    toggleRecording()
-                } label: {
-                    Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(recorder.isRecording ? Color.white : composerAuxiliaryForeground)
-                        .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
-                        .background {
-                            if recorder.isRecording {
-                                Circle().fill(Color.red.opacity(0.82))
+                    Button { showingKaomojiDrawer = true } label: {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(composerAuxiliaryForeground)
+                            .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
+                            .background { composerAuxiliaryChrome(Circle()) }
+                    }
+                    .accessibilityLabel("打开颜文字抽屉")
+
+                    Button(action: onShowSessions) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(model.isStreamConnected ? Color.green.opacity(0.86) : palette.secondaryText.opacity(0.72))
+                                .frame(width: 6, height: 6)
+                            Text(brainLabel)
+                                .font(.system(size: 13, weight: .semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.9)
+                                .layoutPriority(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(palette.secondaryText)
+                        }
+                        .foregroundStyle(palette.text)
+                        .padding(.horizontal, isNest ? 11 : 10)
+                        .frame(height: isNest ? 32 : 35)
+                        .background { composerAuxiliaryChrome(Capsule(), opacity: 0.86) }
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .layoutPriority(1)
+                    .accessibilityLabel(
+                        "对话窗口，当前身体 \(brainLabel)，\(model.isStreamConnected ? "在线" : "离线")"
+                    )
+
+                    Spacer(minLength: 0)
+
+                    Button {
+                        toggleRecording()
+                    } label: {
+                        Image(systemName: recorder.isRecording ? "stop.fill" : "mic.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(recorder.isRecording ? Color.white : composerAuxiliaryForeground)
+                            .frame(width: isNest ? 32 : 35, height: isNest ? 32 : 35)
+                            .background {
+                                if recorder.isRecording {
+                                    Circle().fill(Color.red.opacity(0.82))
+                                } else {
+                                    composerAuxiliaryChrome(Circle())
+                                }
+                            }
+                    }
+                    .disabled(model.isUploadingVoice)
+
+                    Button {
+                        send()
+                    } label: {
+                        Group {
+                            if model.isSendingBundledMessage {
+                                ProgressView().controlSize(.small).tint(composerSendForeground)
                             } else {
-                                composerAuxiliaryChrome(Circle())
+                                Image(systemName: sendButtonIcon)
+                                    .font(.system(size: isNest ? 17 : 16, weight: isNest ? .semibold : .bold))
                             }
                         }
-                }
-                .disabled(model.isUploadingVoice)
-
-                Button {
-                    send()
-                } label: {
-                    Group {
-                        if model.isSendingBundledMessage {
-                            ProgressView().controlSize(.small).tint(composerSendForeground)
-                        } else {
-                            Image(systemName: sendButtonIcon)
-                                .font(.system(size: isNest ? 17 : 16, weight: isNest ? .semibold : .bold))
-                        }
+                        .foregroundStyle(composerSendForeground.opacity(canSend ? 1 : 0.72))
+                        .frame(width: isNest ? 33 : 36, height: isNest ? 33 : 36)
+                        .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
                     }
-                    .foregroundStyle(composerSendForeground.opacity(canSend ? 1 : 0.72))
-                    .frame(width: isNest ? 33 : 36, height: isNest ? 33 : 36)
-                    .background(composerSendBackground.opacity(canSend ? 1 : 0.34), in: Circle())
+                    .disabled(!canSend)
+                    .accessibilityLabel(sendButtonAccessibilityLabel)
+                    .accessibilityHint(sendButtonAccessibilityHint)
                 }
-                .disabled(!canSend)
-                .accessibilityLabel(sendButtonAccessibilityLabel)
-                .accessibilityHint(sendButtonAccessibilityHint)
             }
         }
-        .padding(isNest ? 13 : 10)
-        .background { composerContainerGlass }
+        .padding(usesIMessageLayout ? 0 : (isNest ? 13 : 10))
+        .background {
+            if !usesIMessageLayout { composerContainerGlass }
+        }
         .padding(.horizontal, isNest ? 14 : 12)
         .padding(.top, isNest ? 4 : 7)
         .padding(.bottom, isNest ? 5 : 7)
@@ -2128,6 +2181,84 @@ private struct ComposerView: View {
             Button("取消", role: .cancel) {}
         } message: {
             Text("请在系统设置中允许 Tidal Echo 使用相机。")
+        }
+    }
+
+    private var usesIMessageLayout: Bool { model.chatLayoutStyle == .imessage }
+
+    private var iMessageComposer: some View {
+        GlassEffectContainer(spacing: 0) {
+            HStack(alignment: .bottom, spacing: 10) {
+                Menu {
+                    Menu {
+                        Button { presentCamera() } label: { Label("相机", systemImage: "camera") }
+                        Button { presentPhotoPicker() } label: { Label("照片", systemImage: "photo") }
+                        Button { presentFileImporter(types: [.item]) } label: { Label("文件", systemImage: "doc") }
+                        Button { presentFileImporter(types: [.audio]) } label: { Label("音乐", systemImage: "music.note") }
+                    } label: {
+                        Label("添加附件", systemImage: "paperclip")
+                    }
+                    .disabled(model.isUploading)
+                    Button { showingKaomojiDrawer = true } label: {
+                        Label("表情包", systemImage: "face.smiling")
+                    }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 25, weight: .light))
+                        .foregroundStyle(palette.text)
+                        .frame(width: 48, height: 48)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .glassEffect(.clear.interactive(), in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(model.theme == .harbor ? 0.28 : 0.72), lineWidth: 0.8))
+                .accessibilityLabel("添加附件或表情包")
+
+                HStack(alignment: .bottom, spacing: 4) {
+                    TextField("和Altair说话…", text: $draftText, axis: .vertical)
+                        .lineLimit(1...4)
+                        .font(model.chatFont.font(
+                            size: PWAChatMetrics.composerFontSize(for: model.chatFont) * model.fontScale,
+                            numericWeight: model.chatWeight
+                        ))
+                        .foregroundStyle(palette.text)
+                        .focused($isDraftFocused)
+                        .padding(.leading, 17)
+                        .padding(.vertical, 10)
+                        .frame(minHeight: 48)
+
+                    Button {
+                        if canSend { send() } else { toggleRecording() }
+                    } label: {
+                        Group {
+                            if model.isSendingBundledMessage {
+                                ProgressView().controlSize(.small).tint(palette.accent)
+                            } else {
+                                Image(systemName: canSend ? "arrow.up.circle.fill" : (recorder.isRecording ? "stop.fill" : "waveform"))
+                                    .font(.system(size: canSend ? 29 : 21, weight: .medium))
+                                    .foregroundStyle(recorder.isRecording && !canSend ? Color.red : (canSend ? palette.accent : palette.text))
+                            }
+                        }
+                        .frame(width: 40, height: 44)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isSendingBundledMessage || (!canSend && model.isUploadingVoice))
+                    .accessibilityLabel(canSend ? sendButtonAccessibilityLabel : (recorder.isRecording ? "停止录音" : "录语音"))
+                    .accessibilityHint(canSend ? sendButtonAccessibilityHint : "开始录制语音")
+                    .padding(.trailing, 5)
+                    .padding(.bottom, 2)
+                }
+                .background {
+                    RoundedRectangle(cornerRadius: 26, style: .continuous)
+                        .fill(Color.white.opacity(0.001))
+                        .glassEffect(.clear.tint(palette.composer.opacity(0.14)), in: .rect(cornerRadius: 26))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                .stroke(Color.white.opacity(model.theme == .harbor ? 0.28 : 0.72), lineWidth: 0.8)
+                        }
+                }
+            }
         }
     }
 

@@ -11,6 +11,19 @@ enum DeliveryState: Hashable {
     case failed
 }
 
+enum ChatLayoutStyle: String, CaseIterable, Identifiable {
+    case classic
+    case imessage
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .classic: return "经典"
+        case .imessage: return "仿 iMessage"
+        }
+    }
+}
+
 enum EchoBubbleStyle: String, Codable, CaseIterable, Identifiable {
     case classic
     case frosted

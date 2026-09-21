@@ -589,6 +589,18 @@ private struct AppearanceSettingsView: View {
                 }
             }
 
+            Section("聊天布局") {
+                Picker("布局", selection: $model.chatLayoutStyle) {
+                    ForEach(ChatLayoutStyle.allCases) { style in
+                        Text(style.title).tag(style)
+                    }
+                }
+                .pickerStyle(.segmented)
+                Text("仿 iMessage：顶部头像切换窗口，底部加号打开附件与表情包。")
+                    .font(.footnote)
+                    .foregroundStyle(palette.secondaryText)
+            }
+
             Section("文字") {
                 Picker("聊天字体", selection: $model.chatFont) {
                     ForEach(EchoChatFont.allCases) { font in

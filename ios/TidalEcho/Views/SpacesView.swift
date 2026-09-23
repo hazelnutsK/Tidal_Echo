@@ -56,6 +56,10 @@ struct SpacesView: View {
                             .tracking(1.2)
                             .foregroundStyle(palette.secondaryText)
 
+                        SpaceLink(title: "他的记忆", subtitle: "Altair 记住的那些事", icon: "brain.head.profile", color: .indigo, unreadCount: 0) {
+                            MemoryVaultView(model: model)
+                        }
+
                         DesireCard(
                             state: desire,
                             enabled: $desireEnabled,

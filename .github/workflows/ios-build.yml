@@ -104,7 +104,7 @@ jobs:
           set -euo pipefail
           mkdir -p SpacePreviews
           for theme in mist harbor; do
-            for page in home moments journal stars album gifts calendar memory; do
+            for page in home moments journal stars album gifts calendar books memory; do
               SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_SPACE_PAGE="$page"                 xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --space-ui-review
               sleep 4
               xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-$page.png"

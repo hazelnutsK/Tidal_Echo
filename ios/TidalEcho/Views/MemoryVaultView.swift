@@ -24,6 +24,9 @@ struct OmbreMemory: Decodable, Identifiable, Hashable {
     let whyRemembered: String
     let created: String
     let lastActive: String
+    /// 解析一次存着：列表排序、分月、日期数字都用它，滚动时不再反复建 DateFormatter。
+    let createdAt: Date?
+    let lastActiveAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, name, type, content, preview, domains, tags, importance, valence, arousal, pinned, resolved, created
@@ -50,6 +53,8 @@ struct OmbreMemory: Decodable, Identifiable, Hashable {
         whyRemembered = (try? c.decode(String.self, forKey: .whyRemembered)) ?? ""
         created = (try? c.decode(String.self, forKey: .created)) ?? ""
         lastActive = (try? c.decode(String.self, forKey: .lastActive)) ?? ""
+        createdAt = ombreDate(created)
+        lastActiveAt = ombreDate(lastActive)
     }
 
     var isFeel: Bool { type.lowercased() == "feel" }
@@ -61,7 +66,7 @@ struct OmbreMemory: Decodable, Identifiable, Hashable {
     var displayTitle: String {
         let trimmed = cleanedName
         if isFeel || trimmed.isEmpty || trimmed == id {
-            return "感受 · " + ombreShortDate(created)
+            return "感受 · " + ombreShortDate(createdAt)
         }
         return trimmed
     }
@@ -134,38 +139,59 @@ private func ombreTypeLabel(_ type: String) -> String {
     }
 }
 
-private func ombreDate(_ value: String) -> Date? {
-    guard !value.isEmpty else { return nil }
-    let iso = ISO8601DateFormatter()
-    iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = iso.date(from: value) { return date }
-    iso.formatOptions = [.withInternetDateTime]
-    if let date = iso.date(from: value) { return date }
+/// 格式器只建一次。以前每解析一个日期都新建好几个，三百多条一排序就是上万个，滚动卡死。
+private enum OmbreFormat {
+    static let isoFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    static let iso = ISO8601DateFormatter()
 
     // ombre 的 created/last_active 不带时区，实际是 UTC（Zeabur 服务器时间）。
     // 对照过正文：9-09 那条写着「傍晚」，created 是 09:37 → 北京 17:37。
-    let parser = DateFormatter()
-    parser.locale = Locale(identifier: "en_US_POSIX")
-    parser.timeZone = TimeZone(secondsFromGMT: 0)
-    for format in ["yyyy-MM-dd'T'HH:mm:ss.SSSSSS", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd"] {
+    static let naive: [DateFormatter] = [
+        "yyyy-MM-dd'T'HH:mm:ss.SSSSSS", "yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd"
+    ].map { format in
+        let parser = DateFormatter()
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
         parser.dateFormat = format
+        return parser
+    }
+
+    static func beijing(_ format: String, locale: String = "zh_Hans_CN") -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: locale)
+        formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        formatter.dateFormat = format
+        return formatter
+    }
+
+    static let monthDay = beijing("M月d日")
+    static let yearMonthDay = beijing("yyyy年M月d日")
+    static let clock = beijing("h:mm", locale: "en_US_POSIX")
+    static let thisYear = SpaceMonth.beijing.component(.year, from: Date())
+}
+
+private func ombreDate(_ value: String) -> Date? {
+    guard !value.isEmpty else { return nil }
+    if let date = OmbreFormat.isoFractional.date(from: value) { return date }
+    if let date = OmbreFormat.iso.date(from: value) { return date }
+    for parser in OmbreFormat.naive {
         if let date = parser.date(from: value) { return date }
     }
     return nil
 }
 
-private func ombreShortDate(_ value: String) -> String {
-    guard let date = ombreDate(value) else { return "" }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_Hans_CN")
-    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
-    let sameYear = SpaceMonth.beijing.component(.year, from: date) == SpaceMonth.beijing.component(.year, from: Date())
-    formatter.dateFormat = sameYear ? "M月d日" : "yyyy年M月d日"
-    return formatter.string(from: date)
+private func ombreShortDate(_ date: Date?) -> String {
+    guard let date else { return "" }
+    let sameYear = SpaceMonth.beijing.component(.year, from: date) == OmbreFormat.thisYear
+    return (sameYear ? OmbreFormat.monthDay : OmbreFormat.yearMonthDay).string(from: date)
 }
 
-private func ombreLongDate(_ value: String) -> String {
-    guard let date = ombreDate(value) else { return "—" }
+private func ombreLongDate(_ date: Date?) -> String {
+    guard let date else { return "—" }
     let hour = SpaceMonth.beijing.component(.hour, from: date)
     let part: String
     switch hour {
@@ -175,15 +201,7 @@ private func ombreLongDate(_ value: String) -> String {
     case 13..<18: part = "下午"
     default: part = "晚上"
     }
-    let formatter = DateFormatter()
-    formatter.locale = Locale(identifier: "zh_Hans_CN")
-    formatter.timeZone = TimeZone(identifier: "Asia/Shanghai")
-    formatter.dateFormat = "yyyy年M月d日"
-    let clock = DateFormatter()
-    clock.locale = Locale(identifier: "en_US_POSIX")
-    clock.timeZone = TimeZone(identifier: "Asia/Shanghai")
-    clock.dateFormat = "h:mm"
-    return "\(formatter.string(from: date)) \(part) \(clock.string(from: date))"
+    return "\(OmbreFormat.yearMonthDay.string(from: date)) \(part) \(OmbreFormat.clock.string(from: date))"
 }
 
 @MainActor
@@ -204,6 +222,36 @@ private func ombreFetch<T: Decodable>(_ model: AppModel, path: String, query: [U
     return try JSONDecoder().decode(T.self, from: data)
 }
 
+/// 列表排好的样子。只在数据回来时算一次，别放进 body 里现算——
+/// scrollPosition 每滚过一行就会让 body 重跑，现算会把主线程拖死。
+private struct MemoryLayout {
+    var showsPins = false
+    var pins: [OmbreMemory] = []
+    var rows: [MemoryRow] = []
+    var months: [SpaceMonth] = []
+
+    init() {}
+
+    init(items: [OmbreMemory], separatePins: Bool) {
+        pins = items.filter(\.pinned)
+        showsPins = separatePins && !pins.isEmpty
+        let listed = showsPins ? items.filter { !$0.pinned } : items
+        let sorted = listed.sorted { ($0.createdAt ?? .distantPast) > ($1.createdAt ?? .distantPast) }
+        var current: SpaceMonth?
+        for memory in sorted {
+            let month = SpaceMonth(date: memory.createdAt ?? Date())
+            var first = false
+            if month != current {
+                current = month
+                rows.append(.header(month))
+                months.append(month)
+                first = true
+            }
+            rows.append(.memory(memory, month, first))
+        }
+    }
+}
+
 private enum MemoryRow: Identifiable {
     case header(SpaceMonth)
     case memory(OmbreMemory, SpaceMonth, Bool)
@@ -219,6 +267,7 @@ private enum MemoryRow: Identifiable {
 struct MemoryVaultView: View {
     @ObservedObject var model: AppModel
     @State private var items: [OmbreMemory] = []
+    @State private var layout = MemoryLayout()
     @State private var status: OmbreStatus?
     @State private var filter: OmbreFilter = .all
     @State private var query = ""
@@ -235,33 +284,11 @@ struct MemoryVaultView: View {
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var literary: EchoChatFont { SpaceStyle.literaryFont(for: model.chatFont) }
 
-    private var showsPins: Bool { filter == .all && trimmedQuery.isEmpty && !pins.isEmpty }
-    private var pins: [OmbreMemory] { items.filter(\.pinned) }
-
-    private var rows: [MemoryRow] {
-        let listed = showsPins ? items.filter { !$0.pinned } : items
-        let sorted = listed.sorted { (ombreDate($0.created) ?? .distantPast) > (ombreDate($1.created) ?? .distantPast) }
-        var result: [MemoryRow] = []
-        var current: SpaceMonth?
-        for memory in sorted {
-            let month = SpaceMonth(date: ombreDate(memory.created) ?? Date())
-            var first = false
-            if month != current {
-                current = month
-                result.append(.header(month))
-                first = true
-            }
-            result.append(.memory(memory, month, first))
-        }
-        return result
-    }
-
-    private var months: [SpaceMonth] {
-        rows.compactMap { row in
-            if case .header(let month) = row { return month }
-            return nil
-        }
-    }
+    private var showsPins: Bool { layout.showsPins }
+    private var pins: [OmbreMemory] { layout.pins }
+    private var rows: [MemoryRow] { layout.rows }
+    private var months: [SpaceMonth] { layout.months }
+    private let thisYear = SpaceMonth(date: Date()).year
 
     var body: some View {
         ScrollView {
@@ -311,7 +338,7 @@ struct MemoryVaultView: View {
                         ForEach(rows) { row in
                             switch row {
                             case .header(let month):
-                                SpaceMonthHeader(month: month, style: style, showsYear: month.year != SpaceMonth(date: Date()).year)
+                                SpaceMonthHeader(month: month, style: style, showsYear: month.year != thisYear)
                             case .memory(let memory, _, let first):
                                 NavigationLink {
                                     MemoryDetailView(model: model, memory: memory)
@@ -346,7 +373,7 @@ struct MemoryVaultView: View {
             }
         }
         .spacePage(style)
-        .navigationTitle("他的记忆")
+        .navigationTitle("Memory")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task(id: "\(filter.rawValue)|\(trimmedQuery)") {
@@ -454,6 +481,7 @@ struct MemoryVaultView: View {
     private func load() async {
         if SpaceReview.isActive {
             items = MemoryReviewSamples.items
+            layout = MemoryLayout(items: items, separatePins: filter == .all && trimmedQuery.isEmpty)
             status = MemoryReviewSamples.status
             isLoading = false
             return
@@ -461,6 +489,7 @@ struct MemoryVaultView: View {
         isLoading = true
         defer { isLoading = false }
         let search = trimmedQuery
+        let separatePins = filter == .all && search.isEmpty
         do {
             let response: OmbreListResponse
             if search.isEmpty {
@@ -469,11 +498,13 @@ struct MemoryVaultView: View {
                 response = try await ombreFetch(model, path: "search", query: [URLQueryItem(name: "q", value: search)])
             }
             if Task.isCancelled { return }
-            withAnimation(.easeOut(duration: 0.2)) { items = response.items }
+            items = response.items
+            layout = MemoryLayout(items: response.items, separatePins: separatePins)
             errorText = nil
         } catch {
             if Task.isCancelled { return }
             items = []
+            layout = MemoryLayout()
             errorText = error.localizedDescription
             status = nil
             return
@@ -504,7 +535,7 @@ private struct PinnedMemoryCard: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             HStack {
-                Text(ombreShortDate(memory.created))
+                Text(ombreShortDate(memory.createdAt))
                 Spacer(minLength: 4)
                 if memory.activationCount > 0 {
                     Text("想起 \(memory.activationCount) 次")
@@ -575,7 +606,7 @@ private struct MemoryRowView: View {
     }
 
     private var dayNumber: String {
-        guard let date = ombreDate(memory.created) else { return "" }
+        guard let date = memory.createdAt else { return "" }
         return String(format: "%02d", SpaceMonth.beijing.component(.day, from: date))
     }
 }
@@ -603,7 +634,7 @@ private struct MemoryDetailView: View {
                         .font(literary.font(size: 24, weight: .semibold))
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("记于 \(ombreLongDate(shown.created))")
+                    Text("记于 \(ombreLongDate(shown.createdAt))")
                         .font(.system(size: 12.5))
                         .foregroundStyle(style.sub)
                 }
@@ -648,9 +679,9 @@ private struct MemoryDetailView: View {
 
                 HStack(alignment: .top, spacing: 26) {
                     stat("\(shown.activationCount)", "次被想起")
-                    stat(ombreShortDate(shown.created), "第一次记下")
+                    stat(ombreShortDate(shown.createdAt), "第一次记下")
                     if !shown.lastActive.isEmpty && shown.lastActive != shown.created {
-                        stat(ombreShortDate(shown.lastActive), "最近想起")
+                        stat(ombreShortDate(shown.lastActiveAt), "最近想起")
                     }
                 }
                 .spaceEntrance(5)

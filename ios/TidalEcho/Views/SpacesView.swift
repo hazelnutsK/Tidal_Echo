@@ -264,15 +264,10 @@ struct SpacesView: View {
 
             NavigationLink { MemoryVaultView(model: model) } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "circle.circle")
-                        .font(.system(size: 18, weight: .light))
-                        .foregroundStyle(style.ink)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("他的记忆").font(.system(size: 15, weight: .medium))
-                        Text("Altair 记住的那些事")
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(style.sub)
-                    }
+                    // 和下面「此刻最想」同一种呼吸灯，慢半拍、带一圈光，两颗不会一起闪
+                    SpacePulseDot(style: style, period: 2.4, glows: true)
+                    Text("Memory")
+                        .font(SpaceFont.display(17))
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .medium))
@@ -1010,6 +1005,8 @@ private struct DesireDriveRow: View {
 
 private struct SpacePulseDot: View {
     let style: SpaceStyle
+    var period: Double = 1.6
+    var glows = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1023,8 +1020,9 @@ private struct SpacePulseDot: View {
                     dot
                         .opacity(up ? 1 : 0.3)
                         .scaleEffect(up ? 1.15 : 0.8)
+                        .shadow(color: glows ? style.glow.opacity(up ? 1 : 0) : .clear, radius: up ? 6 : 2)
                 } animation: { _ in
-                    .easeInOut(duration: 1.6)
+                    .easeInOut(duration: period)
                 }
         }
     }
@@ -3524,25 +3522,33 @@ private func momentDayNumber(_ value: String) -> String {
     return String(format: "%02d", SpaceMonth.beijing.component(.day, from: date))
 }
 
-private func serverDate(from value: String) -> Date? {
-    let precise = ISO8601DateFormatter()
-    precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = precise.date(from: value) { return date }
-
-    let standard = ISO8601DateFormatter()
-    if let date = standard.date(from: value) { return date }
-
-    let parser = DateFormatter()
-    parser.calendar = Calendar(identifier: .gregorian)
-    parser.locale = Locale(identifier: "en_US_POSIX")
-    parser.timeZone = TimeZone(secondsFromGMT: 0)
-    for format in [
+/// 解析器只建一次：rows 是在 body 里现算的，scrollPosition 一滚就重跑，每次新建格式器会拖慢滚动。
+private enum ServerDateParsers {
+    static let precise: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    static let standard = ISO8601DateFormatter()
+    static let naive: [DateFormatter] = [
         "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
         "yyyy-MM-dd'T'HH:mm:ss.SSS",
         "yyyy-MM-dd'T'HH:mm:ss",
         "yyyy-MM-dd HH:mm:ss"
-    ] {
+    ].map { format in
+        let parser = DateFormatter()
+        parser.calendar = Calendar(identifier: .gregorian)
+        parser.locale = Locale(identifier: "en_US_POSIX")
+        parser.timeZone = TimeZone(secondsFromGMT: 0)
         parser.dateFormat = format
+        return parser
+    }
+}
+
+private func serverDate(from value: String) -> Date? {
+    if let date = ServerDateParsers.precise.date(from: value) { return date }
+    if let date = ServerDateParsers.standard.date(from: value) { return date }
+    for parser in ServerDateParsers.naive {
         if let date = parser.date(from: value) { return date }
     }
     return nil
@@ -3724,6 +3730,8 @@ struct SpaceReviewScreen: View {
             NavigationStack { EchoCalendarView(model: model) }
         case "memory":
             NavigationStack { MemoryVaultView(model: model) }
+        case "books":
+            NavigationStack { BookshelfView(model: model) }
         default:
             SpacesView(model: model)
         }

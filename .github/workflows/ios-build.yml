@@ -98,6 +98,29 @@ jobs:
           done
           xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
 
+      - name: Capture space page previews
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          mkdir -p SpacePreviews
+          for theme in mist harbor; do
+            for page in home moments journal stars album gifts calendar memory; do
+              SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_SPACE_PAGE="$page"                 xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --space-ui-review
+              sleep 4
+              xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-$page.png"
+            done
+            SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_SPACE_PAGE=home SIMCTL_CHILD_REVIEW_WALLPAPER=1               xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --space-ui-review
+            sleep 4
+            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-home-wallpaper.png"
+          done
+          xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
+
+      - name: Upload space previews
+        uses: actions/upload-artifact@v4
+        with:
+          name: TidalEcho-space-previews
+          path: ios/SpacePreviews/*.png
+
       - name: Upload native previews
         uses: actions/upload-artifact@v4
         with:

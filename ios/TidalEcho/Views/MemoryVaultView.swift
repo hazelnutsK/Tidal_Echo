@@ -341,7 +341,7 @@ struct MemoryVaultView: View {
                 ) { month in
                     topID = month.headerID
                 }
-                .padding(.top, 150)
+                .padding(.top, 260)
                 .padding(.bottom, 60)
             }
         }

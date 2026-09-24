@@ -1611,7 +1611,7 @@ private struct GiftCard: View {
         VStack(spacing: 0) {
             Color.clear
                 .aspectRatio(16.0 / 9.0, contentMode: .fit)
-                .overlay { GiftArt(variant: number % 3, style: style) }
+                .overlay { GiftArt(variant: artVariant, style: style) }
                 .clipped()
             SpaceHairline(style: style)
             HStack(alignment: .bottom, spacing: 10) {
@@ -1635,6 +1635,14 @@ private struct GiftCard: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .spaceGlass(style, radius: 16)
+    }
+
+    /// 按标题配小画：樱花→花瓣，星→两颗星，其余九宫格；都不沾就轮着来。
+    private var artVariant: Int {
+        if page.title.contains("樱") || page.title.contains("花") { return 1 }
+        if page.title.contains("星") { return 2 }
+        if page.title.contains("九宫格") || page.title.contains("关于你") { return 0 }
+        return number % 3
     }
 
     private var giftDateText: String {
@@ -1844,7 +1852,7 @@ private struct MomentsView: View {
                 SpaceTimelineRail(months: months, activeKey: SpaceMonth.monthKey(ofRowID: topID), style: style, isScrolling: isScrolling) { month in
                     topID = month.headerID
                 }
-                .padding(.top, 150)
+                .padding(.top, 240)
                 .padding(.bottom, commentTarget == nil ? 60 : 110)
             }
         }
@@ -2992,7 +3000,7 @@ struct EchoCalendarView: View {
             ForEach(Array(upcoming.enumerated()), id: \.element.id) { index, item in
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("\(calendar.component(.month, from: item.date))·\(calendar.component(.day, from: item.date))")
+                        Text("\(SpaceMonth.beijing.component(.month, from: item.date))·\(SpaceMonth.beijing.component(.day, from: item.date))")
                             .font(SpaceFont.display(20))
                         Text(item.time)
                             .font(.system(size: 11))
@@ -3141,9 +3149,10 @@ struct EchoCalendarView: View {
         return formatter.string(from: date)
     }
 
+    /// 这里的 date 都是 spaceDate(fromKey:) 给的北京零点，按北京日历读。
     private func weekdayText(_ date: Date) -> String {
         let names = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-        return names[max(0, min(6, calendar.component(.weekday, from: date) - 1))]
+        return names[max(0, min(6, SpaceMonth.beijing.component(.weekday, from: date) - 1))]
     }
 }
 

@@ -37,7 +37,7 @@ struct SpaceStyle {
     var onAccent: Color { palette.onAccent }
     var heart: Color { palette.accent }
 
-    var glassTint: Color { isDark ? Color(hex: 0x1E1E20).opacity(0.5) : Color.white.opacity(0.46) }
+    var glassTint: Color { isDark ? Color(hex: 0x1E1E20).opacity(0.46) : Color.white.opacity(0.34) }
     var glassStrong: Color { isDark ? Color(hex: 0x2A2A2D).opacity(0.82) : Color.white.opacity(0.74) }
     var edge: Color { isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.78) }
     var glow: Color { isDark ? Color.white.opacity(0.75) : Color.black.opacity(0.28) }

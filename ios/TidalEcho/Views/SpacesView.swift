@@ -3726,6 +3726,8 @@ struct SpaceReviewScreen: View {
             NavigationStack { MemoryVaultView(model: model) }
         case "books":
             NavigationStack { BookshelfView(model: model) }
+        case "login", "login-saved":
+            LoginView(model: model)
         default:
             SpacesView(model: model)
         }
@@ -3747,6 +3749,12 @@ enum SpaceReviewFixture {
         model.chatWeight = 400
         model.aiAvatarImage = nil
         model.humanAvatarImage = nil
+        // 登录页两种样子：第一次来（地址也要填）和记得地址（只剩密钥）
+        if page == "login-saved" {
+            UserDefaults.standard.set("https://lyra.myaltair.uk/relay", forKey: "tidalEcho.relayURL")
+        } else if page == "login" {
+            UserDefaults.standard.removeObject(forKey: "tidalEcho.relayURL")
+        }
         if env["REVIEW_WALLPAPER"] == "1" {
             SpaceWallpaper.shared.installForReview(reviewWallpaper(dark: model.theme == .harbor))
         }

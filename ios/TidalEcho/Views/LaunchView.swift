@@ -76,6 +76,39 @@ struct LaunchView: View {
     }
 }
 
+// MARK: - 登录页的签名
+
+/// 开屏写完的那一帧，原样搬到登录页：同一处落笔、同一颗心，开屏淡出时它就停在原地，
+/// 登录页再把它往上托。只画字、心和副标题，不画底。
+struct LaunchSignature: View {
+    let theme: EchoTheme
+    @Environment(\.displayScale) private var displayScale
+
+    /// 字形中心在整屏高度上的位置（缩放用的锚点）。
+    static let anchorFraction: CGFloat = 0.478
+
+    static func anchorY(in size: CGSize) -> CGFloat { size.height * anchorFraction }
+
+    /// 副标题底边离字形中心多远（未缩放）。
+    static func subtitleDrop(in size: CGSize) -> CGFloat {
+        Hand.geometry(in: size).subtitleY - anchorY(in: size) + 8
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            Canvas { context, size in
+                Handwriting(theme: theme, size: size, scale: displayScale, reduced: true, backdrop: false)
+                    .draw(into: context, t: Hand.staticFrame)
+            }
+            LaunchSubtitle(tracking: 3.4, color: theme.palette.secondaryText.opacity(0.82))
+                .position(x: geo.size.width / 2, y: Hand.geometry(in: geo.size).subtitleY)
+        }
+        .ignoresSafeArea()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Aquila")
+    }
+}
+
 // MARK: - 时间轴与几何常量
 
 private enum Hand {
@@ -148,7 +181,7 @@ private enum Hand {
         let scale = fontSize / designSize
         // 字形横向居中，纵向落在屏幕 0.478 处——和原来星图的重心一致
         let midX = size.width / 2
-        let midY = size.height * 0.478
+        let midY = size.height * LaunchSignature.anchorFraction
         let origin = CGPoint(x: midX - 377 * scale, y: midY - glyphMidY * scale)
         return Geometry(
             origin: origin,
@@ -329,14 +362,18 @@ private struct Handwriting {
     let size: CGSize
     let scale: CGFloat
     let reduced: Bool
+    /// 登录页借这枚签名时不要竖纹和星点，那边有自己的雾。
+    var backdrop = true
 
     private var palette: EchoPalette { theme.palette }
     private var isDark: Bool { theme == .harbor }
     private var rose: Color { isDark ? Color(hex: 0xE98BA6) : Color(hex: 0xC8455F) }
 
     func draw(into context: GraphicsContext, t: Double) {
-        drawTexture(context)
-        if isDark { drawSpecks(context, t: t) }
+        if backdrop {
+            drawTexture(context)
+            if isDark { drawSpecks(context, t: t) }
+        }
 
         let geo = Hand.geometry(in: size)
         let assets = HandMasks.shared.assets(for: size)

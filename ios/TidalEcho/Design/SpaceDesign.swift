@@ -345,9 +345,33 @@ extension View {
             .tint(style.accent)
     }
 
+    func spaceReveal<Key: Hashable>(_ key: Key, delay: Double = 0, alignment: Alignment = .topLeading) -> some View {
+        modifier(SpaceReveal(key: key, delay: delay, alignment: alignment))
+    }
+
     /// 进页面时一块一块浮上来。只给页面上固定的那几块用，列表行别用。
     func spaceEntrance(_ index: Int) -> some View {
         modifier(SpaceEntrance(index: index))
+    }
+}
+
+/// 等数据回来才换上的内容：旧的化开淡出，新的从一层模糊里浮出来，不是一下蹦出来。
+/// 叠在 ZStack 里，新旧交替时不会把上下的东西挤一跳；delay 让几块格子错开一点。
+struct SpaceReveal<Key: Hashable>: ViewModifier {
+    let key: Key
+    var delay: Double = 0
+    var alignment: Alignment = .topLeading
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        ZStack(alignment: alignment) {
+            content
+                .id(key)
+                .transition(
+                    (reduceMotion ? AnyTransition.opacity : AnyTransition(.blurReplace))
+                        .animation(.smooth(duration: 0.6).delay(delay))
+                )
+        }
     }
 }
 

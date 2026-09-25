@@ -130,13 +130,13 @@ struct SpacesView: View {
 
             HStack(alignment: .top, spacing: 10) {
                 NavigationLink { StarsView(model: model) } label: {
-                    countTile("Favorites", snapshot.stars, dot: false)
+                    countTile("收藏", snapshot.stars, dot: false)
                 }
                 NavigationLink { AlbumView(model: model) } label: {
-                    countTile("Album", snapshot.photos, dot: false)
+                    countTile("相册", snapshot.photos, dot: false)
                 }
                 NavigationLink { GiftsView(model: model) } label: {
-                    countTile("Gifts", snapshot.gifts, dot: model.giftUnreadCount > 0)
+                    countTile("礼物室", snapshot.gifts, dot: model.giftUnreadCount > 0)
                 }
             }
             .buttonStyle(SpacePressStyle())
@@ -148,7 +148,7 @@ struct SpacesView: View {
     private var momentsTile: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SpaceLabel(text: "Moments", style: style)
+                SpaceLabel(text: "朋友圈", style: style)
                 Spacer(minLength: 4)
                 if model.momentsUnreadCount > 0 {
                     Circle().fill(style.heart).frame(width: 7, height: 7)
@@ -160,6 +160,7 @@ struct SpacesView: View {
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
                 .foregroundStyle(style.ink)
+                .spaceReveal(snapshot.latestMoment)
             Spacer(minLength: 0)
         }
         .padding(14)
@@ -169,15 +170,17 @@ struct SpacesView: View {
 
     private var calendarTile: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SpaceLabel(text: "Calendar", style: style)
+            SpaceLabel(text: "日历", style: style)
             Text("\(snapshot.nextDay?.day ?? SpaceMonth.beijing.component(.day, from: Date()))")
                 .font(SpaceFont.display(50))
                 .lineLimit(1)
                 .foregroundStyle(style.ink)
+                .spaceReveal(snapshot.nextDay?.caption, delay: 0.06)
             Text(snapshot.nextDay?.caption ?? "今天没有安排")
                 .font(.system(size: 12.5))
                 .foregroundStyle(style.sub)
                 .lineLimit(1)
+                .spaceReveal(snapshot.nextDay?.caption, delay: 0.1)
             Spacer(minLength: 0)
         }
         .padding(14)
@@ -202,11 +205,12 @@ struct SpacesView: View {
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                SpaceLabel(text: snapshot.book == nil ? "Library" : "Library · Reading", style: style)
+                SpaceLabel(text: snapshot.book == nil ? "书房" : "书房 · 在读", style: style)
                 Text(snapshot.book.map { cleanBookTitle($0.title) } ?? "一起读的书")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(style.ink)
                     .lineLimit(1)
+                    .spaceReveal(snapshot.book?.title, delay: 0.12)
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Capsule().fill(style.hair)
@@ -299,7 +303,7 @@ struct SpacesView: View {
         async let unread: Void = model.refreshSpaceUnreadCounts()
         async let desireLoad: Void = loadDesire()
         let loaded = await loadSnapshot()
-        snapshot = loaded
+        withAnimation(.smooth(duration: 0.6)) { snapshot = loaded }
         _ = await (unread, desireLoad)
         await countUp(to: loaded.days)
     }
@@ -403,7 +407,8 @@ struct SpacesView: View {
         isLoadingDesire = true
         defer { isLoadingDesire = false }
         do {
-            applyDesire(try await model.desireState())
+            let state = try await model.desireState()
+            withAnimation(.smooth(duration: 0.6)) { applyDesire(state) }
             desireError = nil
         } catch {
             desireError = "内心读取失败"
@@ -681,6 +686,7 @@ private struct SpaceWeatherTile: View {
                 .baselineOffset(24))
                 .lineLimit(1)
                 .foregroundStyle(style.ink)
+                .spaceReveal(weather == nil)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("\(cityName) · \(weather?.condition ?? (failed ? "天气没拿到" : "看看天"))")
@@ -700,6 +706,7 @@ private struct SpaceWeatherTile: View {
                         .foregroundStyle(style.sub)
                 }
             }
+            .spaceReveal(weather == nil, delay: 0.05)
             Spacer(minLength: 0)
 
             icon
@@ -749,13 +756,13 @@ private struct SpaceWeatherTile: View {
         }
         let city = SpaceWeatherCity.named(cityName)
         if let cached = SpaceWeatherCache.entries[city.name], Date().timeIntervalSince(cached.fetched) < 1200 {
-            weather = cached.weather
+            withAnimation(.smooth(duration: 0.6)) { weather = cached.weather }
             return
         }
         do {
             let fetched = try await SpaceWeather.fetch(city)
             SpaceWeatherCache.entries[city.name] = (fetched, Date())
-            withAnimation(.easeOut(duration: 0.3)) { weather = fetched }
+            withAnimation(.smooth(duration: 0.6)) { weather = fetched }
             failed = false
         } catch {
             if weather == nil { failed = true }
@@ -800,6 +807,7 @@ private struct DesireCard: View {
                             .foregroundStyle(style.ink)
                             .multilineTextAlignment(.leading)
                             .lineLimit(expanded ? nil : 1)
+                            .spaceReveal(state?.intent.reason)
                     }
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.right")

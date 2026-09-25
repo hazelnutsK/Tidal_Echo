@@ -39,10 +39,14 @@ struct SpaceStyle {
 
     var glassTint: Color { isDark ? Color(hex: 0x1E1E20).opacity(0.46) : Color.white.opacity(0.34) }
     var glassStrong: Color { isDark ? Color(hex: 0x2A2A2D).opacity(0.82) : Color.white.opacity(0.74) }
+    /// 卡片玻璃的染色：只给一点点，底图的颜色和轮廓要透得过来。
+    var cardTint: Color { isDark ? Color.black.opacity(0.2) : Color.white.opacity(0.12) }
+    /// 光从左上打过来：左上角亮一层，往右下淡掉。
+    var sheen: Color { isDark ? Color.white.opacity(0.06) : Color.white.opacity(0.3) }
     var edge: Color { isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.78) }
     var glow: Color { isDark ? Color.white.opacity(0.75) : Color.black.opacity(0.28) }
     var veilTop: Color { isDark ? Color.black.opacity(0.15) : Color(hex: 0xF3F3F1).opacity(0) }
-    var veil: Color { isDark ? Color.black.opacity(0.5) : Color(hex: 0xF3F3F1).opacity(0.42) }
+    var veil: Color { isDark ? Color.black.opacity(0.36) : Color(hex: 0xF3F3F1).opacity(0.18) }
 
     var base: Color {
         switch theme {
@@ -108,13 +112,17 @@ final class SpaceWallpaper: ObservableObject {
     }
 
     private static var imageURL: URL? { directory?.appendingPathComponent("space-wallpaper.jpg") }
-    private static var blurURL: URL? { directory?.appendingPathComponent("space-wallpaper-blur.jpg") }
+    /// v2：09-25 糊得轻了，换个名字让手机上旧的那张重新生成。
+    private static var blurURL: URL? { directory?.appendingPathComponent("space-wallpaper-blur-v2.jpg") }
 
     private func load() {
         guard let url = Self.imageURL,
               let data = try? Data(contentsOf: url),
               let loaded = UIImage(data: data) else { return }
         image = loaded
+        if let legacy = Self.directory?.appendingPathComponent("space-wallpaper-blur.jpg") {
+            try? FileManager.default.removeItem(at: legacy)
+        }
         if let blurURL = Self.blurURL,
            let blurData = try? Data(contentsOf: blurURL),
            let loadedBlur = UIImage(data: blurData) {
@@ -164,14 +172,14 @@ final class SpaceWallpaper: ObservableObject {
         }
     }
 
-    /// 预先糊好一张小图，滚动时不用实时模糊。
+    /// 预先糊好一张小图，滚动时不用实时模糊。只化开一点，轮廓还认得出来——卡片的玻璃会再化一层。
     nonisolated static func makeBlur(_ source: UIImage) -> UIImage? {
-        let small = redrawn(source, maxDimension: 480)
+        let small = redrawn(source, maxDimension: 720)
         guard let cgImage = small.cgImage else { return nil }
         let input = CIImage(cgImage: cgImage)
         let filter = CIFilter.gaussianBlur()
         filter.inputImage = input.clampedToExtent()
-        filter.radius = 16
+        filter.radius = 7
         guard let output = filter.outputImage?.cropped(to: input.extent) else { return nil }
         let context = CIContext(options: nil)
         guard let rendered = context.createCGImage(output, from: input.extent) else { return nil }
@@ -206,7 +214,7 @@ struct SpaceBackdrop: View {
                         .resizable()
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .blur(radius: wallpaper.blurred == nil ? 30 : 0)
+                        .blur(radius: wallpaper.blurred == nil ? 14 : 0)
                         .clipped()
                         .transition(.opacity)
                     if showsSharpTop, let sharp = wallpaper.image {
@@ -219,8 +227,8 @@ struct SpaceBackdrop: View {
                                 LinearGradient(
                                     stops: [
                                         .init(color: .black, location: 0),
-                                        .init(color: .black, location: 0.18),
-                                        .init(color: .clear, location: 0.46)
+                                        .init(color: .black, location: 0.22),
+                                        .init(color: .clear, location: 0.55)
                                     ],
                                     startPoint: .top,
                                     endPoint: .bottom
@@ -260,30 +268,45 @@ struct SpaceBackdrop: View {
 
 // MARK: - 玻璃
 
+// 09-25 她嫌雾面玻璃太白、底图透不过来：卡片改成系统液态玻璃，底图的轮廓和颜色透过来、
+// 又被化开；上面只薄薄染一层白，再从左上打一道光。strong 的小浮条（时间轴气泡）还是厚一点。
 struct SpaceGlass: ViewModifier {
     let style: SpaceStyle
-    var radius: CGFloat = 16
+    var radius: CGFloat = 22
     var strong = false
 
     func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
             .background {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: radius, style: .continuous)
-                            .fill(strong ? style.glassStrong : style.glassTint)
+                ZStack {
+                    shape
+                        .fill(Color.white.opacity(0.001))
+                        .glassEffect(.regular.tint(strong ? style.glassStrong : style.cardTint), in: shape)
+                    shape.fill(
+                        LinearGradient(
+                            colors: [style.sheen, style.sheen.opacity(0)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
                     )
+                }
             }
             .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(style.edge, lineWidth: 0.5)
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [style.edge, style.edge.opacity(0.2)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 0.6
+                )
             )
     }
 }
 
 extension View {
-    func spaceGlass(_ style: SpaceStyle, radius: CGFloat = 16, strong: Bool = false) -> some View {
+    func spaceGlass(_ style: SpaceStyle, radius: CGFloat = 22, strong: Bool = false) -> some View {
         modifier(SpaceGlass(style: style, radius: radius, strong: strong))
     }
 

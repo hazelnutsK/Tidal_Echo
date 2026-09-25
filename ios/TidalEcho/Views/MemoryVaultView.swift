@@ -548,7 +548,7 @@ private struct PinnedMemoryCard: View {
         .padding(.horizontal, 13)
         .padding(.vertical, 12)
         .frame(width: 148, height: 132, alignment: .topLeading)
-        .spaceGlass(style, radius: 14)
+        .spaceGlass(style, radius: 20)
     }
 }
 
@@ -668,7 +668,7 @@ private struct MemoryDetailView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .spaceGlass(style, radius: 16)
+                    .spaceGlass(style, radius: 22)
                     .spaceEntrance(3)
                 }
 
@@ -841,7 +841,7 @@ private struct MemoryDetailView: View {
             Spacer(minLength: 0)
         }
         .padding(16)
-        .spaceGlass(style, radius: 16)
+        .spaceGlass(style, radius: 22)
         .accessibilityElement(children: .combine)
     }
 

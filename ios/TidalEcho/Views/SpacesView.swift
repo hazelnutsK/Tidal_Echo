@@ -178,7 +178,7 @@ struct SpacesView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 118, maxHeight: .infinity, alignment: .topLeading)
-        .spaceGlass(style, radius: 14)
+        .spaceGlass(style, radius: 20)
     }
 
     private var calendarTile: some View {
@@ -196,7 +196,7 @@ struct SpacesView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 118, maxHeight: .infinity, alignment: .topLeading)
-        .spaceGlass(style, radius: 14)
+        .spaceGlass(style, radius: 20)
     }
 
     private var bookTile: some View {
@@ -235,7 +235,7 @@ struct SpacesView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .spaceGlass(style, radius: 14)
+        .spaceGlass(style, radius: 20)
     }
 
     private func countTile(_ title: String, _ count: Int?, dot: Bool) -> some View {
@@ -253,7 +253,7 @@ struct SpacesView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 86, maxHeight: .infinity, alignment: .topLeading)
-        .spaceGlass(style, radius: 14)
+        .spaceGlass(style, radius: 20)
     }
 
     // MARK: 他的内心
@@ -276,7 +276,7 @@ struct SpacesView: View {
                 .foregroundStyle(style.ink)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
-                .spaceGlass(style, radius: 16)
+                .spaceGlass(style, radius: 22)
             }
             .buttonStyle(SpacePressStyle())
 
@@ -720,8 +720,8 @@ private struct SpaceWeatherTile: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .spaceGlass(style, radius: 14)
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .spaceGlass(style, radius: 20)
+        .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .contextMenu {
             ForEach(SpaceWeatherCity.all) { city in
                 Button {
@@ -843,8 +843,8 @@ private struct DesireCard: View {
                     .padding(.bottom, 12)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .spaceGlass(style, radius: 16)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .spaceGlass(style, radius: 22)
         .tint(style.accent)
         .sensoryFeedback(.selection, trigger: expanded)
     }
@@ -1631,8 +1631,8 @@ private struct GiftCard: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .spaceGlass(style, radius: 16)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .spaceGlass(style, radius: 22)
     }
 
     /// 按标题配小画：樱花→花瓣，星→两颗星，其余九宫格；都不沾就轮着来。
@@ -2224,7 +2224,7 @@ private struct MomentCommentsBlock: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
-            .spaceGlass(style, radius: 12)
+            .spaceGlass(style, radius: 16)
         }
     }
 
@@ -2354,7 +2354,7 @@ private struct JournalFeatureCard: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .spaceGlass(style, radius: 16)
+        .spaceGlass(style, radius: 22)
         .accessibilityElement(children: .combine)
         .accessibilityHint("打开阅读全文")
     }
@@ -2879,7 +2879,7 @@ struct EchoCalendarView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 14)
-        .spaceGlass(style, radius: 16)
+        .spaceGlass(style, radius: 22)
         .sensoryFeedback(.selection, trigger: selectedKey)
     }
 
@@ -2987,7 +2987,7 @@ struct EchoCalendarView: View {
             }
         }
         .padding(16)
-        .spaceGlass(style, radius: 16)
+        .spaceGlass(style, radius: 22)
         .animation(.easeOut(duration: 0.2), value: selectedKey)
     }
 
@@ -3769,6 +3769,16 @@ enum SpaceReviewFixture {
             }
             UIColor.white.withAlphaComponent(dark ? 0.5 : 0.8).setFill()
             context.cgContext.fillEllipse(in: CGRect(x: 250, y: 90, width: 70, height: 70))
+            // 几块有轮廓的色斑，截图里才看得出玻璃透不透底图
+            let blots: [(CGRect, UIColor)] = [
+                (CGRect(x: -40, y: 300, width: 220, height: 90), UIColor(red: 0.22, green: 0.45, blue: 0.78, alpha: 0.85)),
+                (CGRect(x: 230, y: 420, width: 150, height: 150), UIColor(red: 0.92, green: 0.55, blue: 0.62, alpha: 0.8)),
+                (CGRect(x: 40, y: 640, width: 120, height: 120), UIColor(red: 0.35, green: 0.62, blue: 0.42, alpha: 0.8))
+            ]
+            for (rect, color) in blots {
+                (dark ? color.withAlphaComponent(0.45) : color).setFill()
+                context.cgContext.fillEllipse(in: rect)
+            }
             UIColor.black.withAlphaComponent(dark ? 0.5 : 0.18).setFill()
             context.cgContext.fill(CGRect(x: 0, y: 600, width: 400, height: 260))
         }

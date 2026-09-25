@@ -212,7 +212,7 @@ struct BookshelfView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .spaceGlass(style, radius: 16)
+        .spaceGlass(style, radius: 22)
     }
 
     // MARK: 书架

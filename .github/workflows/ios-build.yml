@@ -109,9 +109,11 @@ jobs:
               sleep 4
               xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-$page.png"
             done
-            SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_SPACE_PAGE=home SIMCTL_CHILD_REVIEW_WALLPAPER=1               xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --space-ui-review
-            sleep 4
-            xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-home-wallpaper.png"
+            for page in home moments; do
+              SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_SPACE_PAGE="$page" SIMCTL_CHILD_REVIEW_WALLPAPER=1                 xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --space-ui-review
+              sleep 4
+              xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-$page-wallpaper.png"
+            done
           done
           xcrun simctl terminate "$REVIEW_DEVICE_ID" com.tidalecho.personal
 

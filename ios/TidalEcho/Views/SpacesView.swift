@@ -89,20 +89,6 @@ struct SpacesView: View {
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 18) {
-            VStack(spacing: 6) {
-                HStack(spacing: 12) {
-                    SpaceAvatar(image: model.aiAvatarImage, letter: "A", style: style)
-                    SpaceStarLine(style: style)
-                    SpaceAvatar(image: model.humanAvatarImage, letter: "L", style: style)
-                }
-                HStack {
-                    Text("Altair")
-                    Spacer()
-                    Text("Lyra")
-                }
-                .font(SpaceFont.display(15, italic: true))
-                .foregroundStyle(style.sub)
-            }
             HStack(alignment: .lastTextBaseline) {
                 Text("\(shownDays)")
                     .font(SpaceFont.display(76))
@@ -144,13 +130,13 @@ struct SpacesView: View {
 
             HStack(alignment: .top, spacing: 10) {
                 NavigationLink { StarsView(model: model) } label: {
-                    countTile("收藏", snapshot.stars, dot: false)
+                    countTile("Favorites", snapshot.stars, dot: false)
                 }
                 NavigationLink { AlbumView(model: model) } label: {
-                    countTile("相册", snapshot.photos, dot: false)
+                    countTile("Album", snapshot.photos, dot: false)
                 }
                 NavigationLink { GiftsView(model: model) } label: {
-                    countTile("礼物室", snapshot.gifts, dot: model.giftUnreadCount > 0)
+                    countTile("Gifts", snapshot.gifts, dot: model.giftUnreadCount > 0)
                 }
             }
             .buttonStyle(SpacePressStyle())
@@ -162,14 +148,14 @@ struct SpacesView: View {
     private var momentsTile: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                SpaceLabel(text: "朋友圈", style: style)
+                SpaceLabel(text: "Moments", style: style)
                 Spacer(minLength: 4)
                 if model.momentsUnreadCount > 0 {
                     Circle().fill(style.heart).frame(width: 7, height: 7)
                 }
             }
             Text(snapshot.latestMoment ?? "动态和日志都在这里。")
-                .font(literary.font(size: 13))
+                .font(.system(size: 13))
                 .lineSpacing(4)
                 .lineLimit(3)
                 .multilineTextAlignment(.leading)
@@ -183,7 +169,7 @@ struct SpacesView: View {
 
     private var calendarTile: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SpaceLabel(text: "日历", style: style)
+            SpaceLabel(text: "Calendar", style: style)
             Text("\(snapshot.nextDay?.day ?? SpaceMonth.beijing.component(.day, from: Date()))")
                 .font(SpaceFont.display(50))
                 .lineLimit(1)
@@ -216,9 +202,9 @@ struct SpacesView: View {
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                SpaceLabel(text: snapshot.book == nil ? "书房" : "书房 · 在读", style: style)
+                SpaceLabel(text: snapshot.book == nil ? "Library" : "Library · Reading", style: style)
                 Text(snapshot.book.map { cleanBookTitle($0.title) } ?? "一起读的书")
-                    .font(literary.font(size: 15, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(style.ink)
                     .lineLimit(1)
                 GeometryReader { geometry in
@@ -704,7 +690,7 @@ private struct SpaceWeatherTile: View {
                         .font(.system(size: 12))
                         .foregroundStyle(style.sub)
                     Text(weather.note)
-                        .font(literary.font(size: 12.5))
+                        .font(.system(size: 12.5))
                         .lineSpacing(3)
                         .foregroundStyle(style.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -810,7 +796,7 @@ private struct DesireCard: View {
                             .font(.system(size: 12))
                             .foregroundStyle(style.sub)
                         Text(reasonText)
-                            .font(literary.font(size: 14.5))
+                            .font(.system(size: 14.5))
                             .foregroundStyle(style.ink)
                             .multilineTextAlignment(.leading)
                             .lineLimit(expanded ? nil : 1)
@@ -905,7 +891,7 @@ private struct DesireCard: View {
                         }
                     }
                 }
-                .font(literary.font(size: 12.5))
+                .font(.system(size: 12.5))
 
                 SpaceHairline(style: style)
 

@@ -106,12 +106,12 @@ jobs:
           for theme in mist harbor; do
             for page in home moments journal stars album gifts calendar books memory; do
               SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_SPACE_PAGE="$page"                 xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --space-ui-review
-              sleep 4
+              sleep 6
               xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-$page.png"
             done
-            for page in home moments; do
+            for page in home moments stars; do
               SIMCTL_CHILD_REVIEW_THEME="$theme" SIMCTL_CHILD_REVIEW_SPACE_PAGE="$page" SIMCTL_CHILD_REVIEW_WALLPAPER=1                 xcrun simctl launch --terminate-running-process "$REVIEW_DEVICE_ID" com.tidalecho.personal --space-ui-review
-              sleep 4
+              sleep 6
               xcrun simctl io "$REVIEW_DEVICE_ID" screenshot "SpacePreviews/$theme-$page-wallpaper.png"
             done
           done

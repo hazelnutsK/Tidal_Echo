@@ -40,13 +40,15 @@ struct SpaceStyle {
     var glassTint: Color { isDark ? Color(hex: 0x1E1E20).opacity(0.46) : Color.white.opacity(0.34) }
     var glassStrong: Color { isDark ? Color(hex: 0x2A2A2D).opacity(0.82) : Color.white.opacity(0.74) }
     /// 卡片玻璃的染色：只给一点点，底图的颜色和轮廓要透得过来。
-    var cardTint: Color { isDark ? Color.black.opacity(0.2) : Color.white.opacity(0.12) }
+    var cardTint: Color { isDark ? Color.black.opacity(0.16) : Color.white.opacity(0.05) }
     /// 光从左上打过来：左上角亮一层，往右下淡掉。
-    var sheen: Color { isDark ? Color.white.opacity(0.06) : Color.white.opacity(0.3) }
+    var sheen: Color { isDark ? Color.white.opacity(0.05) : Color.white.opacity(0.22) }
     var edge: Color { isDark ? Color.white.opacity(0.08) : Color.white.opacity(0.78) }
     var glow: Color { isDark ? Color.white.opacity(0.75) : Color.black.opacity(0.28) }
     var veilTop: Color { isDark ? Color.black.opacity(0.15) : Color(hex: 0xF3F3F1).opacity(0) }
-    var veil: Color { isDark ? Color.black.opacity(0.36) : Color(hex: 0xF3F3F1).opacity(0.18) }
+    var veil: Color { isDark ? Color.black.opacity(0.32) : Color(hex: 0xF3F3F1).opacity(0.12) }
+    /// 详情页（朋友圈、收藏、相册、记忆……）一整页都是字：底图糊得更开，雾也厚一点，字才压得住。
+    var detailVeil: Color { isDark ? Color.black.opacity(0.5) : Color(hex: 0xF3F3F1).opacity(0.34) }
 
     var base: Color {
         switch theme {
@@ -95,7 +97,10 @@ final class SpaceWallpaper: ObservableObject {
     static let shared = SpaceWallpaper()
 
     @Published private(set) var image: UIImage?
+    /// 主页用：轻轻化开。
     @Published private(set) var blurred: UIImage?
+    /// 详情页用：糊得很开，只剩颜色。
+    @Published private(set) var soft: UIImage?
 
     private init() {
         guard !SpaceReview.isActive else { return }
@@ -112,21 +117,28 @@ final class SpaceWallpaper: ObservableObject {
     }
 
     private static var imageURL: URL? { directory?.appendingPathComponent("space-wallpaper.jpg") }
-    /// v2：09-25 糊得轻了，换个名字让手机上旧的那张重新生成。
-    private static var blurURL: URL? { directory?.appendingPathComponent("space-wallpaper-blur-v2.jpg") }
+    /// 糊的程度改过就换个名字，手机上旧的那张会重新生成。
+    private static var blurURL: URL? { directory?.appendingPathComponent("space-wallpaper-blur-v3.jpg") }
+    private static var softURL: URL? { directory?.appendingPathComponent("space-wallpaper-soft.jpg") }
+    private static let legacyBlurNames = ["space-wallpaper-blur.jpg", "space-wallpaper-blur-v2.jpg"]
+    private static let lightRadius: Double = 5
+    private static let softRadius: Double = 20
 
     private func load() {
         guard let url = Self.imageURL,
               let data = try? Data(contentsOf: url),
               let loaded = UIImage(data: data) else { return }
         image = loaded
-        if let legacy = Self.directory?.appendingPathComponent("space-wallpaper-blur.jpg") {
-            try? FileManager.default.removeItem(at: legacy)
+        for name in Self.legacyBlurNames {
+            if let legacy = Self.directory?.appendingPathComponent(name) {
+                try? FileManager.default.removeItem(at: legacy)
+            }
         }
-        if let blurURL = Self.blurURL,
-           let blurData = try? Data(contentsOf: blurURL),
-           let loadedBlur = UIImage(data: blurData) {
-            blurred = loadedBlur
+        let cachedBlur = Self.blurURL.flatMap { try? Data(contentsOf: $0) }.flatMap(UIImage.init(data:))
+        let cachedSoft = Self.softURL.flatMap { try? Data(contentsOf: $0) }.flatMap(UIImage.init(data:))
+        if let cachedBlur, let cachedSoft {
+            blurred = cachedBlur
+            soft = cachedSoft
         } else {
             Task { await self.regenerateBlur(from: loaded) }
         }
@@ -147,39 +159,47 @@ final class SpaceWallpaper: ObservableObject {
     func clear() {
         if let url = Self.imageURL { try? FileManager.default.removeItem(at: url) }
         if let url = Self.blurURL { try? FileManager.default.removeItem(at: url) }
+        if let url = Self.softURL { try? FileManager.default.removeItem(at: url) }
         withAnimation(.easeInOut(duration: 0.45)) {
             image = nil
             blurred = nil
+            soft = nil
         }
     }
 
     #if DEBUG
     func installForReview(_ picture: UIImage) {
         image = picture
-        blurred = Self.makeBlur(picture)
+        blurred = Self.makeBlur(picture, radius: Self.lightRadius)
+        soft = Self.makeBlur(picture, radius: Self.softRadius)
     }
     #endif
 
     private func regenerateBlur(from source: UIImage) async {
-        let result = await Task.detached(priority: .userInitiated) {
-            Self.makeBlur(source)
+        let lightRadius = Self.lightRadius
+        let softRadius = Self.softRadius
+        let (light, heavy) = await Task.detached(priority: .userInitiated) {
+            (Self.makeBlur(source, radius: lightRadius), Self.makeBlur(source, radius: softRadius))
         }.value
-        withAnimation(.easeInOut(duration: 0.45)) { blurred = result }
-        if let result,
-           let data = result.jpegData(compressionQuality: 0.8),
-           let url = Self.blurURL {
-            try? data.write(to: url, options: .atomic)
+        withAnimation(.easeInOut(duration: 0.45)) {
+            blurred = light
+            soft = heavy
+        }
+        for (picture, url) in [(light, Self.blurURL), (heavy, Self.softURL)] {
+            if let picture, let url, let data = picture.jpegData(compressionQuality: 0.8) {
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
 
     /// 预先糊好一张小图，滚动时不用实时模糊。只化开一点，轮廓还认得出来——卡片的玻璃会再化一层。
-    nonisolated static func makeBlur(_ source: UIImage) -> UIImage? {
+    nonisolated static func makeBlur(_ source: UIImage, radius: Double) -> UIImage? {
         let small = redrawn(source, maxDimension: 720)
         guard let cgImage = small.cgImage else { return nil }
         let input = CIImage(cgImage: cgImage)
         let filter = CIFilter.gaussianBlur()
         filter.inputImage = input.clampedToExtent()
-        filter.radius = 7
+        filter.radius = Float(radius)
         guard let output = filter.outputImage?.cropped(to: input.extent) else { return nil }
         let context = CIContext(options: nil)
         guard let rendered = context.createCGImage(output, from: input.extent) else { return nil }
@@ -209,12 +229,14 @@ struct SpaceBackdrop: View {
             ZStack {
                 style.base
                 fogLayer
-                if let backdrop = wallpaper.blurred ?? wallpaper.image {
+                // 主页铺轻轻化开的那张，详情页铺糊得很开的那张；还没生成好就先实时糊一下顶着。
+                let prepared = showsSharpTop ? wallpaper.blurred : (wallpaper.soft ?? wallpaper.blurred)
+                if let backdrop = prepared ?? wallpaper.image {
                     Image(uiImage: backdrop)
                         .resizable()
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
-                        .blur(radius: wallpaper.blurred == nil ? 14 : 0)
+                        .blur(radius: prepared == nil ? (showsSharpTop ? 10 : 30) : 0)
                         .clipped()
                         .transition(.opacity)
                     if showsSharpTop, let sharp = wallpaper.image {
@@ -236,15 +258,19 @@ struct SpaceBackdrop: View {
                             )
                             .transition(.opacity)
                     }
-                    LinearGradient(
-                        stops: [
-                            .init(color: style.veilTop, location: 0),
-                            .init(color: style.veil, location: 0.4),
-                            .init(color: style.veil, location: 1)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                    if showsSharpTop {
+                        LinearGradient(
+                            stops: [
+                                .init(color: style.veilTop, location: 0),
+                                .init(color: style.veil, location: 0.4),
+                                .init(color: style.veil, location: 1)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    } else {
+                        style.detailVeil
+                    }
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)

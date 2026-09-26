@@ -108,7 +108,15 @@ struct LoginView: View {
             .scaleEffect(pose.scale, anchor: UnitPoint(x: 0.5, y: LaunchSignature.anchorFraction))
             .offset(y: pose.centerY - LaunchSignature.anchorY(in: screen))
             .ignoresSafeArea()
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { screen = $0 }
+            // 签名的 Canvas 铺满整屏（含刘海和底部安全区），这里量到的却是安全区内的尺寸；
+            // 把两头的 inset 加回来，签名和玻璃卡才在同一套坐标里——少了这一步，
+            // 玻璃会压到 A 和 q 的下伸笔画上（09-27 CI 截图里抓到的）。
+            .onGeometryChange(for: CGSize.self) { proxy in
+                CGSize(
+                    width: proxy.size.width,
+                    height: proxy.size.height + proxy.safeAreaInsets.top + proxy.safeAreaInsets.bottom
+                )
+            } action: { screen = $0 }
             .allowsHitTesting(false)
     }
 

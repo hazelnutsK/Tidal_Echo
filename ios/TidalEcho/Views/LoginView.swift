@@ -14,6 +14,9 @@ struct LoginView: View {
     @FocusState private var focus: Field?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// 一行输入框的高度；只剩密钥一行时，玻璃的圆角正好是它的一半，整块成胶囊。
+    private static let rowHeight: CGFloat = 46
+
     private enum Field: Hashable {
         case address
         case secret
@@ -68,8 +71,8 @@ struct LoginView: View {
                 settled = true
                 return
             }
-            // 等开屏那层淡完（RootView 0.34s）再动，不然两枚签名会叠出重影
-            try? await Task.sleep(for: .milliseconds(380))
+            // 等开屏那层淡完（RootView 0.25s）再动，不然两枚签名会叠出重影
+            try? await Task.sleep(for: .milliseconds(260))
             withAnimation(.spring(response: 0.95, dampingFraction: 0.88)) { settled = true }
         }
     }
@@ -97,7 +100,7 @@ struct LoginView: View {
     /// 玻璃卡从签名底下开始（屏幕坐标）。按落定后的位置算，入场时卡片不跟着跳。
     private var formTop: CGFloat {
         let rest = restPose(focused: focus != nil)
-        return rest.centerY + LaunchSignature.subtitleDrop(in: screen) * rest.scale + 30
+        return rest.centerY + LaunchSignature.bottomDrop(in: screen) * rest.scale + 34
     }
 
     private var signature: some View {
@@ -112,8 +115,8 @@ struct LoginView: View {
     // MARK: 表单
 
     private var form: some View {
-        VStack(spacing: 14) {
-            Color.clear.frame(height: max(0, formTop - 14))
+        VStack(spacing: 12) {
+            Color.clear.frame(height: max(0, formTop - 12))
 
             card
                 .modifier(LoginShake(shakes: shakes))
@@ -127,7 +130,8 @@ struct LoginView: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 28)
+        // 她 09-27 要小一点、圆一点：两边多收进来，框和按钮都变成胶囊
+        .padding(.horizontal, 48)
         .opacity(settled ? 1 : 0)
         .offset(y: settled ? 0 : 16)
     }
@@ -152,7 +156,7 @@ struct LoginView: View {
                 .transition(.opacity)
 
                 SpaceHairline(style: style)
-                    .padding(.leading, 70)
+                    .padding(.leading, 72)
                     .transition(.opacity)
             }
 
@@ -178,7 +182,7 @@ struct LoginView: View {
                 .animation(.easeOut(duration: 0.2), value: secret.isEmpty)
             }
         }
-        .spaceGlass(style, radius: 22)
+        .spaceGlass(style, radius: Self.rowHeight / 2)
     }
 
     @ViewBuilder private var secretField: some View {
@@ -206,11 +210,11 @@ struct LoginView: View {
                 .foregroundStyle(style.sub)
                 .frame(width: 36, alignment: .leading)
             content()
-                .font(.system(size: 16))
+                .font(.system(size: 15))
         }
-        .padding(.leading, 18)
+        .padding(.leading, 20)
         .padding(.trailing, 12)
-        .frame(height: 56)
+        .frame(height: Self.rowHeight)
     }
 
     private var enterButton: some View {
@@ -223,12 +227,12 @@ struct LoginView: View {
                         .tint(style.base)
                 }
                 Text(isConnecting ? "在路上" : "回家")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 15, weight: .medium))
                     .tracking(3)
             }
             .foregroundStyle(lit ? style.base : style.faint)
             .frame(maxWidth: .infinity)
-            .frame(height: 54)
+            .frame(height: 44)
             .background(style.ink.opacity(lit ? 0.9 : 0.07), in: Capsule())
             .contentShape(Capsule())
         }

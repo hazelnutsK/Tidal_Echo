@@ -58,6 +58,7 @@ struct RootView: View {
             switch phase {
             case .background:
                 appLock.lockForBackground()
+                model.noteEnteredBackground()
             case .active:
                 guard launchPresentationComplete else { return }
                 if model.phase == .connected {

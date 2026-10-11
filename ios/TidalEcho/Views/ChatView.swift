@@ -322,11 +322,10 @@ struct ChatView: View {
 
     private func topFog(safeAreaTop: CGFloat, headerHeight: CGFloat) -> some View {
         ZStack {
-            // One continuous field: lightly defocus below the header, then
-            // dissolve toward the status bar. Stacked linear radius ramps
-            // concentrated the change within the height of a single glyph.
+            // Keep the strongest blur near the status bar and only a short,
+            // gentle fade below the header, so a small scroll stays legible.
             VariableBackdropBlur(
-                radius: isNest ? 10 : 14,
+                radius: isNest ? 5 : 7,
                 mask: .blurredTopClearBottom,
                 fadeFrom: 0,
                 fadeTo: 1,
@@ -343,7 +342,7 @@ struct ChatView: View {
                     )
                 )
         }
-        .frame(height: safeAreaTop + headerHeight + 36)
+        .frame(height: safeAreaTop + headerHeight + 12)
         .ignoresSafeArea(edges: .top)
         .allowsHitTesting(false)
     }
@@ -399,10 +398,10 @@ struct ChatView: View {
 
     private var topFogTint: Color {
         switch model.theme {
-        case .mist: return Color(hex: 0xECF1F6).opacity(0.24)
-        case .paper: return Color(hex: 0xFAFAF8).opacity(0.72)
-        case .harbor: return Color.black.opacity(0.38)
-        case .nest: return Color(hex: 0xF7F7F5).opacity(0.46)
+        case .mist: return Color(hex: 0xECF1F6).opacity(0.12)
+        case .paper: return Color(hex: 0xFAFAF8).opacity(0.36)
+        case .harbor: return Color.black.opacity(0.19)
+        case .nest: return Color(hex: 0xF7F7F5).opacity(0.23)
         }
     }
 

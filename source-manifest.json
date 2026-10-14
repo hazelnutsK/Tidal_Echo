@@ -1,0 +1,391 @@
+{
+  "source_commit": "78742d0437b0012fd410aa41809f1e847e7e347e",
+  "ios_tree": "0d4bf32b09a0d695321fa0cce741e9ecfcb64351",
+  "files": [
+    {
+      "path": ".github/workflows/ios-build.yml",
+      "sha256": "b74b8545a7fedc071991f8ddf01d0a40c78e70e3ad4d57d0ebf0e40ec6f13c17",
+      "mode": "100644"
+    },
+    {
+      "path": "LICENSE",
+      "sha256": "375f5269da6d686b852d1167bd2b5e0fd0b04c531911568d96167e0018b48c17",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/.gitignore",
+      "sha256": "6a6ad979bb418d59269277cb19630ff1b7d2295dc73d8dc2af445029c05e2488",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/Assets/AppIconSource.png",
+      "sha256": "b8628410d81999c728ed9641fa8415584a090b5f016918c5f89cf26af01d9c24",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/README.md",
+      "sha256": "8471268825612f196eaccbb97d57ec21c959fe3f84afe31673b87d4c2375f259",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/THIRD_PARTY_NOTICES.md",
+      "sha256": "4e328182a67a9a78189134cef545613d65ede5631fc0f044bc710b223c1379c0",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/Tests/APIMessageUsageTests.swift",
+      "sha256": "610eb583bc0711591c0467e76ea806053c445dcfd70296646615f168a03a7297",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/Tests/SSERegressionTests.swift",
+      "sha256": "88a0812ba0517467f9383ca9f1de8d19060c072acb41cc17ee1e65963060d479",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/Tests/run_sse_regressions.py",
+      "sha256": "21a29e6121b6b8e425b6bd4208450c99d8ca0e83e4464e9f1e6f72b7ffd1e582",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/App/AppModel.swift",
+      "sha256": "e1bb338245113e8f892d4f2bc2f3af231567701fa2987730c8dafddd0eeaef3c",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "sha256": "1ecb0d1b4b848ede43b4d8c0dabd950e62815eb607bded459e0db8f0978897dd",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Assets.xcassets/ClaudeMark.imageset/Contents.json",
+      "sha256": "e5e808986fe20031381855f270bf795f6e261c3338af33d12b21d564cbd043fd",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Assets.xcassets/ClaudeMark.imageset/claude-mark.svg",
+      "sha256": "4ad3fb8e4a446fce98185cdd161a7efcdc3ff871596dfea1ccc2aef4adedeee0",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Assets.xcassets/ClaudeWordmark.imageset/Contents.json",
+      "sha256": "8723978d4a08013348bad30d653e45a42e72fb5f7db1a9b8537431b96c36462c",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Assets.xcassets/ClaudeWordmark.imageset/claude-wordmark.svg",
+      "sha256": "865a3dbfd8818e5cc9d9e11b8c309d5a648d26c8abf221abe746585b022bdb1b",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Assets.xcassets/Contents.json",
+      "sha256": "6248561bf2784c2488a1d948159a69fd8a6c9d06206c408a1c35b202d3c26c0a",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/APIClient.swift",
+      "sha256": "98fc63ce7454099a1c00453e1bad487aad492059eddff9c233c231cd00cc3452",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/AppLockController.swift",
+      "sha256": "9e798fc9207c903131efb0e2e8aa227f8e49c705636da5434b223c6600aec12f",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/BookAPI.swift",
+      "sha256": "787314411dab82a0a1b313447d64c355cfd7eafe1bcd4f8b31975ed390a21b6e",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/EchoDateCache.swift",
+      "sha256": "ddef1cdb08a30dada5dc7963620f0bf89e5c9cd4af04145287f09aef06af5bb9",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/ImportedFontStore.swift",
+      "sha256": "a879f2f1fa34e9c1de4928b65bd9f482a6afccbf859e32c3f59994f182b8f4f7",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/KeychainStore.swift",
+      "sha256": "0375c4d4460205641167f110e1c6b6ee12631892ec983580235224fea4199d4c",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/MarkdownRenderCache.swift",
+      "sha256": "7e5961262f5d705213711f7ac5d7e0d2c6ef94f2f60cde6d35454981a5bbb533",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/NativeEventStore.swift",
+      "sha256": "b9919eb2a5e047dfeeb88276ee301fbafa16c795f6ea979c2dec508cfca17a08",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/NativeSystemServices.swift",
+      "sha256": "4a98c700668c5f692960d3666b92a65df659f69f7ce69d9a353367e0d416e733",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/SSEClient.swift",
+      "sha256": "a65331488ced5acfe3157b39e059a64a33b019481c85ae065ca650af1dbbad75",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/SSEEventParser.swift",
+      "sha256": "05877f2ee2e19782100a38dcdd6e06ae992ccd75051ab440109964144e80cc3b",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/ScreenBroadcastLauncher.swift",
+      "sha256": "4e19d2f43a7836c85e5a92f7a75f0d994fc312ec9c3f946cd2605dbb60f0d86d",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/ScreenShareLocalHandoff.swift",
+      "sha256": "668e99d95fa3882fa2287fc8afde0911931b571a019593caccbadb612d436a3d",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Core/VoiceAudio.swift",
+      "sha256": "98c24dce6badd9b816973d6584539309c0a95cc1b6cf7379ba9d0eebecab49c4",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Design/ClaudeBrand.swift",
+      "sha256": "02c063d148a47cacdee0daad0ad02f3eccf066bd42ae87ee62447667bdd356be",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Design/EchoTheme.swift",
+      "sha256": "83ee390635fb2aa13c14b030908b03cd65c2c90ffd6b226b1134b17edfc23b71",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Design/IMessageGlassBackground.swift",
+      "sha256": "3a273928b772aaba422ba791c65629fb7be2370bd51c70e0886bf6fd787c325b",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Design/IMessageLayoutMetrics.swift",
+      "sha256": "89ee096fa458b547c70efc95cabaee1e2c32335599a97007f263fa0b11de94ac",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Design/IMessageReviewFixture.swift",
+      "sha256": "6f03946b91a330af66ed9ecd41c6630ee23891cf5fb425c7f8493114171e56ba",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Design/SpaceDesign.swift",
+      "sha256": "564b8ebd64f28b705d6106532aa103ec15ddba6a7c5e463f7417988cbc00c1f8",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Design/VariableBackdropBlur.swift",
+      "sha256": "69fea5ad897f66b71aaf974235e6018236a938d137ff8d934b7fef07043a063e",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Models/APIMessageUsage.swift",
+      "sha256": "957544ce8f6948cdb832af6c54b651a342a64ca3acf16459722e53ddd6975bbf",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Models/AppModels.swift",
+      "sha256": "c5860a21b2445d7dd77505f3e1687c9964e1e1b789afd08ad3255c6d9b3ae8e0",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Models/BookModels.swift",
+      "sha256": "3d54784d3e41817590ae84ae5311f387088c596c292117e43545679fbff1b97a",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Models/SavedAppearance.swift",
+      "sha256": "6c996fe99c1361d98358c6123bc798929fd1c0895541734faea59e3e09c62084",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Resources/Fonts/AnthropicSerifVariable.ttf",
+      "sha256": "c7dc90f2dc4e49e235088f95224ef0dca76d7613fdf44803e136a8bf6d7b4f6f",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Resources/Fonts/LXGWWenKai-Light.ttf",
+      "sha256": "b190b6cccd59bda5ac4cd58016b80f276839c59c914753c6d0d9c9dd9d0dd06b",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Resources/Fonts/LXGWWenKai-Medium.ttf",
+      "sha256": "89b8c1c43b4e011a420900ce6535038979dab6c72541049b9978c503bd04fb19",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Resources/Fonts/LXGWWenKai-Regular.ttf",
+      "sha256": "ef28ac58a82611170f7aa082a945916bd9de09f723006f1867a299dfe5364ee5",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Resources/ThemePresets/harbor-background.jpg",
+      "sha256": "7a2b14ddcc1f7624c1128839875ef55c3cc9a19dce29c0fa0b325ae3f863cce3",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Resources/ThemePresets/paper-ai-avatar.jpg",
+      "sha256": "5a777e9c6d7aea467c87218692a420db411bcbc6f3db5f57e6d37f521674e17c",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Resources/ThemePresets/paper-human-avatar.jpg",
+      "sha256": "63585051ec372ab25806553634087c8909c95411270601e45f3bcf80ab825cf4",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/TidalEchoApp.swift",
+      "sha256": "da012b1ba9de4073e14838e60759c175208ae40affff1db8aaf845b09e50d9f5",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/AppLockView.swift",
+      "sha256": "7f9bddf534066f00f98ffb735484f57cd86f78df17abf7fb9e2185279c4201da",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/BookAnnotationSheet.swift",
+      "sha256": "7ea81fb3eccc058ee113fa4786f1d25f9c2bc81084f4c6dcf412109c17b87fbd",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/BookReaderView.swift",
+      "sha256": "06d94b80046157a3cc263ed94c507ddd068ad343edee21c7530b45452cd29fb8",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/BookshelfView.swift",
+      "sha256": "80d10e2168c0316cf8a36040196756998b141e1c5b0e270a56562422fc0bdac6",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/CameraCaptureView.swift",
+      "sha256": "5eadf182e2cb5ac2389f240804b806af97005022b91b4f255ae3c8cf232f6990",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/ChatView.swift",
+      "sha256": "e0b3bd1f4f15b8a8a5abfacce494c8e7279302fed20db80e8b60f63f0a55036d",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/ClawdPetView.swift",
+      "sha256": "e937ea2e609e80c56497b2d104ae5d114f9ff8516269a765cb8a917cdab149fc",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/FilesDocumentPicker.swift",
+      "sha256": "ed5e0c3eb8300e7cd784e0f71c67cda5fa8d8de546283c5ed63ca0c76c83f2e9",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/IMessageChatChrome.swift",
+      "sha256": "cde670b21845be87541c03391746e7fe8203a101104f7c1489598de1f89b9024",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/LaunchView.swift",
+      "sha256": "bc067b53b7d655f94c1ddea03703a8723c6cd20aa38c17b17ec47342ebf10635",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/LoginView.swift",
+      "sha256": "a3ea7b772ba8eea89cd737b5172c80670fa8b0bf3bdb441d530e6c3e25572b5a",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/MemoryVaultView.swift",
+      "sha256": "bdc3c5297f444ad7d730df7f12c08016e1ae2ffc9bf39e3221c7c0c179dffa9d",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/MessageRow.swift",
+      "sha256": "61d14ce864bd25c332edfecb5bccb2014e3803993fa6a3a9acc983af286d082f",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/MessageShareCard.swift",
+      "sha256": "c01a95f23a6570cd04d77cfdfb2001a3d53a9d2d35fc645be5009f40116cfc8a",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/PhotoStackAttachmentView.swift",
+      "sha256": "e5194bf179a43ca8a5dc5a9d91f5db9778d32800b3320df521ba90e098cb6f13",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/ReaderTextView.swift",
+      "sha256": "35cb97081d6f6f3e097b8161886202eacd74cc3ed3e391299900e3cef710f700",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/RootView.swift",
+      "sha256": "ac2c066fc2eb145fdd7bca9a051468275290ec5adb907291e5ae627e4e02fd2f",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/ScreenShareSettingsView.swift",
+      "sha256": "f7b89a301d5d56444595d760572df1a78982f87f493701e649521dd4a9397ce7",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/SettingsView.swift",
+      "sha256": "60e055c9ee5d034378f26086335e8738ea88f581a7fa9cd91cc954c7c38b219b",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/SpacesView.swift",
+      "sha256": "455bd01013deaa8d427738987c6680882a264fe66fa5f0109168eda9c85cbcb9",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/TelegramComposerBar.swift",
+      "sha256": "8c10d8c0db5cbbe87c7c9562f386fafbe63e08749b2862f892f73f737baf8a55",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/TerminalView.swift",
+      "sha256": "c2eae5c911b323220151306331599197f1c872b55fc36e1c15b5e044c1c1b340",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/VoiceCallView.swift",
+      "sha256": "1b78b0d6f6f7f9e8fe54823c09e8281f3e194199e09ae2311137daadb60ee3d8",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEcho/Views/WeChatComposerBar.swift",
+      "sha256": "93ac5f67a6d334e5eac9dda7e4a53cbe2387d3a288d56e932cbac428e30e342e",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/TidalEchoScreenShareUpload/SampleHandler.swift",
+      "sha256": "00d809c03eedf30cf2d3b9bbe94321e2dc29d24ce7c71fa13bcc439ebd5e7197",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/UITests/IMessageLayoutUITests.swift",
+      "sha256": "d7999a36aa848218bf209a93b668e78478e65d6ad066efa4880a089275355cca",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/project.yml",
+      "sha256": "ab2ae688aff395372da96c39420b360e095e298cbb093e6325f1a0b9674ec3a4",
+      "mode": "100644"
+    },
+    {
+      "path": "ios/scripts/prepare-assets.sh",
+      "sha256": "999d63c4cd7eefcf02f4ba520179e7cc060b36038a9c11e8fb76bbcdfea5b992",
+      "mode": "100644"
+    }
+  ]
+}
